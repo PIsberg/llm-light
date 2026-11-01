@@ -70,7 +70,7 @@ PyPI and TestPyPI accept a version once, even after it is deleted. A second dry 
 
 One-time setup, done by the maintainer and not by the YAML: register a trusted publisher on pypi.org and on test.pypi.org (project `llm-light-cli`, owner `PIsberg`, repository `llm-light`, workflow `publish.yml`, environment `pypi` or `testpypi`), and create the two environments under the repository's Settings, Environments. A required reviewer on `pypi` makes every release wait for approval.
 
-To release:
+To release, run `/release <version>` in Claude Code (`.claude/skills/release/SKILL.md`). It does these steps and stops before each one that cannot be undone, and `scripts/release.py` makes the version and changelog edits. By hand:
 
 1. Set `version` in `pyproject.toml` and move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, in a PR.
 2. After it merges, run **Publish to PyPI** by hand on `main`. In a clean venv, fetch only the wheel from TestPyPI and take its dependencies from PyPI, then run the tool:

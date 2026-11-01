@@ -10,7 +10,8 @@ You are working on `llm_light`, a Python CLI. It sends a cached project skeleton
 - `tests/`: unit, integration and utility suites, regression fixtures and benchmark scripts. See [TESTING.md](TESTING.md).
 - `docs/`: architecture, configuration, benchmarks and CI reference. See [docs/DOCS.md](docs/DOCS.md).
 - `installers/`: install scripts for Linux, macOS and Windows.
-- `scripts/`: SBOM generation and a startup benchmark.
+- `scripts/`: SBOM generation, a startup benchmark, and `release.py` (version and changelog edits for a release).
+- `.claude/skills/release/`: the `/release` skill, the only tracked part of `.claude/`.
 - `.github/workflows/`: CI. See [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 Repository rules, invariants and commands are in [CLAUDE.md](CLAUDE.md).

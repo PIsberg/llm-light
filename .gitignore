@@ -1,4 +1,8 @@
-.claude/
+.claude/*
+# The release skill is part of the repo; the rest of .claude/ stays local.
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/release/
 __pycache__/
 .llm_light_cache/
 # Index cache from before the rename (claude_light); still present in existing checkouts.
