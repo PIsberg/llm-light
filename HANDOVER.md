@@ -50,7 +50,7 @@ All offline, with `tests/benchmarks/benchmark_models.py` on this repo's 43 quest
 - PR #89 (`feature/cache-stable-routing`) and the route-once PR stacked on it (`feature/session-model-pin`): the merges are the developer's call, #89 first, with merge commits.
 - Effort messages are verified offline only (mocks and the SDK stub server). A live run must confirm the API accepts them on Haiku, Sonnet and Opus 5.5 and that `cache_read_input_tokens` holds across an effort change; see the issue linked from that PR.
 - #85: measure `fetch_chunk` per-turn tokens with live API runs.
-- #86: decide whether call-graph expansion helps answer quality, which the offline benchmark cannot see. Delete the expansion path if it does not.
+- #86: answered by `benchmark_answer_quality.py` (docs/BENCHMARKS.md, section 2f): call-graph expansion did not win (2 to 2), so the expansion path is removed.
 
 ## Gotchas
 
