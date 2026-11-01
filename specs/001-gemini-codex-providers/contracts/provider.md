@@ -117,6 +117,8 @@ Codex argv, stdin = `system_text + "\n\n" + prompt` from `transcript()`, reply =
 `item.type == "agent_message"` (`_agent_reply`):
 `[which("codex"), "exec", "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--sandbox", "read-only", "--disable", "shell_tool", "--disable", "unified_exec", "--disable", "apps", "-"]`
 
+Since the codex prompt trim, `codex._argv_tail(path)` inserts `-c` pairs before the final `-`: `model_instructions_file=<path>` (a file holding `codex.INSTRUCTIONS`, in its own temporary directory, so the working directory stays empty), the four `include_*`/`skills.include_instructions` switches and `features.<name>=false` for twelve unused features (`codex._TRIM_CONFIG`). The argv above, with every `-c` pair removed, is unchanged. Measurement: `docs/BENCHMARKS.md`, section 2e.
+
 Neither argv carries `-m` or any Claude model id (FR-007, D3). Why each flag: `research.md` R1 (Codex), R3 (Gemini).
 
 ## Flag
