@@ -292,6 +292,8 @@ def test_fr006_package_client_stub_reaches_warm_cache(monkeypatch, clean_state):
     monkeypatch.setattr(state, "global_stats", dict(state.global_stats))
     monkeypatch.setattr(claude_mod, "AUTH_MODE", "API_KEY")
     monkeypatch.setattr(llm_light, "client", stub)
+    # warm_cache() warms only a known model (the pin or the session model).
+    monkeypatch.setattr(state, "session_model", "claude-sonnet-5-5")
     try:
         llm_light.warm_cache(quiet=True)
     except Exception:

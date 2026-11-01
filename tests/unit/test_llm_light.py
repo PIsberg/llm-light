@@ -3535,7 +3535,7 @@ class TestWarmCacheVerbose(unittest.TestCase):
         resp.usage.cache_read_input_tokens = 200
         with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create, \
              patch("llm_light.state.session_model", "claude-sonnet-5-5"), \
-             patch("llm_light.print_stats") as stats, \
+             patch("llm_light.providers.claude.print_stats") as stats, \
              patch("builtins.print"):
             warm_cache(quiet=False)
         create.assert_called_once()
