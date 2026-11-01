@@ -66,14 +66,14 @@ For a deeper dive into the implementation, see [docs/architecture/](https://gith
 
 ### Install as a tool (recommended)
 
-If you have [`pipx`](https://pipx.pypa.io/) or [`uv`](https://docs.astral.sh/uv/) installed, the fastest path is to install `llm-light` from [PyPI](https://pypi.org/project/llm-light/) as a globally-available CLI in its own isolated environment:
+If you have [`pipx`](https://pipx.pypa.io/) or [`uv`](https://docs.astral.sh/uv/) installed, the fastest path is to install `llm-light-cli` from [PyPI](https://pypi.org/project/llm-light-cli/) as a globally-available CLI in its own isolated environment. It installs the `llm-light` command:
 
 ```bash
 # pipx
-pipx install llm-light
+pipx install llm-light-cli
 
 # uv
-uv tool install llm-light
+uv tool install llm-light-cli
 ```
 
 Then run from any project root:
@@ -86,7 +86,7 @@ llm-light "what does OrderService do?"   # one-shot
 Optional extras:
 
 ```bash
-pipx install "llm-light[llmlingua]"
+pipx install "llm-light-cli[llmlingua]"
 ```
 
 LLMLingua compresses retrieved context only when it is at least `LLM_LIGHT_LLMLINGUA_MIN_TOKENS` tokens long (default `800`). The retrieval budgets are 1 500 to 9 000 tokens, so a full retrieval always qualifies; lower the value only if small retrievals should be compressed too. The first compression loads a model (about 280 MB) on CPU, which takes around 10 seconds.

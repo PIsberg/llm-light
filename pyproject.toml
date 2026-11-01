@@ -3,7 +3,7 @@ requires = ["setuptools>=84.2.1", "wheel>=0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "llm-light"
+name = "llm-light-cli"
 version = "0.1.0"
 description = "Interactive CLI chat tool for querying and editing a codebase with an LLM agent (Claude, Gemini via agy, Codex), using hybrid RAG and prompt caching."
 readme = "README.md"
