@@ -4,6 +4,10 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- **Send the model traffic through a proxy, such as the llm-fw firewall.** `--proxy URL` and `--proxy-ca PATH` (or `LLM_LIGHT_PROXY` and `LLM_LIGHT_PROXY_CA`) route the Anthropic client and the `claude`, `codex` and `agy` CLIs through an HTTPS proxy and trust its CA on top of the public roots; `--llm-fw` uses a local llm-fw's defaults. Embedding-model downloads, git and agent commands keep their own connection. `--proxy` wins over an `HTTPS_PROXY` already in the environment, which `llm-fw setup` sets. Without `--proxy-ca` the Anthropic client keeps its default trust, the OS store. `certifi` is now a declared dependency (it was already installed through `requests`).
+
 ### Changed
 
 - **Codex sends about half the tokens per question.** llm_light replaces codex's own agent instructions with a short no-tools note and switches off the codex prompt sections and tool features an answer engine never uses. On one repo question (5 runs each, codex-cli 0.166.0) input tokens fell from a mean of 21,766 to 9,190 and output from 926 to 621, and the trimmed runs took no hidden extra model rounds. `tests/benchmarks/benchmark_cli_providers.py` measures it; see `docs/BENCHMARKS.md`, section 2e.

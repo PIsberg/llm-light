@@ -45,6 +45,9 @@ python3 llm_light.py -y                                   # acceptEdits
 python3 llm_light.py --permission-mode plan               # read-only
 python3 llm_light.py --dangerously-skip-permissions       # ask nothing (alias --yolo)
 
+# Send the model traffic through a proxy (llm-fw: --llm-fw for its local defaults)
+python3 llm_light.py --proxy http://127.0.0.1:8080 --proxy-ca ~/.llm-fw/ca.crt
+
 # Pin the model instead of routing; print the version
 python3 llm_light.py --model opus
 python3 llm_light.py --version
@@ -76,6 +79,7 @@ Users install with `pipx install llm-light-cli` from PyPI (the distribution name
 - **`EMBED_MODEL` and `TOP_K` are set at runtime by `auto_tune()`.** Do not set them by hand.
 - **`state.turn_count` counts turns.** Do not derive it from `conversation_history`, which compression shrinks.
 - **Chunk ids are `filepath::methodName`.** Watchdog paths go through `indexer._project_path()`, or a re-index duplicates the file's chunks.
+- **A proxy reaches model traffic only.** `proxy.py` never sets `os.environ`; the Anthropic client gets its own transport (`claude._new_client()`), and a CLI child gets the proxy through `proxy.child_env()`. Add a new CLI child's environment there too.
 - **Never load `index.pkl`.** The disk cache loads with `allow_pickle=False` because a cloned repo can ship a hostile pickle.
 - **Tests never call the real API or write the real stats or session files.** `tests/conftest.py` sets a mock key, `LLM_LIGHT_HYBRID=0`, a temp `LLM_LIGHT_STATS_FILE` and a temp `LLM_LIGHT_SESSION_DIR`. Keep those settings when you add tests.
 - **Auto-commit is the undo path.** AI edits commit as `Claude: [summary]`. `/undo` refuses unless the last commit is one of those and no file in it has changed since.

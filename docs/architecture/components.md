@@ -27,6 +27,7 @@ This diagram shows the main components and their relationships within LLM Light.
 | `state.py` | Shared state module for thread-safe access to session data |
 | `session.py` | Saves the conversation, turn count and session model after each interactive turn; `--continue` restores them into `state` (the history list in place, since `_wrap()` re-binds it) |
 | `config.py` | Configuration constants and dual-mode authentication resolution |
+| `proxy.py` | The HTTPS proxy the model traffic goes through (`--proxy`, `--proxy-ca`, `--llm-fw`; see [Proxy](#proxy)) |
 
 ### Authentication Modes
 
@@ -186,6 +187,12 @@ In API mode the same prefixes gate the `shell` tool in `tools.py`. A command mus
 | `bypassPermissions` | applied | made | any command via the shell, unchecked | `--permission-mode bypassPermissions`, no disallowed tools, no allow rules, no guard hook; `AGENT_SYSTEM_PROMPT` plus a line saying any command may run |
 
 The `shell` tool's description (in the cached `TOOLS`) still names the allowlist in bypass mode, and `SYSTEM_PROMPT` says nothing of plan mode. Rather than change the cached prefix, `permissions.question_note()` puts a one-line note before the question in the uncached last turn: always in plan mode, and in bypass mode when the model has the API `shell` tool. In `default` and `acceptEdits` it is empty, so those requests are byte-for-byte what they were before the modes existed.
+
+## Proxy
+
+`main._configure_proxy()` reads `--proxy` and `--proxy-ca`, else `LLM_LIGHT_PROXY` and `LLM_LIGHT_PROXY_CA`, else, with `--llm-fw`, `proxy.LLM_FW_URL` (`http://127.0.0.1:8080`) and `proxy.LLM_FW_CA` (`~/.llm-fw/ca.crt`), and passes them to `proxy.configure()`. A URL that is not `http(s)://host[:port]`, a missing CA file or one with no PEM certificate is a usage error (exit 2) before any request. The CA is appended to certifi's bundle in a temporary file removed at exit, because a proxy that only tunnels a host (llm-fw does so for every non-LLM host) passes the real certificate through.
+
+Only the model traffic goes through it. `os.environ` is never changed, so embedding-model downloads, git and the `shell` tool keep their own connection. The Anthropic client (`claude._new_client()`) gets an `httpx2.HTTPTransport` (the SDK's HTTP client since anthropic 2.0) with the proxy and `proxy.ssl_context()`, or the SDK's default trust (the OS store, through `truststore`) when no CA is given; a transport rather than `proxy=`, because `anthropic.DefaultHttpxClient` mounts the environment's `HTTPS_PROXY` on `https://`, which beats the `all://` mount of `proxy=`, and `llm-fw setup` sets `HTTPS_PROXY` for the whole user. The `claude`, `codex` and `agy` children get `proxy.child_env()`: `HTTPS_PROXY` (never `HTTP_PROXY`: llm-fw forwards CONNECT only), `NODE_EXTRA_CA_CERTS` (the CA, for Node) and `SSL_CERT_FILE` (the combined bundle, for Python and Rust clients). Without a proxy, `child_env()` returns its argument unchanged, so codex still inherits the environment as before.
 
 ## Test mode
 

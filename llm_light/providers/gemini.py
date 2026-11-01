@@ -5,6 +5,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from llm_light import proxy
 from llm_light.providers.base import Provider, ProviderError, json_events, transcript
 from llm_light.providers.runner import empty_temp_dir, run_cli
 
@@ -54,7 +55,7 @@ def _isolated_env(home: str) -> dict:
     user's history. Sign-in still works: agy keeps no credential file there
     (probed with agy 1.4.12 on Windows, #118).
     """
-    env = dict(os.environ)
+    env = proxy.child_env(dict(os.environ))
     env["HOME"] = home
     env["USERPROFILE"] = home
     return env

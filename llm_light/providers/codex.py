@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from llm_light import proxy
 from llm_light.providers.base import USAGE, Provider, ProviderError, json_events, transcript
 from llm_light.providers.runner import empty_temp_dir, run_cli
 
@@ -132,7 +133,8 @@ class CodexProvider(Provider):
         with empty_temp_dir() as cwd, empty_temp_dir() as config_dir:
             instructions = os.path.join(config_dir, "instructions.md")
             Path(instructions).write_text(INSTRUCTIONS, encoding="utf-8")
-            out = run_cli(self.name, [binary] + _argv_tail(instructions), stdin_text, cwd=cwd)
+            out = run_cli(self.name, [binary] + _argv_tail(instructions), stdin_text, cwd=cwd,
+                          env=proxy.child_env(None))
         return _agent_reply(out), _usage(out)
 
     def complete(self, request: dict):
