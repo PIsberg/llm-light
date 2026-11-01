@@ -319,3 +319,84 @@ def test_json_events_keeps_dict_lines_in_order():
 def test_json_events_skips_blank_non_json_and_non_dict_lines():
     out = '\n{"a": 1}\n   \nnot json at all\n[1, 2]\n42\n"text"\n{broken\n{"b": 2}\n'
     assert list(base.json_events(out)) == [{"a": 1}, {"b": 2}]
+
+
+# --- ClaudeProvider.offer_login (#116) ------------------------------------------
+# After NotLoggedIn, main() calls offer_login(retry): it offers
+# `claude setup-token`, saves the pasted token and retries the question.
+
+@pytest.fixture
+def login(monkeypatch, tmp_path):
+    from llm_light import config
+    from llm_light.providers import claude as claude_mod
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    for name in ("API_KEY", "AUTH_MODE", "API_KEY_SOURCE", "AUTH_TOKEN"):
+        monkeypatch.setattr(config, name, getattr(config, name))
+    resolved = ("", "OAUTH", "automation token", "sk-ant-oat01-new")
+    resolve = MagicMock(return_value=resolved)
+    monkeypatch.setattr(config, "_resolve_api_key", resolve)
+    run = MagicMock()
+    monkeypatch.setattr(claude_mod.subprocess, "run", run)
+    ns = types.SimpleNamespace(home=tmp_path, run=run, resolve=resolve, config=config,
+                               retry=MagicMock(), claude_mod=claude_mod)
+
+    def offer(choice="yes", which="/bin/claude", typed="sk-ant-oat01-new"):
+        monkeypatch.setattr(claude_mod, "choose", lambda *a, **k: choice)
+        monkeypatch.setattr(claude_mod.shutil, "which", lambda name: which)
+
+        def fake_input(*a):
+            if isinstance(typed, BaseException):
+                raise typed
+            return typed + "\n"
+        monkeypatch.setattr("builtins.input", fake_input)
+        ClaudeProvider().offer_login(ns.retry)
+    ns.offer = offer
+    return ns
+
+
+def _token_file(home):
+    return home / ".llm_light_automation_token"
+
+
+def test_116_accepting_runs_setup_token_saves_the_token_and_retries(login, capsys):
+    login.offer()
+    login.run.assert_called_once_with(["/bin/claude", "setup-token"])
+    assert _token_file(login.home).read_text(encoding="utf-8") == "sk-ant-oat01-new"
+    login.resolve.assert_called_once_with()
+    assert login.config.AUTH_TOKEN == "sk-ant-oat01-new"
+    assert login.config.AUTH_MODE == "OAUTH"
+    login.retry.assert_called_once_with()
+    assert "Token saved to" in capsys.readouterr().out
+
+
+def test_116_a_token_with_the_wrong_prefix_is_not_saved_and_nothing_retries(login, capsys):
+    login.offer(typed="sk-ant-api03-wrong")
+    assert not _token_file(login.home).exists()
+    login.resolve.assert_not_called()
+    login.retry.assert_not_called()
+    assert "Token must start with 'sk-ant-oat01'" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("stop", [EOFError(), KeyboardInterrupt()], ids=["eof", "ctrl-c"])
+def test_116_cancelling_at_the_token_prompt_saves_nothing(login, capsys, stop):
+    login.offer(typed=stop)
+    assert not _token_file(login.home).exists()
+    login.retry.assert_not_called()
+    assert "Cancelled." in capsys.readouterr().out
+
+
+def test_116_declining_runs_nothing(login, capsys):
+    login.offer(choice="no")
+    login.run.assert_not_called()
+    login.retry.assert_not_called()
+    assert not _token_file(login.home).exists()
+    assert "Proceeding without auth" in capsys.readouterr().out
+
+
+def test_116_missing_claude_binary_names_it_and_how_to_install(login, capsys):
+    login.offer(which=None)
+    login.run.assert_not_called()
+    login.retry.assert_not_called()
+    out = capsys.readouterr().out
+    assert "Claude CLI not found" in out
+    assert "npm install -g @anthropic-ai/claude-code" in out
