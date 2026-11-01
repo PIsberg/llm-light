@@ -142,8 +142,9 @@ def _status_text(columns: int | None = None) -> str:
             cost = state.session_cost
         ratio = (saved / total_in * 100) if total_in > 0 else 0.0
         cost_label = "cost" if ECONOMY_MODE == "USD" else "API equiv."
-        status = [(project, ""), (f"{total_in:,} tok", ""), (f"{ratio:.0f}% cached", ""),
-                  (f"{cost_label} ${cost:.4f}", "")]
+        status = [(project, ""), (f"{total_in:,} tok", ""), (f"{ratio:.0f}% cached", "")]
+        if providers.active().has(USD_BUDGET):  # token counts only otherwise (Codex)
+            status.append((f"{cost_label} ${cost:.4f}", ""))
     hints = [("/ for commands", ""), ("alt+enter new line", "")]
     notice = current_notice()
     mark = _MODE_MARKS.get(permissions.mode())

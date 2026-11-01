@@ -4,8 +4,9 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
-from llm_light.providers.base import Provider, ProviderError, json_events, transcript
+from llm_light.providers.base import USAGE, Provider, ProviderError, json_events, transcript
 from llm_light.providers.runner import empty_temp_dir, run_cli
 
 BINARY = "codex"
@@ -66,9 +67,42 @@ def _agent_reply(stdout: str) -> str:
     return reply.strip()
 
 
+def _count(value) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(value)
+    return value
+
+
+def _usage(stdout: str):
+    """Token counts from codex's turn.completed events, summed; None if unreadable.
+
+    codex counts cached tokens inside input_tokens. Claude's usage keeps them
+    apart, and the session totals add the two, so the cached part is split out.
+    """
+    total = None
+    for event in json_events(stdout):
+        if event.get("type") != "turn.completed":
+            continue
+        usage = event.get("usage")
+        try:
+            if not isinstance(usage, dict):
+                raise ValueError(usage)
+            cached = _count(usage.get("cached_input_tokens", 0))
+            row = (max(0, _count(usage["input_tokens"]) - cached), cached,
+                   _count(usage["output_tokens"]))
+        except (KeyError, ValueError):
+            return None
+        total = row if total is None else tuple(a + b for a, b in zip(total, row))
+    if total is None:
+        return None
+    return SimpleNamespace(input_tokens=total[0], cache_read_input_tokens=total[1],
+                           cache_creation_input_tokens=0, output_tokens=total[2])
+
+
 class CodexProvider(Provider):
     name = "codex"
-    capabilities = frozenset()
+    # Exact token counts, at prices that are not Claude's: no USD_BUDGET (#148).
+    capabilities = frozenset({USAGE})
 
     def model_label(self, routed_model: str) -> str:
         return _LABEL
@@ -88,7 +122,8 @@ class CodexProvider(Provider):
         print(f"\n  {_T_ERR}  codex is not logged in. Run: codex login", file=sys.stderr)
         sys.exit(1)
 
-    def _run(self, stdin_text: str) -> str:
+    def _run(self, stdin_text: str) -> tuple:
+        """(reply, usage) of one codex run; usage is None when codex printed none."""
         binary = shutil.which(BINARY)
         if not binary:
             raise ProviderError("codex CLI not found. Install it: "
@@ -98,20 +133,19 @@ class CodexProvider(Provider):
             instructions = os.path.join(config_dir, "instructions.md")
             Path(instructions).write_text(INSTRUCTIONS, encoding="utf-8")
             out = run_cli(self.name, [binary] + _argv_tail(instructions), stdin_text, cwd=cwd)
-        return _agent_reply(out)
+        return _agent_reply(out), _usage(out)
 
     def complete(self, request: dict):
         from llm_light.ui import _Spinner
         system_text, prompt = transcript(request)
         with _Spinner("Waiting for codex"):
-            reply = self._run(system_text + "\n\n" + prompt)
-        return reply, None, False
+            reply, usage = self._run(system_text + "\n\n" + prompt)
+        return reply, usage, False
 
     def summarize(self, instructions: str):
         from llm_light.ui import _Spinner
         with _Spinner("Summarizing"):
-            text = self._run("You summarize conversations.\n\n" + instructions)
-        return text, None
+            return self._run("You summarize conversations.\n\n" + instructions)
 
 
 PROVIDER = CodexProvider()

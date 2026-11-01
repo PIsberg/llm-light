@@ -3,7 +3,7 @@
 > Part of the [architecture index](ARCHITECTURE.md). Source: the original `docs/architecture.md`, split by topic.
 
 
-Prompt caching is a Claude capability. Gemini and Codex have none: they get the same skeleton and chunks as text on standard input, `warm_cache()` does nothing for them, and the turn stats say `tokens, cost and caching unavailable for <provider>`. The rest of this page is about Claude.
+Prompt caching is a Claude capability. Gemini and Codex have none: they get the same skeleton and chunks as text on standard input, `warm_cache()` does nothing for them, and Gemini's turn stats say `tokens, cost and caching unavailable for gemini`. Codex applies its own server-side prefix caching, which llm_light does not control; its turn stats show the cached tokens codex reports, with no dollar figure. The rest of this page is about Claude.
 
 LLM Light uses Anthropic's ephemeral caching with three strategic breakpoints to minimize costs.
 

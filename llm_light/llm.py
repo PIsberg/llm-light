@@ -19,7 +19,7 @@ from llm_light.config import (
 from llm_light.ui import (
     _T_ROUTE, _T_SYS, _T_ERR, _T_RAG, _T_CACHE, _T_EDIT,
     _ANSI_GREEN, _ANSI_CYAN, _ANSI_YELLOW, _ANSI_MAGENTA, _ANSI_BOLD, _ANSI_DIM, _ANSI_RESET, _ANSI_RED,
-    _SYM_RESP, _SYM_TOOL, print_stats, _Spinner, calculate_cost, _print_reply, usage_unavailable, ResponseView, NullView, notify, choose,
+    _SYM_RESP, _SYM_TOOL, print_stats, _Spinner, calculate_cost, _print_reply, usage_unavailable, ResponseView, NullView, notify, choose, priced,
 )
 import llm_light.state as state
 from llm_light import providers, permissions
@@ -385,6 +385,14 @@ def _record_usage(usage, model) -> bool:
     none (usage is None) adds nothing; returns False so the caller can say so."""
     if usage is None:
         return False
+    if not priced():
+        # Token counts only: model_prices() would price them at Claude's rates.
+        with state.lock:
+            state.session_tokens["input"]       += usage.input_tokens
+            state.session_tokens["cache_write"] += getattr(usage, "cache_creation_input_tokens", 0)
+            state.session_tokens["cache_read"]  += getattr(usage, "cache_read_input_tokens", 0)
+            state.session_tokens["output"]      += usage.output_tokens
+        return True
     cost = calculate_cost(usage, model)
     _accumulate_usage(usage, model)
     with state.lock:
