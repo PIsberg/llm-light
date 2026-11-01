@@ -68,14 +68,14 @@ def build_prompt(files, question) -> str:
 @contextlib.contextmanager
 def _untrimmed():
     trimmed = codex._argv_tail
-    codex._argv_tail = lambda _instructions: list(codex._ARGV_TAIL)
+    codex._argv_tail = lambda _instructions, _effort=None: list(codex._ARGV_TAIL)
     try:
         yield
     finally:
         codex._argv_tail = trimmed
 
 
-def run_codex(prompt: str, baseline: bool = False) -> dict:
+def run_codex(prompt: str, baseline: bool = False, effort=None) -> dict:
     """One CodexProvider._run call; codex's usage plus the agent message count."""
     seen = {}
     real = codex.run_cli
@@ -87,7 +87,7 @@ def run_codex(prompt: str, baseline: bool = False) -> dict:
     codex.run_cli = spy
     try:
         with _untrimmed() if baseline else contextlib.nullcontext():
-            codex.PROVIDER._run(prompt)
+            codex.PROVIDER._run(prompt, effort)
     finally:
         codex.run_cli = real
     row = dict.fromkeys(FIELDS, 0)
@@ -163,15 +163,20 @@ def main(argv=None) -> int:
     parser.add_argument("--baseline", action="store_true",
                         help="codex: the untrimmed argv (codex._ARGV_TAIL); "
                              "gemini: agy's default agent")
+    parser.add_argument("--effort", choices=["low", "medium", "high", "max"], default=None,
+                        help="codex: run at this model_reasoning_effort (#150); default: "
+                             "codex's model default")
     parser.add_argument("--question", default=QUESTION)
     args = parser.parse_args(argv)
     prompt = build_prompt(FILES, args.question)
     run = run_gemini if args.provider == "gemini" else run_codex
     print(f"{args.provider}, {'baseline' if args.baseline else 'as shipped'}, "
+          f"effort {args.effort or 'default'}, "
           f"prompt {len(prompt):,} characters, {args.runs} runs")
     rows = []
     for i in range(args.runs):
-        rows.append(run(prompt, baseline=args.baseline))
+        rows.append(run(prompt, baseline=args.baseline) if args.provider == "gemini"
+                    else run(prompt, baseline=args.baseline, effort=args.effort))
         print(f"  run {i + 1}: {json.dumps(rows[-1])}", flush=True)
     print(f"  mean:  {json.dumps(mean(rows))}")
     return 0

@@ -161,3 +161,15 @@ def test_agy_baseline_does_not_leak_into_the_next_run(bench):
     _run_agy(bench, _agy_stdout(), baseline=True)
     _, seen = _run_agy(bench, _agy_stdout())
     assert "--agent" in seen["argv"] and seen["agent"] is True
+
+
+def test_codex_effort_reaches_the_shipped_argv(bench):
+    seen = {}
+
+    def fake(provider, argv, stdin_text, *a, **kw):
+        seen["argv"] = argv
+        return _stdout("a")
+    with patch("shutil.which", return_value="/bin/codex"), \
+         patch.object(codex, "run_cli", side_effect=fake):
+        bench.run_codex("the prompt", effort="low")
+    assert "model_reasoning_effort=low" in seen["argv"]
