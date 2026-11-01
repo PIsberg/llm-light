@@ -1343,6 +1343,20 @@ class TestChunkFileFallback(unittest.TestCase):
 # retrieve — with mocked chunk_store and embedder
 # ---------------------------------------------------------------------------
 
+def _set_embedder_ready(test):
+    """retrieve() waits on state.embedder_ready. Set it for the test and remember
+    whether it was set, rather than rely on an earlier test having done so (#138)."""
+    from llm_light import state
+    test._ready_was_set = state.embedder_ready.is_set()
+    state.embedder_ready.set()
+
+
+def _restore_embedder_ready(test):
+    from llm_light import state
+    if not test._ready_was_set:
+        state.embedder_ready.clear()
+
+
 class TestRetrieve(unittest.TestCase):
 
     def setUp(self):
@@ -1365,9 +1379,11 @@ class TestRetrieve(unittest.TestCase):
         })
         cl.TOP_K = 5
         cl.EMBED_MODEL = "all-MiniLM-L6-v2"
+        _set_embedder_ready(self)
 
     def tearDown(self):
         import llm_light as cl
+        _restore_embedder_ready(self)
         cl.chunk_store.clear()
         cl.chunk_store.update(self._orig_store)
         cl.TOP_K = self._orig_top_k
@@ -2085,9 +2101,11 @@ class TestRetrieveScoreFiltering(unittest.TestCase):
         cl.chunk_store["B.py"] = {"text": "b", "emb": np.array([0.1, 0.9]) / 1.0}
         cl.TOP_K = 5
         cl.EMBED_MODEL = "all-MiniLM-L6-v2"
+        _set_embedder_ready(self)
 
     def tearDown(self):
         import llm_light as cl
+        _restore_embedder_ready(self)
         cl.chunk_store.clear()
         cl.chunk_store.update(self._orig_store)
         cl.TOP_K = self._orig_top_k
@@ -2150,9 +2168,11 @@ class TestRetrieveContextModes(unittest.TestCase):
         mock_embedder = MagicMock()
         mock_embedder.encode.return_value = np.array([1.0, 0.0, 0.0])
         cl.embedder = mock_embedder
+        _set_embedder_ready(self)
 
     def tearDown(self):
         import llm_light as cl
+        _restore_embedder_ready(self)
         cl.chunk_store.clear()
         cl.chunk_store.update(self._orig_store)
         cl.TOP_K = self._orig_top_k
@@ -2191,6 +2211,48 @@ class TestRetrieveContextModes(unittest.TestCase):
         self.assertIn("def alpha(x):", detail)
         self.assertIn("def beta(y):", detail)
         self.assertNotIn("def gamma(z):", detail)
+
+
+class TestRetrieveClassesStandAlone(unittest.TestCase):
+    """The retrieve() test classes must not rely on an earlier test (#138).
+
+    retrieve() waits on state.embedder_ready. These classes passed in the full
+    suite only because an earlier test had set the event; run alone, or under
+    -k, they blocked forever. Run each here with the event cleared.
+    """
+
+    def _run_with_ready_cleared(self, case):
+        import threading
+        from llm_light import state
+        was_set = state.embedder_ready.is_set()
+        state.embedder_ready.clear()
+        result = unittest.TestResult()
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(case)
+        runner = threading.Thread(target=suite.run, args=(result,), daemon=True)
+        try:
+            runner.start()
+            runner.join(timeout=30)
+        finally:
+            if was_set:
+                state.embedder_ready.set()
+        self.assertFalse(runner.is_alive(), f"{case.__name__} hung on embedder_ready")
+        self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
+        self.assertGreater(result.testsRun, 0)
+
+    def test_retrieve(self):
+        self._run_with_ready_cleared(TestRetrieve)
+
+    def test_retrieve_score_filtering(self):
+        self._run_with_ready_cleared(TestRetrieveScoreFiltering)
+
+    def test_retrieve_context_modes(self):
+        self._run_with_ready_cleared(TestRetrieveContextModes)
+
+    def test_retrieve_token_budget(self):
+        self._run_with_ready_cleared(TestRetrieveTokenBudget)
+
+    def test_retrieve_nomic_prefix(self):
+        self._run_with_ready_cleared(TestRetrieveNomicPrefix)
 
 
 class TestAdaptiveRetrieveSelection(unittest.TestCase):
@@ -2786,9 +2848,11 @@ class TestRetrieveTokenBudget(unittest.TestCase):
             cl.chunk_store[f"src/File{i}.py::func{i}"] = {"text": f"def func{i}(): pass", "emb": emb}
         cl.TOP_K = 4
         cl.EMBED_MODEL = "all-MiniLM-L6-v2"
+        _set_embedder_ready(self)
 
     def tearDown(self):
         import llm_light as cl
+        _restore_embedder_ready(self)
         cl.chunk_store.clear()
         cl.chunk_store.update(self._orig_store)
         cl.TOP_K = self._orig_top_k
@@ -3748,9 +3812,11 @@ class TestRetrieveNomicPrefix(unittest.TestCase):
         cl.chunk_store["A.py::fn"] = {"text": "def fn(): pass", "emb": np.array([1.0, 0.0])}
         cl.TOP_K = 5
         cl.EMBED_MODEL = "nomic-ai/nomic-embed-text-v1.5"
+        _set_embedder_ready(self)
 
     def tearDown(self):
         import llm_light as cl
+        _restore_embedder_ready(self)
         cl.chunk_store.clear()
         cl.chunk_store.update(self._orig_store)
         cl.TOP_K = self._orig_top_k
