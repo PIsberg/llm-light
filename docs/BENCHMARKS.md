@@ -36,6 +36,7 @@ comparison, and this document now reflects that.
 | `benchmark_models.py` | Embedding models, hybrid fusion, and per-effort budgets on this repo | No | Free (models download on first run) |
 | `benchmark_router.py` | Effort tier and model the router picks for each question | No | Free (static model download on first run) |
 | `benchmark_session_cache.py` | Session cost of four routing policies under a prompt-cache model | No | Free (static model download on first run) |
+| `benchmark_cache_warming.py` | What the startup warm and the idle heartbeat spend, run through the real `heartbeat()` and `warm_cache()` | No | Free |
 | `benchmark_cost.py` | Real-world cost savings vs naive baseline | Yes | ~$0.05–$0.50 |
 | `benchmark_claude_code.py` | Claude Code vs `llm_light` vs naive baseline | Yes | Varies with live API/tool runs |
 
@@ -133,8 +134,8 @@ Ratio:                  346x
   have variable chunk sizes and more complex skeletons.
 - Skeleton compression for synthetic data is exact (all files brace-group to one
   line). Real skeletons vary by directory depth.
-- Does not model cache expiry (heartbeat keeps cache alive; no query gap > 4 min
-  in a real session of ten turns).
+- Does not model cache expiry (the heartbeat keeps the 1-hour skeleton entry
+  alive; `benchmark_cache_warming.py` prices what that costs).
 
 ---
 
@@ -552,6 +553,45 @@ The fixed top-level effort is never more expensive, and saves most when an effor
 | 3 min | x0.3 | no | +75.0% | -90.9% |
 
 Averaged over openers in the repo mix, `first` costs about 54% less than `effort`, but all of that comes from sessions that open on Haiku and then answer the 10 Sonnet-routed questions on Haiku as well. Whichever question happens to come first decides the session's model. It is the default by the developer's choice, for one predictable model per session; `LLM_LIGHT_ROUTE_ONCE=0` restores per-turn routing.
+
+---
+
+## 2d · `benchmark_cache_warming.py` — What Keeping the Cache Warm Costs
+
+### Purpose
+
+Prices the startup warm and the idle heartbeat, which `benchmark_session_cache.py` leaves out. A warm request is a cache read of the whole prefix, or a 1-hour write when the entry is missing, so a warm that no turn reads is pure cost.
+
+### Methodology
+
+Runs the real `warm_cache()` and `heartbeat()` against a fake API client and a fake clock, so the policy measured is whatever the code on the current commit does. The fake client keeps a 1-hour prompt cache per model for the prefix (skeleton, tools and system prompt, measured from this repo at 4 characters per token) and prices each request with `MODEL_PRICES`: a read when that model's entry is alive, a 1-hour write when it is not. Each scenario starts the session (the startup warm `full_refresh()` sends), asks one question at minute 1, stays idle for `--idle` hours with the heartbeat running, then asks a second question on the same model. A turn is priced as one prefix read or write on its model. History, retrieved chunks and output are the same under every warming policy and are left out.
+
+### Running
+
+```bash
+python tests/benchmarks/benchmark_cache_warming.py
+python tests/benchmarks/benchmark_cache_warming.py --idle 8
+```
+
+### Results (2026-11-01)
+
+Prefix 16,807 tokens. Prefix cost of the whole scenario (warms plus the two questions), before and after the change that warms once per TTL, only the model the turns read, and nothing before that model is known:
+
+| Session | Idle | Warms before | Warms after | Before | After | Change |
+|---|---|---|---|---|---|---|
+| routed, opens on Haiku | 0 h | 1 | 0 | $0.0708 | $0.0035 | -95% |
+| routed, opens on Sonnet | 0 h | 1 | 0 | $0.0706 | $0.0689 | -2% |
+| routed, opens on Opus | 0 h | 1 | 0 | $0.2050 | $0.1378 | -33% |
+| pinned Opus (`--model opus`) | 0 h | 1 | 1 | $0.2050 | $0.1412 | -31% |
+| routed, opens on Haiku | 1 h | 112 | 1 | $0.0894 | $0.0037 | -96% |
+| routed, opens on Sonnet | 1 h | 112 | 1 | $0.2571 | $0.0706 | -73% |
+| routed, opens on Opus | 1 h | 112 | 1 | $0.5782 | $0.1412 | -76% |
+| pinned Opus (`--model opus`) | 1 h | 112 | 2 | $0.5227 | $0.1445 | -72% |
+| routed, opens on Sonnet | 8 h | 952 | 8 | $1.6689 | $0.0824 | -95% |
+| routed, opens on Opus | 8 h | 952 | 8 | $3.4017 | $0.1647 | -95% |
+| pinned Opus (`--model opus`) | 8 h | 952 | 9 | $1.9345 | $0.1681 | -91% |
+
+Three causes, all in the old code. The heartbeat measured idle time from the last turn only, so once idle passed 240 s it warmed on every 30 s tick: 112 warms in an idle hour where one read inside the 1-hour TTL is enough (a read resets the timer). The startup warm wrote Sonnet's entry before any question was routed, a $0.067 write that no turn reads when the session opens on Haiku (33 of the 43 repo questions) or Opus. And `warm()` ignored the `--model` pin, so a pinned session kept Sonnet warm while its turns read Opus. No scenario costs more after the change. The one thing lost is latency: a session whose model is not pinned now pays the prefix write on its first question instead of in the background at startup. This is a cost model, not a live run.
 
 ---
 

@@ -9,7 +9,7 @@ This sequence diagram illustrates the complete flow from user query to response,
 
 ### Key Phases
 
-1. **Session Initialization** - Build skeleton, index files, warm cache
+1. **Session Initialization** - Build skeleton, index files, warm the cache when the model is already known (`--model`, `/model`, or a session model restored by `--continue`)
 2. **Query Routing** - Weighted scoring of intent, complexity, and context to select the most efficient model.
 3. **Chunk Retrieval** - Find relevant code via embedding similarity
 4. **Context Assembly** - Build message with cache breakpoints
@@ -18,7 +18,7 @@ This sequence diagram illustrates the complete flow from user query to response,
 
 ### Background Processes
 
-- **Heartbeat Daemon** - Keeps cache warm every 30 seconds
+- **Heartbeat Daemon** - Wakes every 30 seconds and warms the cache once `CACHE_TTL_SECS` (55 minutes) have passed since the last turn or warm, so one cache read per idle hour keeps the 1-hour skeleton entry alive
 - **File Watcher** - Re-indexes changed files automatically
 
 ### Interactive Commands
@@ -56,8 +56,9 @@ User -> Main : Start application
 Main -> Skeleton : build_skeleton()
 Skeleton --> Main : directory tree + .md files
 Main -> LLM : warm_cache()
-LLM -> API : minimal request with skeleton
-API --> LLM : cache skeleton (ephemeral)
+note right : only when the model is known\n(pinned, or restored on resume);\nelse the first turn writes it
+LLM -> API : max_tokens=0 request with skeleton
+API --> LLM : cache skeleton (1 h TTL)
 Main -> Main : Start heartbeat daemon
 Main -> Main : Start file watcher
 
@@ -85,7 +86,7 @@ LLM -> LLM : _maybe_compress_history()
 LLM -> Skeleton : Get cached skeleton
 Skeleton --> LLM : skeleton_context
 
-LLM -> API : messages.create()\n- system (skeleton cached)\n- history (last turn cached)\n- chunks (cached if repeated)\n- new query
+LLM -> API : messages.create()\n- system (skeleton cached)\n- history (last turn cached)\n- chunks (read by tool rounds)\n- new query
 activate API
 API --> LLM : Stream response\n(thinking + text)
 deactivate API
@@ -122,12 +123,12 @@ LLM --> Main : Response complete
 deactivate LLM
 
 == Background Processes ==
-note over Main : Heartbeat daemon (every 30s)
+note over Main : Heartbeat daemon (wakes every 30s)
 loop Every HEARTBEAT_SECS
-  Main -> Main : Check idle time
-  alt idle > CACHE_TTL_SECS (4 min)
+  Main -> Main : Time since last turn or warm
+  alt > CACHE_TTL_SECS (55 min)
     Main -> API : warm_cache()
-    note right : Keep ephemeral cache alive\nPrevents 10x cold-start cost
+    note right : One cache read resets the\n1 h TTL; the next turn avoids\na fresh 1 h write
   end
 end
 

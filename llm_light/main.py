@@ -222,15 +222,24 @@ def _print_help():
 
 
 def heartbeat():
+    """Keep the skeleton's cache entry alive while the session is idle.
+
+    The entry has a 1-hour TTL and every read resets it, so one warm per
+    CACHE_TTL_SECS since the last turn or warm is enough. Measured from the
+    last turn alone, an idle session warmed on every tick after the threshold
+    (112 warms in an idle hour, tests/benchmarks/benchmark_cache_warming.py).
+    """
     if AUTH_MODE == "OAUTH" or not providers.active().has(CACHING):
         return
+    import time
+    last_warm = 0.0
     while not state.stop_event.is_set():
         state.stop_event.wait(HEARTBEAT_SECS)
         with state.lock:
-            import time
-            idle = time.time() - state.last_interaction
+            idle = time.time() - max(state.last_interaction, last_warm)
         if idle > CACHE_TTL_SECS and not state.stop_event.is_set():
             warm_cache(quiet=True)  # a background thread: no print over the prompt
+            last_warm = time.time()
 
 
 def _setup_signal_handlers():

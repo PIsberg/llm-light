@@ -1677,14 +1677,19 @@ class TestWarmCache(unittest.TestCase):
         from llm_light import warm_cache
         import llm_light as cl
         resp = self._make_response()
-        with patch("llm_light.providers.claude.client.messages.create", return_value=resp), \
+        # A session model, or warm_cache() has no model to warm and sends nothing.
+        with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create, \
+             patch("llm_light.state.session_model", "claude-sonnet-5-5"), \
              patch("llm_light.print_stats"):
             warm_cache(quiet=True)
+        create.assert_called_once()
 
     def test_warm_cache_exception_no_crash(self):
         from llm_light import warm_cache
-        with patch("llm_light.providers.claude.client.messages.create", side_effect=Exception("net error")):
+        with patch("llm_light.providers.claude.client.messages.create", side_effect=Exception("net error")) as create, \
+             patch("llm_light.state.session_model", "claude-sonnet-5-5"):
             warm_cache(quiet=True)
+        create.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -3528,10 +3533,13 @@ class TestWarmCacheVerbose(unittest.TestCase):
         resp.usage.output_tokens = 1
         resp.usage.cache_creation_input_tokens = 500
         resp.usage.cache_read_input_tokens = 200
-        with patch("llm_light.providers.claude.client.messages.create", return_value=resp), \
-             patch("llm_light.print_stats"), \
+        with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create, \
+             patch("llm_light.state.session_model", "claude-sonnet-5-5"), \
+             patch("llm_light.print_stats") as stats, \
              patch("builtins.print"):
             warm_cache(quiet=False)
+        create.assert_called_once()
+        stats.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

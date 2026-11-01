@@ -142,7 +142,10 @@ MODEL_FABLE             = "claude-fable-5-1"
 MODEL                   = MODEL_SONNET              # default; overridden per-turn by router
 SUMMARY_MODEL           = MODEL_HAIKU               # cheap model for history compression
 HEARTBEAT_SECS          = 30
-CACHE_TTL_SECS          = 240
+# Seconds since the last cache use (a turn or a warm) before the heartbeat
+# re-reads the skeleton entry: five minutes inside its 1-hour TTL, which is
+# counted from the start of the request that last used it.
+CACHE_TTL_SECS          = 3_300
 ENABLE_STREAMING        = True         # enable real-time token streaming
 TARGET_RETRIEVED_TOKENS = 6_000   # desired context size per query in tokens
 # Absolute similarity floor. Natural questions score lower against code than
