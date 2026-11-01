@@ -2,6 +2,7 @@
 import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -9,6 +10,15 @@ from pathlib import Path
 from llm_light.providers.base import ProviderError
 
 TIMEOUT_SECS = 600
+
+# signal.SIGKILL does not exist on Windows; it is only used on POSIX.
+_SIGKILL = getattr(signal, "SIGKILL", 9)
+
+
+def new_session() -> bool:
+    """Popen's start_new_session for a CLI child: its own process group on
+    POSIX, so kill_process_tree can stop everything it starts."""
+    return os.name != "nt"
 
 
 @contextlib.contextmanager
@@ -36,7 +46,8 @@ def run_cli(provider: str, argv: list, stdin_text: str, timeout: float = TIMEOUT
     try:
         proc = subprocess.Popen(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace", cwd=cwd)
+            text=True, encoding="utf-8", errors="replace", cwd=cwd,
+            start_new_session=new_session())
     except FileNotFoundError:
         raise ProviderError(f"{binary} CLI not found. Install it and log in, "
                             f"or choose another --provider.")
@@ -64,7 +75,11 @@ def kill_process_tree(proc) -> None:
 
     On Windows the CLI runs via cmd.exe (shell=True), so proc.kill() only
     ends the shell: the CLI keeps running, keeps editing files, and keeps
-    the stdout pipe open so the read loop never finishes.
+    the stdout pipe open so the read loop never finishes. On POSIX a wrapper
+    (the codex npm script, sh for shell=True) starts the real binary as a
+    child, so the whole process group is killed. That needs the child to
+    lead its own group (Popen(start_new_session=new_session())); a child
+    in our group is killed alone, because killpg would end llm_light too.
     """
     if proc.poll() is not None:
         return
@@ -74,6 +89,8 @@ def kill_process_tree(proc) -> None:
                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                 capture_output=True, stdin=subprocess.DEVNULL,
             )
+        elif os.getpgid(proc.pid) == proc.pid:
+            os.killpg(proc.pid, _SIGKILL)
         else:
             proc.kill()
     except Exception:

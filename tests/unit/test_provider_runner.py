@@ -163,14 +163,60 @@ def test_fr011_kill_process_tree_on_windows_runs_taskkill_on_the_pid():
     assert run.call_args[0][0] == ["taskkill", "/F", "/T", "/PID", "4242"]
 
 
-def test_fr011_kill_process_tree_on_posix_kills_the_process():
+def test_kill_process_tree_on_posix_kills_the_process_group():
+    # #115: the codex npm wrapper starts a native binary; killing only the
+    # wrapper left that binary running after a timeout.
     proc = FakeProc()
     proc.kill = MagicMock()
-    with patch.object(runner.os, "name", "posix"), \
-         patch("llm_light.providers.runner.subprocess.run") as run:
+    with patch.object(runner.os, "name", "posix"),          patch.object(runner.os, "getpgid", create=True, return_value=4242),          patch.object(runner.os, "killpg", create=True) as killpg,          patch("llm_light.providers.runner.subprocess.run") as run:
         runner.kill_process_tree(proc)
-    proc.kill.assert_called_once_with()
+    killpg.assert_called_once_with(4242, runner._SIGKILL)
     run.assert_not_called()
+
+
+def test_kill_process_tree_on_posix_kills_only_the_process_when_it_leads_no_group():
+    # A process started without start_new_session shares our group; killpg
+    # on it would kill llm_light itself.
+    proc = FakeProc()
+    proc.kill = MagicMock()
+    with patch.object(runner.os, "name", "posix"),          patch.object(runner.os, "getpgid", create=True, return_value=1),          patch.object(runner.os, "killpg", create=True) as killpg:
+        runner.kill_process_tree(proc)
+    killpg.assert_not_called()
+    proc.kill.assert_called_once_with()
+
+
+@pytest.mark.parametrize("os_name, expected", [("posix", True), ("nt", False)])
+def test_new_session_on_posix_only(os_name, expected):
+    with patch.object(runner.os, "name", os_name):
+        assert runner.new_session() is expected
+
+
+def test_run_cli_starts_the_cli_in_its_own_session_where_supported():
+    import os
+    proc = FakeProc(stdout="ok")
+    _, error, popen, _ = _run(proc)
+    assert error is None
+    assert popen.call_args.kwargs.get("start_new_session") is (os.name != "nt")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups; Windows uses taskkill /T")
+def test_timeout_kills_a_grandchild_for_real(tmp_path):
+    import os
+    import time
+    pidfile = tmp_path / "child.pid"
+    script = f"sleep 60 & echo $! > '{pidfile}'; wait"
+    with pytest.raises(base.ProviderError):
+        runner.run_cli("fake", ["sh", "-c", script], "", timeout=1)
+    child = int(pidfile.read_text().strip())
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.05)
+    os.kill(child, 9)
+    pytest.fail(f"grandchild {child} still running after the timeout")
 
 
 def test_fr010_cwd_is_passed_to_popen(tmp_path):

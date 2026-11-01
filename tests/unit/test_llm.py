@@ -907,6 +907,21 @@ class TestCliSubprocessStreaming(unittest.TestCase):
         real = (_os.path.expanduser("~").replace("\\", "/") + "/.claude/CLAUDE.md")
         self.assertIn(real, seen.get("claudeMdExcludes", []))
 
+    def test_cli_runs_in_its_own_session_on_posix(self):
+        print("\n  ▶ TestCliSubprocessStreaming.test_cli_runs_in_its_own_session_on_posix")
+        # #115: kill_process_tree kills the CLI's process group on POSIX, so
+        # the CLI must lead one; on Windows it uses taskkill /T instead.
+        import os as _os
+        seen = {}
+
+        def fake_popen(cmd, **kwargs):
+            seen.update(kwargs)
+            return _fake_popen(['{"type":"result","subtype":"success","result":"","usage":{}}'])
+
+        with patch("llm_light.llm.subprocess.Popen", side_effect=fake_popen),              patch("shutil.which", return_value="/fake/bin/claude"),              patch("sys.stdout", io.StringIO()):
+            _claude_mod._make_cli_subprocess_call("hi")
+        self.assertIs(seen.get("start_new_session"), _os.name != "nt")
+
     def test_command_uses_stream_json_flags(self):
         print("\n  ▶ TestCliSubprocessStreaming.test_command_uses_stream_json_flags")
         # Lock in the CLI flags we rely on — if any of these change, the
