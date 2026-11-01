@@ -436,3 +436,85 @@ def test_t027_one_done_command_with_one_command_denial_does_not_raise():
                   _result("a fine answer", denied_actions=_denied("command", "RunCommand")))
     (reply, _u, _p), _, _ = _complete(out)
     assert reply == "a fine answer"
+
+
+# --- #118: agy runs with an isolated home ---------------------------------------
+# Probed with agy 1.4.12 on Windows: with HOME and USERPROFILE pointing at an
+# empty directory, `agy mcp list` reports no MCP servers and `agy plugin list`
+# no plugins (the real home has lean-ctx and four plugins), and a run still
+# answers (sign-in is not kept under ~/.gemini). agy's own state
+# (conversations, logs, plan artifacts) is written there instead of the
+# user's history. The user's model is carried over through --settings.
+
+_USER_SETTINGS = (".gemini", "antigravity-cli", "settings.json")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_agy_settings(monkeypatch, tmp_path):
+    """No test reads the developer's real agy settings."""
+    home = tmp_path / "realhome"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    return home
+
+
+def _capture_env_run(seen, stdout=None, error=None):
+    import os
+
+    def fake(provider, argv, stdin_text, *a, **kw):
+        env = kw.get("env")
+        assert env is not None, "run_cli called without env"
+        seen["env"] = env
+        seen["cwd"] = kw.get("cwd")
+        seen["argv"] = argv
+        seen["home_listing"] = os.listdir(env["HOME"])
+        if error:
+            raise error
+        return stdout
+    return fake
+
+
+@pytest.mark.parametrize("method", ["complete", "summarize"])
+@pytest.mark.parametrize("fail", [False, True])
+def test_118_agy_runs_with_an_empty_home_removed_afterwards(method, fail, _no_real_agy_settings):
+    import os
+    seen = {}
+    fake = _capture_env_run(seen, stdout=_stdout("x"), error=ProviderError("boom") if fail else None)
+    with patch(_WHICH, return_value=_AGY), patch(_RUN, side_effect=fake):
+        call = (lambda: gemini.PROVIDER.complete(_request())) if method == "complete" \
+            else (lambda: gemini.PROVIDER.summarize("Summarize: X"))
+        if fail:
+            with pytest.raises(ProviderError):
+                call()
+        else:
+            call()
+    env = seen["env"]
+    assert env["HOME"] == env["USERPROFILE"]
+    assert seen["home_listing"] == []
+    assert os.path.realpath(env["HOME"]) != os.path.realpath(seen["cwd"])
+    assert os.path.realpath(env["HOME"]) != os.path.realpath(str(_no_real_agy_settings))
+    assert env.get("PATH") == os.environ.get("PATH")
+    assert not os.path.exists(env["HOME"])
+
+
+def test_118_the_users_model_is_carried_in_settings_and_nothing_else(_no_real_agy_settings):
+    path = _no_real_agy_settings.joinpath(*_USER_SETTINGS)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({
+        "model": "Gemini 3.8 Flash (Medium)",
+        "permissions": {"allow": ["command", "mcp", "file"], "deny": []},
+        "allowNonWorkspaceAccess": True,
+    }), encoding="utf-8")
+    _, run, _ = _complete()
+    assert json.loads(run.call_args[0][1][-2]) == dict(_SETTINGS, model="Gemini 3.8 Flash (Medium)")
+
+
+@pytest.mark.parametrize("content", [None, "{not json", json.dumps({"model": 7}),
+                                     json.dumps(["model"]), json.dumps({"colorScheme": "x"})])
+def test_118_no_model_without_a_usable_user_setting(content, _no_real_agy_settings):
+    if content is not None:
+        path = _no_real_agy_settings.joinpath(*_USER_SETTINGS)
+        path.parent.mkdir(parents=True)
+        path.write_text(content, encoding="utf-8")
+    _, run, _ = _complete()
+    assert json.loads(run.call_args[0][1][-2]) == _SETTINGS
