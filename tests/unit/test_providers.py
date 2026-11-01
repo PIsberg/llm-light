@@ -16,10 +16,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light  # noqa: F401  (loads the package before the submodules)
-from claude_light import llm, providers, state
-from claude_light.providers import base
-from claude_light.providers.claude import ClaudeProvider
+import llm_light  # noqa: F401  (loads the package before the submodules)
+from llm_light import llm, providers, state
+from llm_light.providers import base
+from llm_light.providers.claude import ClaudeProvider
 
 _NO_USAGE_FIGURES = types.SimpleNamespace(input_tokens=0, output_tokens=0)
 
@@ -100,8 +100,8 @@ def test_fr002_active_falls_back_to_default_when_nothing_selected(monkeypatch):
 
 
 def test_us4_get_claude_works_without_the_other_provider_modules(monkeypatch):
-    monkeypatch.setitem(sys.modules, "claude_light.providers.gemini", None)
-    monkeypatch.setitem(sys.modules, "claude_light.providers.codex", None)
+    monkeypatch.setitem(sys.modules, "llm_light.providers.gemini", None)
+    monkeypatch.setitem(sys.modules, "llm_light.providers.codex", None)
     assert providers.get("claude").name == "claude"
 
 
@@ -117,10 +117,10 @@ def test_fr005_claude_capabilities_are_the_seven_constants():
 # --- main --provider (FR-001, FR-002, US1 scenario 3) ------------------------
 
 def _run_main(monkeypatch, argv):
-    from claude_light import main as main_mod
+    from llm_light import main as main_mod
     fake = MagicMock()
     select = MagicMock(return_value=fake)
-    monkeypatch.setattr(sys, "argv", ["claude_light"] + argv)
+    monkeypatch.setattr(sys, "argv", ["llm_light"] + argv)
     monkeypatch.setattr(providers, "select", select)
     monkeypatch.setattr(main_mod, "one_shot", MagicMock())
     monkeypatch.setattr(main_mod, "_start_llmlingua_load", lambda: None)
@@ -141,8 +141,8 @@ def test_fr002_us1s3_main_without_flag_selects_claude(monkeypatch):
 
 
 def test_unknown_provider_flag_exits_2_listing_valid_names(monkeypatch, capsys):
-    from claude_light import main as main_mod
-    monkeypatch.setattr(sys, "argv", ["claude_light", "--provider", "x", "q"])
+    from llm_light import main as main_mod
+    monkeypatch.setattr(sys, "argv", ["llm_light", "--provider", "x", "q"])
     monkeypatch.setattr(main_mod, "_start_llmlingua_load", lambda: None)
     # Nothing may reach a real API if the flag is wrongly accepted.
     monkeypatch.setattr(main_mod, "one_shot", MagicMock())
@@ -252,7 +252,7 @@ def test_fr011_provider_error_leaves_history_turns_and_git_untouched(
 # --- T017: warm_cache goes through the provider (constitution IV) -------------
 
 def test_iv_warm_cache_under_a_provider_without_warm_is_silent(monkeypatch, clean_state, capsys):
-    import claude_light.ui as ui
+    import llm_light.ui as ui
     monkeypatch.setattr(state, "provider", FakeProvider(), raising=False)
     with patch.object(ui, "notify") as notify, \
          patch.object(ClaudeProvider, "warm") as claude_warm:
@@ -272,38 +272,38 @@ def test_iv_warm_cache_under_claude_calls_claude_warm_once_with_quiet(monkeypatc
 
 
 def test_fr006_package_client_is_the_claude_provider_client():
-    from claude_light.providers import claude as claude_mod
-    assert claude_light.client is claude_mod.client
+    from llm_light.providers import claude as claude_mod
+    assert llm_light.client is claude_mod.client
 
 
 def test_fr006_package_client_stub_reaches_warm_cache(monkeypatch, clean_state):
-    from claude_light.providers import claude as claude_mod
+    from llm_light.providers import claude as claude_mod
     stub = MagicMock()
     monkeypatch.setattr(state, "provider", None, raising=False)
     monkeypatch.setattr(state, "session_cost", 0.0, raising=False)
     # _accumulate_usage mutates these dicts in place; patch with copies so the
     # mock usage never leaks into later tests.
-    # The package wrapper re-binds state.session_tokens from claude_light.session_tokens
+    # The package wrapper re-binds state.session_tokens from llm_light.session_tokens
     # on every call, so that binding has to be patched as well.
     tokens = dict(state.session_tokens)
     monkeypatch.setattr(state, "session_tokens", tokens)
-    monkeypatch.setattr(claude_light, "session_tokens", tokens)
+    monkeypatch.setattr(llm_light, "session_tokens", tokens)
     monkeypatch.setattr(state, "session_costs", dict(state.session_costs))
     monkeypatch.setattr(state, "global_stats", dict(state.global_stats))
     monkeypatch.setattr(claude_mod, "AUTH_MODE", "API_KEY")
-    monkeypatch.setattr(claude_light, "client", stub)
+    monkeypatch.setattr(llm_light, "client", stub)
     try:
-        claude_light.warm_cache(quiet=True)
+        llm_light.warm_cache(quiet=True)
     except Exception:
         pass  # the stub's response is not a real one; only the call matters here
-    assert stub.messages.create.called, "warm_cache never reached the stub set on claude_light.client"
+    assert stub.messages.create.called, "warm_cache never reached the stub set on llm_light.client"
 
 
 def test_us4_import_succeeds_with_the_claude_provider_module_blocked():
     import subprocess
     repo = Path(__file__).resolve().parent.parent.parent
-    code = ("import sys; sys.modules['claude_light.providers.claude'] = None; "
-            "import claude_light")
+    code = ("import sys; sys.modules['llm_light.providers.claude'] = None; "
+            "import llm_light")
     proc = subprocess.run([sys.executable, "-c", code], cwd=repo, capture_output=True,
                           text=True, timeout=120)
     assert proc.returncode == 0, proc.stderr[-800:]

@@ -16,9 +16,9 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light.config as config
-import claude_light.state as state
-from claude_light import llm
+import llm_light.config as config
+import llm_light.state as state
+from llm_light import llm
 
 OPUS_MAX = (llm.MODEL_OPUS, "max", 16_000)
 SONNET_HIGH = (llm.MODEL_SONNET, "high", 8_192)
@@ -32,8 +32,8 @@ class _SessionCase(unittest.TestCase):
         state.session_budget = None
         state.session_cost = 0.0
         state.top_tier_declined = False
-        self._patches = [patch("claude_light.config.ROUTE_ONCE", True),
-                         patch("claude_light.llm.sys.stdin")]
+        self._patches = [patch("llm_light.config.ROUTE_ONCE", True),
+                         patch("llm_light.llm.sys.stdin")]
         for p in self._patches:
             p.start()
         llm.sys.stdin.isatty.return_value = True
@@ -44,7 +44,7 @@ class _SessionCase(unittest.TestCase):
         state.session_budget, state.session_cost, state.top_tier_declined = self._saved
 
     def _finalize(self, route, answer=None):
-        with patch("claude_light.llm.choose", return_value=answer) as choose:
+        with patch("llm_light.llm.choose", return_value=answer) as choose:
             result = llm._finalize_route(*route)
         return result, choose
 
@@ -53,8 +53,8 @@ class TestRouterIsPure(unittest.TestCase):
     """Benchmarks and /why call route_query(); it must not pin or prompt."""
 
     def test_route_query_does_not_pin_the_session_model(self):
-        with patch("claude_light.config.ROUTE_ONCE", True), \
-             patch("claude_light.llm.choose") as choose:
+        with patch("llm_light.config.ROUTE_ONCE", True), \
+             patch("llm_light.llm.choose") as choose:
             first, _, _ = llm.route_query("list all files")
             second, _, _ = llm.route_query("refactor the parse method to handle exceptions")
         self.assertEqual((first, second), (llm.MODEL_HAIKU, llm.MODEL_SONNET))
@@ -62,7 +62,7 @@ class TestRouterIsPure(unittest.TestCase):
         choose.assert_not_called()
 
     def test_route_query_still_reports_opus_for_the_top_tier(self):
-        with patch("claude_light.llm.choose") as choose:
+        with patch("llm_light.llm.choose") as choose:
             model, effort, _ = llm.route_query(
                 "evaluate the scalability trade-offs of the current microservices architecture deeply")
         self.assertEqual((model, effort), (llm.MODEL_OPUS, "max"))
@@ -133,7 +133,7 @@ class TestTopTierWithRouteOnce(_SessionCase):
         choose.assert_not_called()
 
     def test_per_turn_mode_asks_every_top_tier_question(self):
-        with patch("claude_light.config.ROUTE_ONCE", False):
+        with patch("llm_light.config.ROUTE_ONCE", False):
             self._finalize(OPUS_MAX, "fable")
             (model, _, _), choose = self._finalize(OPUS_MAX, "opus")
             (later, _, _), _ = self._finalize(HAIKU_LOW)
@@ -156,13 +156,13 @@ class TestTopTierReachesTheRequest(_SessionCase):
         saved = (list(state.conversation_history), state.turn_count)
         state.conversation_history[:] = []
         try:
-            with patch("claude_light.llm.route_query", return_value=route), \
-                 patch("claude_light.llm.choose", return_value=answer), \
-                 patch("claude_light.providers.claude._make_streaming_api_call", side_effect=fake_call), \
-                 patch("claude_light.llm.retrieve", return_value=("", [])), \
-                 patch("claude_light.llm._maybe_compress_history"), \
-                 patch("claude_light.llm._print_reply"), \
-                 patch("claude_light.llm.print_stats"):
+            with patch("llm_light.llm.route_query", return_value=route), \
+                 patch("llm_light.llm.choose", return_value=answer), \
+                 patch("llm_light.providers.claude._make_streaming_api_call", side_effect=fake_call), \
+                 patch("llm_light.llm.retrieve", return_value=("", [])), \
+                 patch("llm_light.llm._maybe_compress_history"), \
+                 patch("llm_light.llm._print_reply"), \
+                 patch("llm_light.llm.print_stats"):
                 llm.chat("question")
         finally:
             state.conversation_history[:], state.turn_count = saved

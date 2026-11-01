@@ -1,5 +1,5 @@
 """
-Tests for claude_light.cli_shell_guard, the PreToolUse hook that stops the
+Tests for llm_light.cli_shell_guard, the PreToolUse hook that stops the
 OAuth CLI agent chaining a second command after an allowlisted prefix
 (issue #70). The CLI matched Bash(echo:*) against the first statement only,
 so `echo step1 && touch marker` ran the touch too (verified live, claude
@@ -19,8 +19,8 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.providers import claude as _claude_mod  # noqa: E402  (T017: moved transport)
-from claude_light import cli_shell_guard, tools
+from llm_light.providers import claude as _claude_mod  # noqa: E402  (T017: moved transport)
+from llm_light import cli_shell_guard, tools
 
 
 def _run_hook(payload):
@@ -99,7 +99,7 @@ class TestCliShellGuard(unittest.TestCase):
 class TestCliSettingsInstallTheGuard(unittest.TestCase):
 
     def _settings_for(self, allowed, tools_on=True):
-        from claude_light import llm, config
+        from llm_light import llm, config
         seen = {}
 
         def fake_popen(cmd, **kwargs):
@@ -112,7 +112,7 @@ class TestCliSettingsInstallTheGuard(unittest.TestCase):
             return proc
 
         with patch.object(config, "ALLOWED_COMMANDS", allowed), \
-             patch("claude_light.llm.subprocess.Popen", side_effect=fake_popen), \
+             patch("llm_light.llm.subprocess.Popen", side_effect=fake_popen), \
              patch("shutil.which", return_value="/fake/bin/claude"), \
              patch("sys.stdout", io.StringIO()):
             _claude_mod._make_cli_subprocess_call("hi", tools=tools_on)

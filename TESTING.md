@@ -36,16 +36,16 @@ CI runs the unit, integration and utilities suites, plus the two benchmark regre
 `tests/conftest.py` sets these before any test imports the package:
 
 - `ANTHROPIC_API_KEY=sk-ant-test-mock-key`: unit tests never reach the API.
-- `CLAUDE_LIGHT_HYBRID=0`: the suite uses one auto-tuned embedding model. `tests/unit/test_hybrid.py` switches hybrid retrieval back on for its own tests.
-- `CLAUDE_LIGHT_STATS_FILE` points at a temp file, so a test run never writes the real `~/.claude_light_stats.json`.
-- `CLAUDE_LIGHT_SESSION_DIR` points at a temp dir, so a test never writes a real conversation to `~/.claude_light_sessions`.
+- `LLM_LIGHT_HYBRID=0`: the suite uses one auto-tuned embedding model. `tests/unit/test_hybrid.py` switches hybrid retrieval back on for its own tests.
+- `LLM_LIGHT_STATS_FILE` points at a temp file, so a test run never writes the real `~/.llm_light_stats.json`.
+- `LLM_LIGHT_SESSION_DIR` points at a temp dir, so a test never writes a real conversation to `~/.llm_light_sessions`.
 
 If you add a test that needs one of these changed, set it inside the test, not in the module.
 
 Two autouse fixtures in the same file run around every test:
 
 - `_fresh_session_model` clears `state.session_model`, so one test's route does not pin the next test's model.
-- `_no_real_llmlingua_loader` fails a test that starts the real LLMLingua loader thread. `main()` starts one, and it keeps loading after the test ends, then sets the compressor singleton under a later test (#74). A test that calls `main()` patches `claude_light.main._start_llmlingua_load`, as `TestMainRouting.setUp` does.
+- `_no_real_llmlingua_loader` fails a test that starts the real LLMLingua loader thread. `main()` starts one, and it keeps loading after the test ends, then sets the compressor singleton under a later test (#74). A test that calls `main()` patches `llm_light.main._start_llmlingua_load`, as `TestMainRouting.setUp` does.
 
 ## Where a new test goes
 
@@ -53,7 +53,7 @@ Add the test to the file for the module you changed, in the existing style. A te
 
 | You changed | Test in |
 |---|---|
-| A module under `claude_light/` | `tests/unit/test_<module>.py` |
+| A module under `llm_light/` | `tests/unit/test_<module>.py` |
 | Routing (`route_query`) | `tests/unit/test_llm.py`, plus `tests/test_fuzz.py` for inputs |
 | Retrieval budgets or selection | `tests/unit/test_retrieval.py`; `test_hybrid.py` for the hybrid path |
 | Config constants | `tests/unit/test_config.py` (runs first in CI) |

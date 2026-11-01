@@ -1,4 +1,4 @@
-"""Tests for claude_light.affected_tests: mapping edits to the tests to run."""
+"""Tests for llm_light.affected_tests: mapping edits to the tests to run."""
 
 import os
 import shutil
@@ -11,8 +11,8 @@ from unittest import mock
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light import affected_tests as at
-from claude_light import config
+from llm_light import affected_tests as at
+from llm_light import config
 
 
 class TestAffectedTests(unittest.TestCase):
@@ -61,11 +61,11 @@ class TestAffectedTests(unittest.TestCase):
 
     def test_check_reports_pass_and_fail(self):
         with mock.patch.object(config, "ALLOWED_COMMANDS", ["python -m pytest"]), \
-             mock.patch("claude_light.tools.run_tool", return_value=("ok", False)):
+             mock.patch("llm_light.tools.run_tool", return_value=("ok", False)):
             self.assertTrue(at.check_after_edit(["pkg/billing.py"], self.root))
         with mock.patch.object(config, "ALLOWED_COMMANDS", ["python -m pytest"]), \
-             mock.patch("claude_light.tools.run_tool", return_value=("FAILED", True)), \
-             mock.patch("claude_light.git_manager.is_git_repo", return_value=False):
+             mock.patch("llm_light.tools.run_tool", return_value=("FAILED", True)), \
+             mock.patch("llm_light.git_manager.is_git_repo", return_value=False):
             self.assertFalse(at.check_after_edit(["pkg/billing.py"], self.root))
 
 

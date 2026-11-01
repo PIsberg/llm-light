@@ -1,5 +1,5 @@
 ---
-description: Index of the claude_light reference docs. Find the document for your task here, then read only that one.
+description: Index of the llm_light reference docs. Find the document for your task here, then read only that one.
 ---
 
 # Documentation index

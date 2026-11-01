@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-PKG = ROOT / "claude_light"
+PKG = ROOT / "llm_light"
 
 NAMES = ("claude", "gemini", "codex")
 SDKS = {
@@ -85,7 +85,7 @@ def test_fr004_regex_matches_the_binary_forms(text):
     assert NAME_RE.search(text), text
 
 
-@pytest.mark.parametrize("text", ["claude.md", " claude light", "claude_light",
-                                  "CLAUDE.md", "the claude light banner"])
+@pytest.mark.parametrize("text", ["claude.md", " llm light", "llm_light",
+                                  "CLAUDE.md", "the llm light banner"])
 def test_fr004_regex_ignores_file_names_product_name_and_identifiers(text):
     assert not NAME_RE.search(text), text

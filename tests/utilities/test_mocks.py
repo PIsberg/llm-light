@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 class MockManager:
     def __init__(self, preset):
-        from claude_light.ui import _T_TEST
+        from llm_light.ui import _T_TEST
         self._T_TEST = _T_TEST
         self.preset = preset
         self.files = {}
@@ -29,32 +29,32 @@ class MockManager:
             self.total_tokens += len(content) // 4
             
     def start(self):
-        import claude_light.skeleton
-        import claude_light.indexer
-        import claude_light.editor
-        import claude_light.llm
-        import claude_light.providers.claude
-        import claude_light.executor
-        import claude_light.config
+        import llm_light.skeleton
+        import llm_light.indexer
+        import llm_light.editor
+        import llm_light.llm
+        import llm_light.providers.claude
+        import llm_light.executor
+        import llm_light.config
         
         mock_path = self._mock_path_class()
         self.path_patchers = [
-            patch.object(claude_light.skeleton, 'Path', new=mock_path),
-            patch.object(claude_light.indexer, 'Path', new=mock_path),
-            patch.object(claude_light.editor, 'Path', new=mock_path),
-            patch.object(claude_light.config, 'Path', new=mock_path),
+            patch.object(llm_light.skeleton, 'Path', new=mock_path),
+            patch.object(llm_light.indexer, 'Path', new=mock_path),
+            patch.object(llm_light.editor, 'Path', new=mock_path),
+            patch.object(llm_light.config, 'Path', new=mock_path),
         ]
         self.path_patcher = self.path_patchers[0]
         for p in self.path_patchers: p.start()
         
-        self.api_patcher = patch.object(claude_light.providers.claude.client.messages, "create", side_effect=self._mock_create_message)
+        self.api_patcher = patch.object(llm_light.providers.claude.client.messages, "create", side_effect=self._mock_create_message)
         self.api_patcher.start()
         
-        self.orig_print_stats = claude_light.llm.print_stats
-        self.stats_patcher = patch.object(claude_light.llm, "print_stats", side_effect=self._mock_print_stats)
+        self.orig_print_stats = llm_light.llm.print_stats
+        self.stats_patcher = patch.object(llm_light.llm, "print_stats", side_effect=self._mock_print_stats)
         self.stats_patcher.start()
         
-        self.embedder_patcher = patch.object(claude_light, "SentenceTransformer", new=self._mock_embedder_class)
+        self.embedder_patcher = patch.object(llm_light, "SentenceTransformer", new=self._mock_embedder_class)
         self.embedder_patcher.start()
         
         print(f"{self._T_TEST} Initialized '{self.preset}' preset with {len(self.files)} files (~{self.total_tokens:,} tokens).")
@@ -85,7 +85,7 @@ class MockManager:
             def read_bytes(self): return self.read_text().encode("utf-8")
             def is_file(self): return self.path in files or self.name.endswith(".md")
             def is_dir(self): return not self.is_file()
-            def exists(self): return self.path in files or self.path in (".", ".claude_light_cache") or self.path.startswith("src")
+            def exists(self): return self.path in files or self.path in (".", ".llm_light_cache") or self.path.startswith("src")
             def stat(self):
                 class Stat:  # skeleton._stat_tuple() reads both
                     st_size = len(files.get(self.path, ""))
@@ -176,4 +176,4 @@ class MockManager:
         savings = full_cost - rag_cost
         savings_pct = (savings / full_cost * 100) if full_cost > 0 else 0.0
         
-        print(f"\n[{label}] Token Savings Report:\n  If full codebase was sent: {full_tokens:,} tokens (${full_cost:.4f})\n  With Claude Light RAG + Cache: {injected:,} tokens (${rag_cost:.4f})\n  Total Savings: {savings_pct:.1f}%\n", file=file)
+        print(f"\n[{label}] Token Savings Report:\n  If full codebase was sent: {full_tokens:,} tokens (${full_cost:.4f})\n  With LLM Light RAG + Cache: {injected:,} tokens (${rag_cost:.4f})\n  Total Savings: {savings_pct:.1f}%\n", file=file)

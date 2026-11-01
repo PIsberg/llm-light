@@ -1,5 +1,5 @@
 """
-Tests for claude_light.config — _resolve_api_key, _load_languages, and constants.
+Tests for llm_light.config — _resolve_api_key, _load_languages, and constants.
 """
 
 import os
@@ -12,7 +12,7 @@ from unittest.mock import patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.config import _resolve_api_key, _WANTED_LANGS
+from llm_light.config import _resolve_api_key, _WANTED_LANGS
 
 
 class TestResolveApiKey(unittest.TestCase):
@@ -30,7 +30,7 @@ class TestResolveApiKey(unittest.TestCase):
         print("\n  ▶ TestResolveApiKey.test_returns_empty_string_when_no_key")
         orig = os.environ.pop("ANTHROPIC_API_KEY", None)
         try:
-            import claude_light as cl
+            import llm_light as cl
             with patch.object(cl, "is_test_mode", False):
                 with patch("builtins.open", side_effect=OSError):
                     api_key, auth_mode, source, auth_token = _resolve_api_key()
@@ -45,19 +45,19 @@ class TestLoadLanguages(unittest.TestCase):
 
     def test_lang_config_populated(self):
         print("\n  ▶ TestLoadLanguages.test_lang_config_populated")
-        import claude_light as cl
+        import llm_light as cl
         self.assertIn(".java", cl._LANG_CONFIG)
         self.assertIn(".py", cl._LANG_CONFIG)
 
     def test_indexable_extensions_not_empty(self):
         print("\n  ▶ TestLoadLanguages.test_indexable_extensions_not_empty")
-        import claude_light as cl
+        import llm_light as cl
         self.assertGreater(len(cl.INDEXABLE_EXTENSIONS), 0)
 
     def test_load_languages_no_treesitter(self):
         print("\n  ▶ TestLoadLanguages.test_load_languages_no_treesitter")
-        from claude_light import _load_languages
-        import claude_light as cl
+        from llm_light import _load_languages
+        import llm_light as cl
         orig_config = dict(cl._LANG_CONFIG)
         orig_ext = set(cl.INDEXABLE_EXTENSIONS)
         try:
@@ -81,12 +81,12 @@ if __name__ == "__main__":
 
 class TestGlobalStatsFile(unittest.TestCase):
     """The suite once wrote its fake token usage into the developer's real
-    ~/.claude_light_stats.json, inflating the lifetime savings it reports."""
+    ~/.llm_light_stats.json, inflating the lifetime savings it reports."""
 
     def test_the_test_suite_does_not_use_the_real_stats_file(self):
         print("\n  ▶ TestGlobalStatsFile.test_the_test_suite_does_not_use_the_real_stats_file")
-        from claude_light import config, state
-        real = Path.home() / ".claude_light_stats.json"
+        from llm_light import config, state
+        real = Path.home() / ".llm_light_stats.json"
         self.assertNotEqual(config.GLOBAL_STATS_FILE.resolve(), real.resolve())
         self.assertNotEqual(state.GLOBAL_STATS_FILE.resolve(), real.resolve())
 
@@ -95,9 +95,9 @@ class TestGlobalStatsFile(unittest.TestCase):
         import subprocess
         import tempfile
         target = Path(tempfile.mkdtemp()) / "stats.json"
-        env = dict(os.environ, CLAUDE_LIGHT_STATS_FILE=str(target))
+        env = dict(os.environ, LLM_LIGHT_STATS_FILE=str(target))
         out = subprocess.run(
-            [sys.executable, "-c", "import claude_light.config as c; print(c.GLOBAL_STATS_FILE)"],
+            [sys.executable, "-c", "import llm_light.config as c; print(c.GLOBAL_STATS_FILE)"],
             env=env, capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
         )
         self.assertEqual(out.stdout.strip(), str(target), out.stderr)
@@ -113,10 +113,10 @@ class TestMeasuredRetrievalDefaults(unittest.TestCase):
         print("\n  ▶ TestMeasuredRetrievalDefaults.test_defaults_without_env_overrides")
         import subprocess
         env = {k: v for k, v in os.environ.items()
-               if k not in ("CLAUDE_LIGHT_CALLGRAPH", "CLAUDE_LIGHT_WORKTREE_BOOST")}
+               if k not in ("LLM_LIGHT_CALLGRAPH", "LLM_LIGHT_WORKTREE_BOOST")}
         out = subprocess.run(
             [sys.executable, "-c",
-             "import claude_light.config as c; print(c.CALL_GRAPH, c.WORKTREE_BOOST)"],
+             "import llm_light.config as c; print(c.CALL_GRAPH, c.WORKTREE_BOOST)"],
             env=env, capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
         )
         self.assertEqual(out.stdout.strip(), "False 1.0", out.stderr)
@@ -124,25 +124,25 @@ class TestMeasuredRetrievalDefaults(unittest.TestCase):
     def test_call_graph_is_opt_in(self):
         print("\n  ▶ TestMeasuredRetrievalDefaults.test_call_graph_is_opt_in")
         import subprocess
-        env = dict(os.environ, CLAUDE_LIGHT_CALLGRAPH="1")
+        env = dict(os.environ, LLM_LIGHT_CALLGRAPH="1")
         out = subprocess.run(
-            [sys.executable, "-c", "import claude_light.config as c; print(c.CALL_GRAPH)"],
+            [sys.executable, "-c", "import llm_light.config as c; print(c.CALL_GRAPH)"],
             env=env, capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
         )
         self.assertEqual(out.stdout.strip(), "True", out.stderr)
 
 
 class TestRouteOnceDefault(unittest.TestCase):
-    """The first question's model is kept by default; CLAUDE_LIGHT_ROUTE_ONCE=0
+    """The first question's model is kept by default; LLM_LIGHT_ROUTE_ONCE=0
     restores per-turn model routing."""
 
     def _route_once(self, value=None):
         import subprocess
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_LIGHT_ROUTE_ONCE"}
+        env = {k: v for k, v in os.environ.items() if k != "LLM_LIGHT_ROUTE_ONCE"}
         if value is not None:
-            env["CLAUDE_LIGHT_ROUTE_ONCE"] = value
+            env["LLM_LIGHT_ROUTE_ONCE"] = value
         out = subprocess.run(
-            [sys.executable, "-c", "import claude_light.config as c; print(c.ROUTE_ONCE)"],
+            [sys.executable, "-c", "import llm_light.config as c; print(c.ROUTE_ONCE)"],
             env=env, capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
         )
         return out.stdout.strip() or out.stderr

@@ -17,13 +17,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light  # noqa: F401
-from claude_light import config, llm, providers, state
-from claude_light import main as main_mod
-from claude_light.providers import base
+import llm_light  # noqa: F401
+from llm_light import config, llm, providers, state
+from llm_light import main as main_mod
+from llm_light.providers import base
 
 NOTICE = ("shell access is disabled for barecli: its agent cannot run commands. "
-          "--allow-command only lets claude_light run the affected tests.")
+          "--allow-command only lets llm_light run the affected tests.")
 
 
 class BareProvider(base.Provider):
@@ -151,7 +151,7 @@ def test_us1_s4_start_chat_passes_provider_header(bare, monkeypatch):
 
 
 def _run_main(monkeypatch, provider, argv):
-    monkeypatch.setattr(sys, "argv", ["claude_light"] + argv)
+    monkeypatch.setattr(sys, "argv", ["llm_light"] + argv)
     monkeypatch.setattr(config, "ALLOWED_COMMANDS", [])
     monkeypatch.setattr(providers, "select", lambda name: provider)
     monkeypatch.setattr(state, "provider", provider, raising=False)

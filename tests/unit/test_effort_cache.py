@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light.state as state
-from claude_light import llm
+import llm_light.state as state
+from llm_light import llm
 
 HAIKU_LOW = ("low", llm.MODEL_HAIKU, 2_048)
 SONNET_MEDIUM = ("medium", llm.MODEL_SONNET, 4_096)
@@ -69,13 +69,13 @@ def _run_turns(routes):
         return f"answer {len(sent)}", _usage(), False
 
     queue = list(routes)
-    with patch("claude_light.llm.route_query",
+    with patch("llm_light.llm.route_query",
                side_effect=lambda q: _raw(queue.pop(0))), \
-         patch("claude_light.providers.claude._make_streaming_api_call", side_effect=fake_call), \
-         patch("claude_light.llm.retrieve", return_value=("", [])), \
-         patch("claude_light.llm._maybe_compress_history"), \
-         patch("claude_light.llm._print_reply"), \
-         patch("claude_light.llm.print_stats"):
+         patch("llm_light.providers.claude._make_streaming_api_call", side_effect=fake_call), \
+         patch("llm_light.llm.retrieve", return_value=("", [])), \
+         patch("llm_light.llm._maybe_compress_history"), \
+         patch("llm_light.llm._print_reply"), \
+         patch("llm_light.llm.print_stats"):
         for i in range(len(routes)):
             llm.chat(f"question {i + 1}")
     return sent
@@ -99,9 +99,9 @@ class TestPerMessageEffort(unittest.TestCase):
         self.assertEqual({r["output_config"]["effort"] for r in sent}, {llm.BASE_EFFORT})
 
     def test_routed_model_still_changes_per_turn(self):
-        # CLAUDE_LIGHT_ROUTE_ONCE=0. The default keeps the first turn's model,
+        # LLM_LIGHT_ROUTE_ONCE=0. The default keeps the first turn's model,
         # see TestRouteOnce.
-        with patch("claude_light.config.ROUTE_ONCE", False):
+        with patch("llm_light.config.ROUTE_ONCE", False):
             sent = self._run_turns([SONNET_MEDIUM, HAIKU_LOW])
         self.assertEqual([r["model"] for r in sent], [llm.MODEL_SONNET, llm.MODEL_HAIKU])
 
@@ -140,8 +140,8 @@ class TestPerMessageEffort(unittest.TestCase):
     def test_oauth_mode_sends_no_effort_messages(self):
         # The CLI path flattens messages into prompt text; an empty system
         # message would turn into a stray "--- System ---" line.
-        with patch("claude_light.llm.AUTH_MODE", "OAUTH"), \
-             patch("claude_light.llm._git_modified_snapshot", return_value=set()):
+        with patch("llm_light.llm.AUTH_MODE", "OAUTH"), \
+             patch("llm_light.llm._git_modified_snapshot", return_value=set()):
             sent = self._run_turns([SONNET_MEDIUM, HAIKU_LOW])
         self.assertNotIn("system", [m["role"] for m in sent[-1]["messages"]])
 
@@ -152,12 +152,12 @@ class TestPerMessageEffort(unittest.TestCase):
             sent.append(kwargs)
             return "answer", _usage(), False
 
-        with patch("claude_light.llm.route_query",
+        with patch("llm_light.llm.route_query",
                    return_value=_raw(HAIKU_LOW)), \
-             patch("claude_light.providers.claude._make_streaming_api_call", side_effect=fake_call), \
-             patch("claude_light.llm.retrieve", return_value=("", [])), \
-             patch("claude_light.llm._print_reply"), \
-             patch("claude_light.llm.print_stats"):
+             patch("llm_light.providers.claude._make_streaming_api_call", side_effect=fake_call), \
+             patch("llm_light.llm.retrieve", return_value=("", [])), \
+             patch("llm_light.llm._print_reply"), \
+             patch("llm_light.llm.print_stats"):
             llm._one_shot_turn("what is x", auto_apply=False, use_index=True)
         self.assertEqual(sent[0]["output_config"], {"effort": llm.BASE_EFFORT})
         self.assertEqual(sent[0]["messages"][0],
@@ -169,7 +169,7 @@ class TestWarmCacheMatchesTurns(unittest.TestCase):
     def test_warms_at_the_top_level_effort_turns_send(self):
         resp = MagicMock()
         resp.usage = _usage()
-        with patch("claude_light.providers.claude.client.messages.create", return_value=resp) as create:
+        with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create:
             llm.warm_cache(quiet=True)
         kwargs = create.call_args.kwargs
         self.assertEqual(kwargs["output_config"], {"effort": llm.BASE_EFFORT})
@@ -185,7 +185,7 @@ class TestRouteOnce(unittest.TestCase):
         state.conversation_history[:] = []
         state.session_model = None
         state.session_budget = None
-        self._flag = patch("claude_light.config.ROUTE_ONCE", True)
+        self._flag = patch("llm_light.config.ROUTE_ONCE", True)
         self._flag.start()
 
     def tearDown(self):
@@ -219,7 +219,7 @@ class TestRouteOnce(unittest.TestCase):
         # it, re-warms and the heartbeat must keep the model the turns read.
         resp = MagicMock()
         resp.usage = _usage()
-        with patch("claude_light.providers.claude.client.messages.create", return_value=resp) as create:
+        with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create:
             llm.warm_cache(quiet=True)
             state.session_model = llm.MODEL_HAIKU
             llm.warm_cache(quiet=True)

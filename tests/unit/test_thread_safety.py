@@ -15,8 +15,8 @@ from pathlib import Path
 # Add parent to path - go up 3 levels from tests/unit/
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import claude_light.state as state
-from claude_light.ui import print_session_summary, print_stats
+import llm_light.state as state
+from llm_light.ui import print_session_summary, print_stats
 
 
 class MockUsage:
@@ -41,7 +41,7 @@ class TestThreadSafety:
 
     def test_accumulate_usage_thread_safety(self):
         """Test that _accumulate_usage is thread-safe."""
-        from claude_light.llm import _accumulate_usage
+        from llm_light.llm import _accumulate_usage
 
         num_threads = 10
         updates_per_thread = 100
@@ -133,7 +133,7 @@ class TestThreadSafety:
 
     def test_concurrent_reads_and_writes(self):
         """Test concurrent reads and writes to session state."""
-        from claude_light.llm import _accumulate_usage
+        from llm_light.llm import _accumulate_usage
 
         num_readers = 5
         num_writers = 5
@@ -266,7 +266,7 @@ class TestStatusBarThreadSafety:
 
     def test_status_bar_under_concurrent_updates(self):
         """Test that get_status_bar doesn't crash with concurrent state updates."""
-        from claude_light.llm import _accumulate_usage
+        from llm_light.llm import _accumulate_usage
         import io
         from contextlib import redirect_stdout
 

@@ -27,9 +27,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-import claude_light.llm as llm  # noqa: E402
-import claude_light.state as state  # noqa: E402
-from claude_light import config  # noqa: E402
+import llm_light.llm as llm  # noqa: E402
+import llm_light.state as state  # noqa: E402
+from llm_light import config  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "repo_questions.json"
 

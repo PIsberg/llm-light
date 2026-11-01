@@ -19,10 +19,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light  # noqa: F401
-from claude_light import config, llm, state, ui
-from claude_light import main as main_mod
-from claude_light.providers import base
+import llm_light  # noqa: F401
+from llm_light import config, llm, state, ui
+from llm_light import main as main_mod
+from llm_light.providers import base
 
 MESSAGE = "tokens, cost and caching unavailable for nofigures"
 

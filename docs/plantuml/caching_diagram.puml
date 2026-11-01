@@ -1,5 +1,5 @@
-@startuml Claude_Light_Caching_Diagram
-title Claude Light - Three-Tier Prompt Caching Strategy
+@startuml LLM_Light_Caching_Diagram
+title LLM Light - Three-Tier Prompt Caching Strategy
 
 skinparam backgroundColor #FEFEFE
 

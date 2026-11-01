@@ -1,8 +1,8 @@
-"""benchmark_cost.py — Real-World Token Cost Benchmark for Claude Light
+"""benchmark_cost.py — Real-World Token Cost Benchmark for LLM Light
 
 PURPOSE
 -------
-Measures actual API token usage and cost savings when Claude Light is used
+Measures actual API token usage and cost savings when LLM Light is used
 against real open-source Python repositories. Unlike benchmark.py (which uses
 analytical formulas on synthetic data), this script runs the modular CLI as a
 subprocess and parses the real stats it emits to stderr.
@@ -22,12 +22,12 @@ METHODOLOGY
 -----------
 1.  Clone each repo at a fixed tagged commit (shallow, --depth 1).
 2.  For each of 10 standard queries, run:
-      python -m claude_light "query"
+      python -m llm_light "query"
     in one-shot mode (stdin=/dev/null so no interactive prompts).
 3.  Strip ANSI codes from stderr and extract the [Stats], [Cost], and [Router]
     lines with regex.
 4.  Compute naive_cost by counting all source tokens in the repo (same
-    extensions + SKIP_DIRS as Claude Light and pricing them at PRICE_INPUT.
+    extensions + SKIP_DIRS as LLM Light and pricing them at PRICE_INPUT.
 
 ASSUMPTIONS / LIMITATIONS
 --------------------------
@@ -37,14 +37,14 @@ ASSUMPTIONS / LIMITATIONS
   Queries 2–10 benefit from warm-cache reads.
 - "Naive cost" assumes the entire repo is sent on every single query at full
   input price — this is the worst-case baseline against which the tool competes.
-- The [Stats] line is written to stderr by Claude Light's print_stats().
+- The [Stats] line is written to stderr by LLM Light's print_stats().
   If the line format changes, update the STATS_RE / COST_RE / ROUTER_RE patterns.
-- tree-sitter is recommended for chunking; without it Claude Light falls back
+- tree-sitter is recommended for chunking; without it LLM Light falls back
   to whole-file mode which may affect retrieval quality but not cost measurement.
 
 DEPENDENCIES
 ------------
-  pip install anthropic    # required by Claude Light
+  pip install anthropic    # required by LLM Light
   git                      # for cloning repos
 
 USAGE
@@ -78,7 +78,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Windows console defaults to cp1252; force UTF-8 so we can print claude_light's
+# Windows console defaults to cp1252; force UTF-8 so we can print llm_light's
 # stderr (which contains ·, ◆, etc.) without UnicodeEncodeError.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -87,17 +87,17 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 # ---------------------------------------------------------------------------
-# Pricing constants — must match Claude Light exactly
+# Pricing constants — must match LLM Light exactly
 # ---------------------------------------------------------------------------
 PRICE_INPUT  = 3.00   # $/M uncached input tokens
 PRICE_WRITE  = 3.75   # $/M cache-write tokens
 PRICE_READ   = 0.30   # $/M cache-read tokens
 PRICE_OUTPUT = 15.00  # $/M output tokens
 
-# Extensions indexed by Claude Light (from _WANTED_LANGS + .md)
+# Extensions indexed by LLM Light (from _WANTED_LANGS + .md)
 INDEXABLE_EXTS = {".java", ".py", ".js", ".go", ".rs", ".ts", ".tsx", ".md"}
 
-# Directories skipped by Claude Light (from SKIP_DIRS)
+# Directories skipped by LLM Light (from SKIP_DIRS)
 SKIP_DIRS = {
     ".git", "target", "build", "node_modules",
     ".idea", "__pycache__", ".mvn", ".gradle",
@@ -151,7 +151,7 @@ STANDARD_QUERIES = [
 ]
 
 # ---------------------------------------------------------------------------
-# Regex patterns — match Claude Light stderr output after ANSI stripping
+# Regex patterns — match LLM Light stderr output after ANSI stripping
 #
 # Current single-line format (Pro & API key modes):
 #   ◆ Stats  ·  13,141 tokens  ·  cached 6,410 (48.8%)  ·  saved $0.0123 (27.2%)  ·  API equiv. $0.0328
@@ -177,7 +177,7 @@ def strip_ansi(text: str) -> str:
 
 
 def parse_stderr(stderr_text: str) -> dict | None:
-    """Extract stats from one Claude Light stderr dump. Returns None on parse failure."""
+    """Extract stats from one LLM Light stderr dump. Returns None on parse failure."""
     clean = strip_ansi(stderr_text)
     sm = STATS_RE.search(clean)
     rm = ROUTER_RE.search(clean)
@@ -215,7 +215,7 @@ def is_skipped(path: Path) -> bool:
 
 
 def count_naive_tokens(repo_dir: Path) -> int:
-    """Count total tokens in all indexed source files (same logic as Claude Light)."""
+    """Count total tokens in all indexed source files (same logic as LLM Light)."""
     total = 0
     for f in repo_dir.rglob("*"):
         if f.is_file() and f.suffix in INDEXABLE_EXTS:
@@ -253,15 +253,15 @@ def clone_repo(repo_key: str, repos_dir: Path) -> Path:
 
 def run_query(repo_root: Path, repo_dir: Path, query: str,
               timeout: int = 120) -> dict:
-    """Run Claude Light in one-shot mode and parse its output."""
+    """Run LLM Light in one-shot mode and parse its output."""
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
-    # claude_light is not pip-installed; expose the source root so `python -m
-    # claude_light` works from the cloned repo's cwd.
+    # llm_light is not pip-installed; expose the source root so `python -m
+    # llm_light` works from the cloned repo's cwd.
     env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
     result = subprocess.run(
-        [sys.executable, "-m", "claude_light", query],
+        [sys.executable, "-m", "llm_light", query],
         cwd=str(repo_dir),
         capture_output=True,
         text=True,
@@ -293,7 +293,7 @@ def compute_true_savings(stats: dict, naive_tokens: int) -> dict:
     """
     Compute cost vs naive baseline (sending whole repo every query).
 
-    claude_light's [Cost] line reports savings vs "no-cache" (same tokens at
+    llm_light's [Cost] line reports savings vs "no-cache" (same tokens at
     full price). True savings compares against sending the ENTIRE repo.
 
     nocache_cost = actual_cost + saved_vs_nocache   (from [Cost] line)
@@ -481,7 +481,7 @@ def print_aggregate_table(all_results: list):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Real-world token cost benchmark for Claude Light",
+        description="Real-world token cost benchmark for LLM Light",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -521,19 +521,19 @@ def main():
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent.parent
-    module_entry = repo_root / "claude_light" / "__main__.py"
+    module_entry = repo_root / "llm_light" / "__main__.py"
     if not module_entry.exists():
-        print(f"[error] claude_light module entrypoint not found at {module_entry}", file=sys.stderr)
+        print(f"[error] llm_light module entrypoint not found at {module_entry}", file=sys.stderr)
         sys.exit(1)
 
-    # Auth check (skip for dry-run). Mirrors claude_light's resolution order:
+    # Auth check (skip for dry-run). Mirrors llm_light's resolution order:
     # ANTHROPIC_API_KEY env / dotfile, then automation token, then Claude CLI OAuth (Pro).
     if not args.dry_run:
         if not _has_any_auth():
             print(
                 "[error] No authentication found.\n"
                 "Set ANTHROPIC_API_KEY, create ~/.anthropic/.env, install\n"
-                "~/.claude_light_automation_token, or run `claude auth login`.\n"
+                "~/.llm_light_automation_token, or run `claude auth login`.\n"
                 "Use --dry-run to skip API calls.",
                 file=sys.stderr,
             )
@@ -551,11 +551,11 @@ def main():
     else:
         repo_keys = list(REPOS.keys())
 
-    print(f"claude_light benchmark_cost.py")
+    print(f"llm_light benchmark_cost.py")
     print(f"  Repos:        {', '.join(repo_keys)}")
     print(f"  Queries/repo: {len(STANDARD_QUERIES)}")
     print(f"  Mode:         {'dry-run' if args.dry_run else 'live (incurs API costs)'}")
-    print(f"  claude_light: python -m claude_light")
+    print(f"  llm_light: python -m llm_light")
     print()
 
     all_results = []
@@ -587,7 +587,7 @@ def main():
 
 
 def _read_key_file() -> str | None:
-    """Try reading API key from ~/.anthropic or ./.env (mirrors claude_light.py)."""
+    """Try reading API key from ~/.anthropic or ./.env (mirrors llm_light.py)."""
     home_file = Path.home() / ".anthropic"
     if home_file.exists():
         txt = home_file.read_text().strip()
@@ -602,10 +602,10 @@ def _read_key_file() -> str | None:
 
 
 def _has_any_auth() -> bool:
-    """Mirror claude_light's auth resolution: API key OR automation token OR OAuth."""
+    """Mirror llm_light's auth resolution: API key OR automation token OR OAuth."""
     if os.environ.get("ANTHROPIC_API_KEY") or _read_key_file():
         return True
-    if (Path.home() / ".claude_light_automation_token").exists():
+    if (Path.home() / ".llm_light_automation_token").exists():
         return True
     cred = Path.home() / ".claude" / ".credentials.json"
     if cred.exists():

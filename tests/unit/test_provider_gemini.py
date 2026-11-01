@@ -1,5 +1,5 @@
 """
-Tests for claude_light.providers.gemini (specs/001-gemini-codex-providers: T012).
+Tests for llm_light.providers.gemini (specs/001-gemini-codex-providers: T012).
 
 Covers US1 scenario 1, US2 scenarios 1-2, US4, FR-007, FR-010, FR-011 and the
 missing-tool and not-logged-in edge cases. argv and messages come from
@@ -16,13 +16,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light  # noqa: F401  (loads the package before the submodules)
-from claude_light import git_manager, llm, state
-from claude_light.providers import gemini
-from claude_light.providers.base import ProviderError, transcript
+import llm_light  # noqa: F401  (loads the package before the submodules)
+from llm_light import git_manager, llm, state
+from llm_light.providers import gemini
+from llm_light.providers.base import ProviderError, transcript
 
-_RUN = "claude_light.providers.gemini.run_cli"
-_WHICH = "claude_light.providers.gemini.shutil.which"
+_RUN = "llm_light.providers.gemini.run_cli"
+_WHICH = "llm_light.providers.gemini.shutil.which"
 _AGY = "/bin/agy"
 _MISSING = "agy not found. Install the Antigravity CLI: https://antigravity.google"
 
@@ -290,8 +290,8 @@ def test_us2s2_undo_restores_the_file(gemini_turn):
 
 
 def test_us4_edit_turn_runs_without_the_claude_and_codex_modules(gemini_turn, monkeypatch):
-    monkeypatch.setitem(sys.modules, "claude_light.providers.claude", None)
-    monkeypatch.setitem(sys.modules, "claude_light.providers.codex", None)
+    monkeypatch.setitem(sys.modules, "llm_light.providers.claude", None)
+    monkeypatch.setitem(sys.modules, "llm_light.providers.codex", None)
     _edit_turn()
     assert (gemini_turn / "app.py").read_text(encoding="utf-8").strip() == "x = 2"
     assert _head_message(gemini_turn).startswith(git_manager.COMMIT_PREFIX)
@@ -389,7 +389,7 @@ def test_t027_done_forbidden_tool_without_denial_raises_even_with_a_response(too
     out = _ndjson({"event": "init"}, _tool_step(tool), _result("a fine answer"))
     with pytest.raises(ProviderError) as exc:
         _complete(out)
-    assert f"agy ran {tool}, which claude_light forbids" in str(exc.value)
+    assert f"agy ran {tool}, which llm_light forbids" in str(exc.value)
 
 
 @pytest.mark.parametrize("tool,kind", _FORBIDDEN)
@@ -420,7 +420,7 @@ def test_t027_done_tool_outside_the_allowlist_raises_even_with_a_response(tool):
     out = _ndjson({"event": "init"}, _tool_step(tool), _result("a fine answer"))
     with pytest.raises(ProviderError) as exc:
         _complete(out)
-    assert f"agy ran {tool}, which claude_light forbids" in str(exc.value)
+    assert f"agy ran {tool}, which llm_light forbids" in str(exc.value)
 
 
 def test_t027_two_done_commands_with_one_command_denial_raises():
@@ -428,7 +428,7 @@ def test_t027_two_done_commands_with_one_command_denial_raises():
                   _result("a fine answer", denied_actions=_denied("command", "RunCommand")))
     with pytest.raises(ProviderError) as exc:
         _complete(out)
-    assert "agy ran run_command, which claude_light forbids" in str(exc.value)
+    assert "agy ran run_command, which llm_light forbids" in str(exc.value)
 
 
 def test_t027_one_done_command_with_one_command_denial_does_not_raise():

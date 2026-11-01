@@ -1,5 +1,5 @@
 """
-Tests for claude_light.retrieval — _dedup_retrieved_context, retrieve, adaptive selection.
+Tests for llm_light.retrieval — _dedup_retrieved_context, retrieve, adaptive selection.
 """
 
 import os
@@ -13,9 +13,9 @@ import numpy as np
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.retrieval import (_dedup_retrieved_context, record_retrieval, explain_last_retrieval,
+from llm_light.retrieval import (_dedup_retrieved_context, record_retrieval, explain_last_retrieval,
     _exclude_test_chunks, _is_test_chunk, _hybrid_select_pairs)
-import claude_light.state as _state
+import llm_light.state as _state
 
 
 class TestExplainLastRetrieval(unittest.TestCase):
@@ -63,12 +63,12 @@ class TestExplainLastRetrieval(unittest.TestCase):
 class TestDedupRetrievedContext(unittest.TestCase):
 
     def setUp(self):
-        import claude_light as cl
+        import llm_light as cl
         self._orig_store = dict(cl.chunk_store)
         cl.chunk_store.clear()
 
     def tearDown(self):
-        import claude_light as cl
+        import llm_light as cl
         cl.chunk_store.clear()
         cl.chunk_store.update(self._orig_store)
 
@@ -79,7 +79,7 @@ class TestDedupRetrievedContext(unittest.TestCase):
 
     def test_whole_file_chunk(self):
         print("\n  ▶ TestDedupRetrievedContext.test_whole_file_chunk")
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         cl.chunk_store["src/Foo.py"] = {"text": "def foo(): pass", "emb": np.zeros(10)}
         result = _dedup_retrieved_context([("src/Foo.py", 0.9)])
@@ -87,7 +87,7 @@ class TestDedupRetrievedContext(unittest.TestCase):
 
     def test_method_chunk_deduplication(self):
         print("\n  ▶ TestDedupRetrievedContext.test_method_chunk_deduplication")
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         preamble = "// src/Foo.java\npackage com.example;\npublic class Foo {"
         sep = "\n    // ...\n"
@@ -116,7 +116,7 @@ class TestDedupRetrievedContext(unittest.TestCase):
 
     def test_multiple_files_all_included(self):
         print("\n  ▶ TestDedupRetrievedContext.test_multiple_files_all_included")
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         preamble_a = "// A.java\npackage a;\npublic class A {"
         preamble_b = "// B.java\npackage b;\npublic class B {"
@@ -131,7 +131,7 @@ class TestDedupRetrievedContext(unittest.TestCase):
 
     def test_three_methods_same_file_single_preamble(self):
         print("\n  ▶ TestDedupRetrievedContext.test_three_methods_same_file_single_preamble")
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         preamble = "// Svc.java\npackage svc;\npublic class Svc {"
         sep = "\n    // ...\n"
@@ -158,9 +158,9 @@ class TestDefaultScoreFloor(unittest.TestCase):
     and 13 of 19 natural questions about this repo got no context at all."""
 
     def setUp(self):
-        import claude_light as cl
-        import claude_light.config as config
-        import claude_light.state as _st
+        import llm_light as cl
+        import llm_light.config as config
+        import llm_light.state as _st
         self._saved = (dict(cl.chunk_store), cl.TOP_K, cl.EMBED_MODEL, cl.embedder,
                        cl.MIN_SCORE, cl.RELATIVE_SCORE_FLOOR)
         cl.MIN_SCORE = config.MIN_SCORE              # the shipped defaults
@@ -171,8 +171,8 @@ class TestDefaultScoreFloor(unittest.TestCase):
         _st.embedder_ready.set()
 
     def tearDown(self):
-        import claude_light as cl
-        import claude_light.state as _st
+        import llm_light as cl
+        import llm_light.state as _st
         store, cl.TOP_K, cl.EMBED_MODEL, cl.embedder, cl.MIN_SCORE, cl.RELATIVE_SCORE_FLOOR = self._saved
         cl.chunk_store.clear()
         cl.chunk_store.update(store)
@@ -181,25 +181,25 @@ class TestDefaultScoreFloor(unittest.TestCase):
     def test_question_scoring_038_on_the_right_chunk_is_retrieved(self):
         print("\n  ▶ TestDefaultScoreFloor.test_question_scoring_038_on_the_right_chunk_is_retrieved")
         import math
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         right = np.array([0.38, math.sqrt(1 - 0.38 ** 2), 0.0])
         wrong = np.array([0.10, 0.0, math.sqrt(1 - 0.10 ** 2)])
         cl.chunk_store.clear()
         cl.chunk_store.update({
-            "claude_light/retry.py::retry_with_backoff": {"text": "def retry_with_backoff(): pass", "emb": right},
-            "claude_light/ui.py::print_stats": {"text": "def print_stats(): pass", "emb": wrong},
+            "llm_light/retry.py::retry_with_backoff": {"text": "def retry_with_backoff(): pass", "emb": right},
+            "llm_light/ui.py::print_stats": {"text": "def print_stats(): pass", "emb": wrong},
         })
         cl.embedder = MagicMock()
         cl.embedder.encode.return_value = np.array([1.0, 0.0, 0.0])
         _, hits = cl.retrieve("In which file and function is the exponential backoff implemented?")
-        self.assertEqual([h[0] for h in hits], ["claude_light/retry.py::retry_with_backoff"])
+        self.assertEqual([h[0] for h in hits], ["llm_light/retry.py::retry_with_backoff"])
 
 
 class TestRetrieve(unittest.TestCase):
 
     def setUp(self):
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         self._orig_store = dict(cl.chunk_store)
         self._orig_top_k = cl.TOP_K
@@ -221,12 +221,12 @@ class TestRetrieve(unittest.TestCase):
         cl.EMBED_MODEL = "all-MiniLM-L6-v2"
         cl.MIN_SCORE = 0.0
         cl.RELATIVE_SCORE_FLOOR = 0.0
-        import claude_light.state as _st
+        import llm_light.state as _st
         _st.embedder_ready.set()
 
     def tearDown(self):
-        import claude_light as cl
-        import claude_light.state as _st
+        import llm_light as cl
+        import llm_light.state as _st
         cl.chunk_store.clear()
         cl.chunk_store.update(self._orig_store)
         cl.TOP_K = self._orig_top_k
@@ -238,7 +238,7 @@ class TestRetrieve(unittest.TestCase):
 
     def test_retrieve_returns_context_and_hits(self):
         print("\n  ▶ TestRetrieve.test_retrieve_returns_context_and_hits")
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         mock_embedder = MagicMock()
         mock_embedder.encode.return_value = np.array([1.0, 0.0, 0.0])
@@ -249,7 +249,7 @@ class TestRetrieve(unittest.TestCase):
 
     def test_retrieve_empty_store_returns_empty(self):
         print("\n  ▶ TestRetrieve.test_retrieve_empty_store_returns_empty")
-        import claude_light as cl
+        import llm_light as cl
         cl.chunk_store.clear()
         mock_embedder = MagicMock()
         cl.embedder = mock_embedder
@@ -259,7 +259,7 @@ class TestRetrieve(unittest.TestCase):
 
     def test_retrieve_filters_low_scores(self):
         print("\n  ▶ TestRetrieve.test_retrieve_filters_low_scores")
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         cl.MIN_SCORE = 0.5
         mock_embedder = MagicMock()
@@ -271,7 +271,7 @@ class TestRetrieve(unittest.TestCase):
 
     def test_relative_floor_drops_low_chunks(self):
         print("\n  ▶ TestRetrieve.test_relative_floor_drops_low_chunks")
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         cl.chunk_store.clear()
         cl.chunk_store["A.py"] = {"text": "a", "emb": np.array([0.9, 0.1]) / 1.0}
@@ -287,7 +287,7 @@ class TestRetrieve(unittest.TestCase):
 
     def test_low_effort_uses_summary_only_context(self):
         print("\n  ▶ TestRetrieve.test_low_effort_uses_summary_only_context")
-        import claude_light as cl
+        import llm_light as cl
         import numpy as np
         cl.chunk_store.clear()
         cl.chunk_store["src/a.py::alpha"] = {
@@ -304,8 +304,8 @@ class TestRetrieve(unittest.TestCase):
     def test_adaptive_selection_diverse_hits(self):
         print("\n  ▶ TestRetrieve.test_adaptive_selection_diverse_hits")
         import numpy as np
-        import claude_light as cl
-        from claude_light.retrieval import _adaptive_select_pairs
+        import llm_light as cl
+        from llm_light.retrieval import _adaptive_select_pairs
 
         orig_store = dict(cl.chunk_store)
         try:
@@ -340,7 +340,7 @@ class TestTestChunkExclusion(unittest.TestCase):
     crowd the answer out. Questions that ask about tests keep them."""
 
     IDS = [
-        "claude_light/llm.py::route_query",
+        "llm_light/llm.py::route_query",
         "tests/unit/test_llm.py::test_route",
         "tests/benchmarks/bench.py::main",
         "src/test/java/A.java::x",
@@ -358,8 +358,8 @@ class TestTestChunkExclusion(unittest.TestCase):
         print("\n  ▶ TestTestChunkExclusion.test_test_directory_at_any_depth_is_excluded")
         self.assertTrue(_is_test_chunk("src/test/java/A.java::x"))
         self.assertTrue(_is_test_chunk("tests\\unit\\test_llm.py::test_route"))
-        self.assertFalse(_is_test_chunk("claude_light/testing.py::helper"))
-        self.assertFalse(_is_test_chunk("claude_light/llm.py::route_query"))
+        self.assertFalse(_is_test_chunk("llm_light/testing.py::helper"))
+        self.assertFalse(_is_test_chunk("llm_light/llm.py::route_query"))
 
     def test_question_about_tests_keeps_them(self):
         print("\n  ▶ TestTestChunkExclusion.test_question_about_tests_keeps_them")
@@ -378,4 +378,4 @@ class TestTestChunkExclusion(unittest.TestCase):
         out = _exclude_test_chunks(self.FUSED, self.IDS, "Which function decides the model?")
         with patch.object(_state, "chunk_store", store):
             picked = _hybrid_select_pairs(self.IDS, out, budget=10_000, k=4)
-        self.assertEqual([cid for cid, _ in picked], ["claude_light/llm.py::route_query"])
+        self.assertEqual([cid for cid, _ in picked], ["llm_light/llm.py::route_query"])

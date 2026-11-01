@@ -19,9 +19,9 @@ This project aims to achieve the [OpenSSF CII Best Practices Badge](https://best
 ### Step 2: Submit Your Project
 
 Fill in the required information:
-- **Project URL**: `https://github.com/PIsberg/claude_light`
+- **Project URL**: `https://github.com/PIsberg/llm-light`
 - **Project Homepage**: Same as above
-- **Description**: "Claude Light is an interactive CLI chat tool for querying and editing codebases using Claude with hybrid RAG and prompt caching"
+- **Description**: "LLM Light is an interactive CLI chat tool for querying and editing codebases using Claude with hybrid RAG and prompt caching"
 
 ### Step 3: Complete the Questionnaire
 

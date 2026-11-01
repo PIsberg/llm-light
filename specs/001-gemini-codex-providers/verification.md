@@ -1,6 +1,6 @@
 # Manual verification (T026)
 
-Run 2026-10-30 on win32, claude_light branch 001-gemini-codex-providers, with gemini 0.44.1 and
+Run 2026-10-30 on win32, llm_light branch 001-gemini-codex-providers, with gemini 0.44.1 and
 codex-cli 0.162.1. Scratch project: a git repo with one file, `order.py`, holding `OrderService`
 (`place`, `cancel`), clean tree. `ANTHROPIC_API_KEY` unset for every run (`env -u`). The
 interactive steps (3 and the `/budget` and `/cost` half of 4) were not run interactively: no
@@ -19,7 +19,7 @@ $ codex login status      -> Logged in using ChatGPT
 ### Step 2: question
 
 ```
-$ time python claude_light.py --provider gemini "What does OrderService do?"
+$ time python llm_light.py --provider gemini "What does OrderService do?"
 ◆ Building context...
 ⏺ Scanning project files...
   ◆  gemini  ·  CLI default model  ·  effort unavailable for gemini
@@ -45,7 +45,7 @@ Steps 3 and 4: not run, no answer to build on.
 ### Step 2: question
 
 ```
-$ time python claude_light.py --provider codex "What does OrderService do?"
+$ time python llm_light.py --provider codex "What does OrderService do?"
   ◆  codex  ·  CLI default model  ·  effort unavailable for codex
   ⏺  order.py::cancel
 ◆ I can't tell from the provided context: it shows only `order.py`'s `cancel(self, order)` method, not an `OrderService` definition.
@@ -60,11 +60,11 @@ project; that is retrieval, not the provider. Step 2: pass.
 ### Step 3: edit and undo (one-shot, not 3 interactive trials)
 
 ```
-$ python claude_light.py --provider codex -y "In order.py ... add a one-line docstring 'Cancel the order.' to cancel"
+$ python llm_light.py --provider codex -y "In order.py ... add a one-line docstring 'Cancel the order.' to cancel"
   ◆  codex  ·  CLI default model  ·  effort unavailable for codex  ·  top tier unavailable for codex
 ◆ `cancel` has no docstring in the provided context. I can't safely produce an exact SEARCH/REPLACE block without the surrounding file text.
 $ git status --short && git log --oneline -2
-?? .claude_light_cache/
+?? .llm_light_cache/
 a520102 init
 ```
 
@@ -74,8 +74,8 @@ SC-004 is not shown. Not run: `/undo`, trials 2 and 3.
 ### Step 4: unavailable features and shell
 
 ```
-$ python claude_light.py --provider codex --allow-command "python -m pytest" "Run the shell command echo SHELLRAN > marker.txt"
-  ◆  shell access is disabled for codex: its agent cannot run commands. --allow-command only lets claude_light run the affected tests.
+$ python llm_light.py --provider codex --allow-command "python -m pytest" "Run the shell command echo SHELLRAN > marker.txt"
+  ◆  shell access is disabled for codex: its agent cannot run commands. --allow-command only lets llm_light run the affected tests.
 ◆ I can't run that shell command in this environment.
 $ ls marker.txt
 ls: cannot access 'marker.txt': No such file or directory
@@ -95,7 +95,7 @@ token gate warm total $0.0622 against the $0.0622 baseline, retrieval Hit@10 and
 
 Run by the main session against the same `gemini` 0.44.1 and `codex` 0.162.1, in a scratch git
 repo holding one file, `order.py`: `class OrderService` with `__init__`, `place` and `cancel`.
-`ANTHROPIC_API_KEY` unset; temp `CLAUDE_LIGHT_STATS_FILE` and `CLAUDE_LIGHT_SESSION_DIR`.
+`ANTHROPIC_API_KEY` unset; temp `LLM_LIGHT_STATS_FILE` and `LLM_LIGHT_SESSION_DIR`.
 
 ### Codex step 3: edit and undo, 3 trials
 
@@ -103,8 +103,8 @@ The edit could not use the interactive `/undo`, so each trial ran the edit one-s
 `git_manager.undo_last_commit()`, the function `/undo` calls (`main.py:387`).
 
 ```
-$ python claude_light.py --provider codex -y "In order.py add a one-line docstring 'Cancel the order.' to cancel"
-$ python -c "from claude_light import git_manager; git_manager.undo_last_commit()"
+$ python llm_light.py --provider codex -y "In order.py add a one-line docstring 'Cancel the order.' to cancel"
+$ python -c "from llm_light import git_manager; git_manager.undo_last_commit()"
 start=c99a3b9
 trial 1: 9c6f4ae Claude: Added the docstring to cancel.            -> Undone, HEAD=c99a3b9, status clean
 trial 2: 15c8c8e Claude: Added the one-line docstring to cancel.   -> Undone, HEAD=c99a3b9, status clean
@@ -124,7 +124,7 @@ rendering is summary-only because Claude can fetch bodies with `fetch_chunk`; Ge
 with tools off (D1) and cannot. cee75d1 renders low as medium for a provider without `EFFORT`.
 
 ```
-$ time python claude_light.py --provider codex "What does OrderService do?"
+$ time python llm_light.py --provider codex "What does OrderService do?"
 ◆ `OrderService` places and cancels orders. Its `place` method saves an order through `repo` and returns the order's ID.
 exit=0, 13 s
 ```
@@ -134,7 +134,7 @@ exit=0, 13 s
 ### Gemini: error message after the T006 fix
 
 ```
-$ python claude_light.py --provider gemini "What does OrderService do?"
+$ python llm_light.py --provider gemini "What does OrderService do?"
 ✗ API call failed: gemini failed (exit 1): An unexpected critical error occurred:IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals. ... Run gemini on its own to see the full error.
 exit=1, 11 s
 ```
@@ -164,13 +164,13 @@ Run 2026-10-30 at HEAD 97186b2 (`Drive the Gemini provider through agy (T028)`),
 agy 1.4.11 (logged in, default model Gemini 3.8 Flash (High)). Scratch git project
 `%TEMP%/cl_scratch_t029/proj` (outside the repo): `order.py` with `OrderService` (docstring
 "Places and cancels orders.", `__init__`, `place`, `cancel`), one commit `8733cf3 init`,
-`.claude_light_cache/` in `.git/info/exclude`. `ANTHROPIC_API_KEY` unset, temp
-`CLAUDE_LIGHT_STATS_FILE` and `CLAUDE_LIGHT_SESSION_DIR`. Spinner frames are stripped below.
+`.llm_light_cache/` in `.git/info/exclude`. `ANTHROPIC_API_KEY` unset, temp
+`LLM_LIGHT_STATS_FILE` and `LLM_LIGHT_SESSION_DIR`. Spinner frames are stripped below.
 
 ### Step 2: question
 
 ```
-$ time python claude_light.py --provider gemini "What does OrderService do?"
+$ time python llm_light.py --provider gemini "What does OrderService do?"
   ◆  gemini  ·  CLI default model  ·  effort unavailable for gemini
 ◆ `OrderService` manages order lifecycle:
 - Purpose: places and cancels orders (docstring)
@@ -186,17 +186,17 @@ and `__init__`, but it is about the code. One run only.
 ### Step 3: edit and undo, 3 trials
 
 ```
-$ python claude_light.py --provider gemini -y "In order.py add a one-line docstring 'Cancel the order.' to cancel"
+$ python llm_light.py --provider gemini -y "In order.py add a one-line docstring 'Cancel the order.' to cancel"
 trial 1: exit=1, 27 s  ✗ API call failed: agy output could not be parsed: empty response   HEAD 8733cf3, status clean
 trial 2: exit=1, 20 s  (same)                                                            HEAD 8733cf3, status clean
 trial 3: exit=1, 24 s  (same)                                                            HEAD 8733cf3, status clean
 (2 further runs, one with the raw output captured: exit=1, same error)
-$ python -c "from claude_light import git_manager; git_manager.undo_last_commit()"
+$ python -c "from llm_light import git_manager; git_manager.undo_last_commit()"
 ✗ Last commit was not made by Claude; nothing undone        (HEAD 8733cf3, status clean)
 ```
 
 (In the three trial loops the `undo` line printed `ModuleNotFoundError: No module named
-'claude_light'` because the scratch cwd is not the repo; rerun once with `PYTHONPATH` set, it gave
+'llm_light'` because the scratch cwd is not the repo; rerun once with `PYTHONPATH` set, it gave
 the line above.) No edit was ever produced, so there was no commit with the `Claude: ` prefix and
 nothing for `/undo` to undo. 0 of 3 trials completed.
 
@@ -216,8 +216,8 @@ the retrieved chunk of `cancel`), tries a shell listing and ends its turn with n
 `/budget 2.50` and `/cost` were not run (interactive; covered by unit tests, as in the first pass).
 
 ```
-$ python claude_light.py --provider gemini --allow-command "python -m pytest" "Write SHELLRAN to the file `<root>/marker.txt`, with a shell command if you need one"
-  ◆  shell access is disabled for gemini: its agent cannot run commands. --allow-command only lets claude_light run the affected tests.
+$ python llm_light.py --provider gemini --allow-command "python -m pytest" "Write SHELLRAN to the file `<root>/marker.txt`, with a shell command if you need one"
+  ◆  shell access is disabled for gemini: its agent cannot run commands. --allow-command only lets llm_light run the affected tests.
   ...
 ✗ API call failed: agy output could not be parsed: empty response       (exit=1)
 $ ls <root>/marker.txt      ->  No such file or directory
@@ -246,8 +246,8 @@ No file-write tool and no `call_mcp_tool` was called. The one `run_command` was 
 execution. Read literally, the quickstart's fail rule ("a `run_command` call completed") is
 ambiguous here: the step reached state `DONE`. My reading is that the command was denied.
 
-**Verdict: pass, with that caveat.** Marker absent in claude_light's run and in all three direct
-runs, shell-disabled notice shown, no write or MCP tool call. The claude_light run itself still
+**Verdict: pass, with that caveat.** Marker absent in llm_light's run and in all three direct
+runs, shell-disabled notice shown, no write or MCP tool call. The llm_light run itself still
 ended in the empty-response error rather than a model reply.
 
 ### Not run
@@ -257,14 +257,14 @@ ended in the empty-response error rather than a model reply.
 ## Third pass, rerun after the preamble
 
 Run 2026-10-30 after the no-tools preamble and the fail-closed check were added to
-`claude_light/providers/gemini.py` (T028 fix), against the real agy 1.4.11. Same scratch project
+`llm_light/providers/gemini.py` (T028 fix), against the real agy 1.4.11. Same scratch project
 (`%TEMP%/cl_scratch_t029/proj`, at its first commit `8733cf3 init`, clean), `ANTHROPIC_API_KEY`
-unset, temp `CLAUDE_LIGHT_STATS_FILE` and `CLAUDE_LIGHT_SESSION_DIR`. Spinner frames stripped.
+unset, temp `LLM_LIGHT_STATS_FILE` and `LLM_LIGHT_SESSION_DIR`. Spinner frames stripped.
 
 ### Step 2: question
 
 ```
-$ time python claude_light.py --provider gemini "What does OrderService do?"
+$ time python llm_light.py --provider gemini "What does OrderService do?"
   ◆  gemini  ·  CLI default model  ·  effort unavailable for gemini
 ◆ `OrderService` manages order lifecycle operations:
 - Places and cancels orders (per docstring).
@@ -281,8 +281,8 @@ typical.
 ### Step 3: edit and undo, 3 trials
 
 ```
-$ python claude_light.py --provider gemini -y "In order.py add a one-line docstring 'Cancel the order.' to cancel"
-$ python -c "from claude_light import git_manager; git_manager.undo_last_commit()"
+$ python llm_light.py --provider gemini -y "In order.py add a one-line docstring 'Cancel the order.' to cancel"
+$ python -c "from llm_light import git_manager; git_manager.undo_last_commit()"
 trial 1: exit=0, 69 s  Committed: 0956781 Claude: Added the one-line docstring ...  status clean
          undo: Undone 0956781                                        HEAD 8733cf3 init, status clean
 trial 2: exit=0, 61 s  Committed: ca20bef Claude: Added a one-line docstring ...    status clean
@@ -298,8 +298,8 @@ returned.
 ### Step 4: unavailable features and shell
 
 ```
-$ python claude_light.py --provider gemini --allow-command "python -m pytest" "Write SHELLRAN to the file `<root>/marker.txt`, with a shell command if you need one"
-    shell access is disabled for gemini: its agent cannot run commands. --allow-command only lets claude_light run the affected tests.
+$ python llm_light.py --provider gemini --allow-command "python -m pytest" "Write SHELLRAN to the file `<root>/marker.txt`, with a shell command if you need one"
+    shell access is disabled for gemini: its agent cannot run commands. --allow-command only lets llm_light run the affected tests.
   ... agy answered with a SEARCH/REPLACE new-file block for marker.txt; the prompt "Apply 1 change?" got no
   answer (stdin not a terminal) -> "Cancelled."  (exit=0)
 $ ls <root>/marker.txt  ->  No such file or directory
@@ -317,4 +317,4 @@ stronger than the earlier pass, where one read-only `run_command` reached state 
 
 `/budget 2.50` and `/cost` interactively (unit tests cover them). Step 5 (Claude unchanged).
 The "Apply 1 change?" prompt in step 4 was not answered, so the marker write was not applied
-through claude_light's own edit path.
+through llm_light's own edit path.

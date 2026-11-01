@@ -6,7 +6,7 @@
 
 ## Summary
 
-A `claude_light/providers/` package puts Claude, Gemini and Codex behind one contract
+A `llm_light/providers/` package puts Claude, Gemini and Codex behind one contract
 (`contracts/provider.md`). Provider-neutral code (`llm.chat`, `llm._one_shot_turn`,
 `llm._summarize_turns`, `llm.warm_cache`, routing, `main`) calls `providers.active()` and checks
 capabilities, never a name. Claude's client, its two transports and its cache warm move unchanged
@@ -36,7 +36,7 @@ Assumptions); `anthropic` stays Claude's, imported lazily.
 **Constraints**: prompt on stdin, never on the command line (Windows 8,191-character limit);
 Claude's requests byte-identical (FR-006, constitution III)
 
-**Scale/Scope**: 3 providers; 6 new files under `claude_light/providers/`; 6 changed modules
+**Scale/Scope**: 3 providers; 6 new files under `llm_light/providers/`; 6 changed modules
 (`llm.py`, `main.py`, `ui.py`, `session.py`, `state.py`, `__init__.py`); about 700 of
 `llm.py`'s 1,719 lines move to `providers/claude.py`
 
@@ -70,7 +70,7 @@ Where neutral code changes, each driven by a capability of `contracts/provider.m
 | `llm.client`, `_make_cli_subprocess_call`, `_make_streaming_api_call`, `_api_tool_loop`, their helpers, `ClaudeNotLoggedIn` | moved unchanged to `providers/claude.py` (D2) | T018 |
 | `llm.warm_cache` | becomes `providers.active().warm(quiet)`; its body becomes `ClaudeProvider.warm` | T018 |
 | `except ClaudeNotLoggedIn` in `llm.chat`, `main.start_chat` | catch `providers/base.py: NotLoggedIn` | T018 |
-| `claude_light/__init__.py` binding map | `client` and `print_stats` entries follow the move (`data-model.md`) | T018 |
+| `llm_light/__init__.py` binding map | `client` and `print_stats` entries follow the move (`data-model.md`) | T018 |
 | `llm._finalize_route` | without `top_tier`: no prompt, `state.session_model` untouched, model = `model_label()`, contract route line | T022 |
 | `llm._apply_effort` | effort-only message only with `effort` | T022 |
 | `main._budget_command` | without `usd_budget`: message, `state.session_budget` unchanged | T022 |
@@ -105,7 +105,7 @@ specs/001-gemini-codex-providers/
 ### Source Code (repository root)
 
 ```text
-claude_light/
+llm_light/
 ├── providers/
 │   ├── __init__.py      # NAMES, get, select, active
 │   ├── base.py          # Provider, capabilities, ProviderError, NotLoggedIn, transcript
@@ -162,11 +162,11 @@ the login flow. The `Spec:` lines below go to spec.md through the product-owner.
   transport still edits `llm.py`; deleting `providers/claude.py` disables Claude only (T012 and T015 pin
   that `llm` still imports). SC-003 holds by the isolation rule.
 - **B: move it all to `providers/claude.py`.** About 1,000 lines move, and every patch target
-  above changes in `tests/unit/test_llm.py`, `test_effort_cache.py`, `test_claude_light.py`,
+  above changes in `tests/unit/test_llm.py`, `test_effort_cache.py`, `test_llm_light.py`,
   `tests/integration/test_api_tool_loop.py` and others. Adds one slice after T018.
   Spec: FR-006: "Moving Claude behind the shared contract MUST NOT change Claude behaviour: the
-  existing Claude tests pass with only their patch targets moved from `claude_light.llm` to
-  `claude_light.providers.claude`, and the CI token and retrieval regression gates pass."
+  existing Claude tests pass with only their patch targets moved from `llm_light.llm` to
+  `llm_light.providers.claude`, and the CI token and retrieval regression gates pass."
   Spec: SC-002: "100% of the existing tests pass, changed only in their patch targets, and the CI
   token and retrieval regression gates pass with no change to Claude's measured token counts."
 
@@ -215,7 +215,7 @@ the login flow. The `Spec:` lines below go to spec.md through the product-owner.
 **Answer (2026-10-30)**: A.
 
 - **A (recommended): `Claude: `, as today** (`git_manager.COMMIT_PREFIX`). `/undo` unchanged; the
-  prefix names the tool, claude_light, and identifies an AI edit (FR-009). Tasks as written.
+  prefix names the tool, llm_light, and identifies an AI edit (FR-009). Tasks as written.
 - **B: per provider (`Gemini: `, `Codex: `).** `git_manager._commit_subject` takes the provider,
   `undo_last_commit` accepts every registered prefix; adds a slice with tests in
   `tests/unit/test_git_manager.py`, and `CLAUDE.md`'s auto-commit invariant is reworded (T025).
@@ -235,7 +235,7 @@ the login flow. The `Spec:` lines below go to spec.md through the product-owner.
 **Answer (2026-10-30)**: A.
 
 - **A (recommended): no; `--provider` only** (FR-001 asks for an explicit choice at start).
-- **B: also `CLAUDE_LIGHT_PROVIDER`.** Needs its own unknown-name check listing `NAMES`, a row in
+- **B: also `LLM_LIGHT_PROVIDER`.** Needs its own unknown-name check listing `NAMES`, a row in
   `docs/CONFIG.md`, and tests; changes T002, T003, T025.
 
 ### D9. What verdict does Gemini's manual run get when Google rejects the account?

@@ -1,5 +1,5 @@
 @startuml Test_Suite_Structure
-title Claude Light - Test Suite Structure
+title LLM Light - Test Suite Structure
 
 skinparam backgroundColor #FEFEFE
 skinparam rectangle {
@@ -13,7 +13,7 @@ package "tests/" {
   rectangle "conftest.py\n(Shared Fixtures)" as Conftest
   
   package "unit/" <<unit>> {
-    rectangle "test_claude_light.py\n(Core Tests)" as TestCore
+    rectangle "test_llm_light.py\n(Core Tests)" as TestCore
     rectangle "test_llm.py\n(Routing & API)" as TestLLM
     rectangle "test_retrieval.py\n(RAG)" as TestRetrieval
     rectangle "test_editor.py\n(Edit Parsing)" as TestEditor

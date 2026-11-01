@@ -25,7 +25,7 @@ class, ask about one it has and record the substitution.
 ## 2. Question (US1, SC-001), per provider `<p>` in `gemini codex` (`gemini` runs agy)
 
 ```bash
-time python3 /c/dev/private/claude_light/claude_light.py --provider <p> "What does OrderService do?"
+time python3 /c/dev/private/llm_light/llm_light.py --provider <p> "What does OrderService do?"
 ```
 
 Pass: a non-empty answer about the project's code within 60 s, the route line of
@@ -33,7 +33,7 @@ Pass: a non-empty answer about the project's code within 60 s, the route line of
 
 ## 3. Edit and undo (US2, SC-004), 3 trials per provider
 
-Interactive, `python3 .../claude_light.py --provider <p>`, then ask for a one-line change to a
+Interactive, `python3 .../llm_light.py --provider <p>`, then ask for a one-line change to a
 named file, accept the commit, run `/undo`, and after each trial:
 
 ```bash

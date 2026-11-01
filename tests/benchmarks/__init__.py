@@ -1,4 +1,4 @@
-"""Benchmark scripts for claude_light.
+"""Benchmark scripts for llm_light.
 
 This package contains benchmark scripts that measure performance, cost,
 and quality metrics. These are NOT standard pytest tests but can be

@@ -1,4 +1,4 @@
-# Generate CycloneDX SBOM for claude-light
+# Generate CycloneDX SBOM for llm-light
 # Requires: pip install cyclonedx-bom
 
 $ErrorActionPreference = "Stop"

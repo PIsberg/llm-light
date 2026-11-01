@@ -1,5 +1,5 @@
 """
-Tests for claude_light.executor — _run_command and auto_tune.
+Tests for llm_light.executor — _run_command and auto_tune.
 """
 
 import os
@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.executor import _run_command, _RUN_HEAD_LINES, _RUN_TAIL_LINES, _RUN_MAX_CHARS, auto_tune
-import claude_light.state as _state
+from llm_light.executor import _run_command, _RUN_HEAD_LINES, _RUN_TAIL_LINES, _RUN_MAX_CHARS, auto_tune
+import llm_light.state as _state
 
 
 class TestRunCommand(unittest.TestCase):
@@ -59,13 +59,13 @@ class TestRunCommand(unittest.TestCase):
         print("\n  ▶ TestRunCommand.test_run_times_out")
         # Force a tiny timeout so a sleeping command is killed instead of
         # blocking the chat loop forever.
-        with patch("claude_light.executor._RUN_TIMEOUT_SECS", 1):
+        with patch("llm_light.executor._RUN_TIMEOUT_SECS", 1):
             result = _run_command('python -c "import time; time.sleep(30)"')
         self.assertIn("TIMEOUT", result)
 
     def test_run_timeout_surfaces_partial_output(self):
         print("\n  ▶ TestRunCommand.test_run_timeout_surfaces_partial_output")
-        with patch("claude_light.executor._RUN_TIMEOUT_SECS", 2):
+        with patch("llm_light.executor._RUN_TIMEOUT_SECS", 2):
             result = _run_command(
                 'python -c "import time,sys; '
                 'print(\'PARTIAL_TOKEN\', flush=True); time.sleep(30)"'
@@ -91,8 +91,8 @@ class TestAutoTune(unittest.TestCase):
         files = self._make_files(10)
         _state.EMBED_MODEL = None
         _state.embedder = None
-        with patch("claude_light.executor.SentenceTransformer") as mock_st, \
-             patch("claude_light.executor._Spinner"):
+        with patch("llm_light.executor.SentenceTransformer") as mock_st, \
+             patch("llm_light.executor._Spinner"):
             mock_st.return_value = MagicMock()
             auto_tune(files, quiet=True)
         self.assertEqual(_state.EMBED_MODEL, "all-MiniLM-L6-v2")
@@ -102,8 +102,8 @@ class TestAutoTune(unittest.TestCase):
         files = self._make_files(100)
         _state.EMBED_MODEL = None
         _state.embedder = None
-        with patch("claude_light.executor.SentenceTransformer") as mock_st, \
-             patch("claude_light.executor._Spinner"):
+        with patch("llm_light.executor.SentenceTransformer") as mock_st, \
+             patch("llm_light.executor._Spinner"):
             mock_st.return_value = MagicMock()
             auto_tune(files, quiet=True)
         self.assertEqual(_state.EMBED_MODEL, "all-mpnet-base-v2")
@@ -113,8 +113,8 @@ class TestAutoTune(unittest.TestCase):
         files = self._make_files(250)
         _state.EMBED_MODEL = None
         _state.embedder = None
-        with patch("claude_light.executor.SentenceTransformer") as mock_st, \
-             patch("claude_light.executor._Spinner"):
+        with patch("llm_light.executor.SentenceTransformer") as mock_st, \
+             patch("llm_light.executor._Spinner"):
             mock_st.return_value = MagicMock()
             auto_tune(files, quiet=True)
         self.assertEqual(_state.EMBED_MODEL, "nomic-ai/nomic-embed-text-v1.5")
@@ -125,8 +125,8 @@ class TestAutoTune(unittest.TestCase):
         chunks = [{"text": "a" * 400} for _ in range(5)]
         _state.EMBED_MODEL = None
         _state.embedder = None
-        with patch("claude_light.executor.SentenceTransformer") as mock_st, \
-             patch("claude_light.executor._Spinner"):
+        with patch("llm_light.executor.SentenceTransformer") as mock_st, \
+             patch("llm_light.executor._Spinner"):
             mock_st.return_value = MagicMock()
             auto_tune(files, chunks=chunks, quiet=True)
         self.assertIsNotNone(_state.TOP_K)
@@ -139,7 +139,7 @@ class TestAutoTune(unittest.TestCase):
         mock_embedder = MagicMock()
         _state.EMBED_MODEL = "all-MiniLM-L6-v2"
         _state.embedder = mock_embedder
-        with patch("claude_light.executor.SentenceTransformer") as mock_st:
+        with patch("llm_light.executor.SentenceTransformer") as mock_st:
             auto_tune(files, quiet=True)
             mock_st.assert_not_called()
         self.assertIs(_state.embedder, mock_embedder)
@@ -149,7 +149,7 @@ class TestAutoTune(unittest.TestCase):
         files = self._make_files(20)
         _state.EMBED_MODEL = None
         _state.embedder = None
-        with patch("claude_light.executor.SentenceTransformer") as mock_st:
+        with patch("llm_light.executor.SentenceTransformer") as mock_st:
             mock_st.return_value = MagicMock()
             auto_tune(files, chunks=None, quiet=True)
         self.assertIsNotNone(_state.TOP_K)

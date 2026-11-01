@@ -1,5 +1,5 @@
 """
-Tests for claude_light.providers.runner (specs/001-gemini-codex-providers: T005).
+Tests for llm_light.providers.runner (specs/001-gemini-codex-providers: T005).
 
 Covers FR-011 and the "tool fails or times out" edge case. Messages are the
 ones in contracts/provider.md. subprocess.Popen is always faked: no real CLI runs.
@@ -14,10 +14,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.providers import base, runner
+from llm_light.providers import base, runner
 
-_POPEN = "claude_light.providers.runner.subprocess.Popen"
-_KILL = "claude_light.providers.runner.kill_process_tree"
+_POPEN = "llm_light.providers.runner.subprocess.Popen"
+_KILL = "llm_light.providers.runner.kill_process_tree"
 
 
 class FakeProc:
@@ -158,7 +158,7 @@ def test_fr011_binary_gone_mid_session_names_the_provider():
 def test_fr011_kill_process_tree_on_windows_runs_taskkill_on_the_pid():
     proc = FakeProc()
     with patch.object(runner.os, "name", "nt"), \
-         patch("claude_light.providers.runner.subprocess.run") as run:
+         patch("llm_light.providers.runner.subprocess.run") as run:
         runner.kill_process_tree(proc)
     assert run.call_args[0][0] == ["taskkill", "/F", "/T", "/PID", "4242"]
 
@@ -167,7 +167,7 @@ def test_fr011_kill_process_tree_on_posix_kills_the_process():
     proc = FakeProc()
     proc.kill = MagicMock()
     with patch.object(runner.os, "name", "posix"), \
-         patch("claude_light.providers.runner.subprocess.run") as run:
+         patch("llm_light.providers.runner.subprocess.run") as run:
         runner.kill_process_tree(proc)
     proc.kill.assert_called_once_with()
     run.assert_not_called()

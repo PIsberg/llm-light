@@ -12,7 +12,7 @@ compression on top of prompt caching.
 
 ## Why LLMLingua (and where it actually pays)
 
-`claude_light` already has two token-saving strategies:
+`llm_light` already has two token-saving strategies:
 
 1. **Prompt caching** — skeleton (system) and retrieved context (user) are
    written to the ephemeral cache (`llm.py:218,544-550`). Repeat queries over
@@ -50,7 +50,7 @@ tasks, so this block is the highest-leverage target.
 
 ## Design
 
-### New module: `claude_light/compressor.py`
+### New module: `llm_light/compressor.py`
 
 ```python
 _COMPRESSOR = None
@@ -74,7 +74,7 @@ Uses the smaller BERT model by default. Force-keep newline, code fences
 (```` ``` ````), and `::` to preserve chunk structure. Call
 `structured_compress_prompt` so per-chunk preambles aren't merged across files.
 
-### Config (`claude_light/config.py`)
+### Config (`llm_light/config.py`)
 
 ```python
 LLMLINGUA_ENABLED      = True     # On by default; no-op if llmlingua not installed
@@ -84,7 +84,7 @@ LLMLINGUA_MIN_TOKENS   = 800      # Below this, skip compression — overhead > 
 LLMLINGUA_FORCE_TOKENS = ["\n", "```", "::", "//"]
 ```
 
-Env overrides: `CLAUDE_LIGHT_LLMLINGUA=0` to opt out, `CLAUDE_LIGHT_LLMLINGUA_RATE=0.4` to tune the keep rate.
+Env overrides: `LLM_LIGHT_LLMLINGUA=0` to opt out, `LLM_LIGHT_LLMLINGUA_RATE=0.4` to tune the keep rate.
 
 ### Wire-in point (single site)
 
@@ -158,7 +158,7 @@ Both blocks sum to the **true** savings story:
 ### Backwards compatibility of stats file
 
 `state.save_global_stats()` / `load_global_stats()` already ignore unknown
-keys. Reading an old `~/.claude_light_stats.json` missing the three new keys
+keys. Reading an old `~/.llm_light_stats.json` missing the three new keys
 must default them to 0 in `state.py` — already the pattern there.
 
 ## Token-savings math (for the PR description)
@@ -235,4 +235,4 @@ so CI prints the projected savings envelope.
 7. Default `LLMLINGUA_ENABLED=True` — safe because `compress_context()` is a
    silent no-op when the `llmlingua` package isn't installed. Users who have
    it installed get the savings automatically; anyone who wants to opt out
-   sets `CLAUDE_LIGHT_LLMLINGUA=0`.
+   sets `LLM_LIGHT_LLMLINGUA=0`.

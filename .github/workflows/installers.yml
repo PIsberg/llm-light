@@ -83,7 +83,7 @@ jobs:
           ./run.sh --help
           PY=.venv/bin/python
         else
-          python claude_light.py --help
+          python llm_light.py --help
           PY=python
         fi
         "$PY" -c "import anthropic, watchdog, prompt_toolkit, rich, numpy, einops, sentence_transformers, llmlingua, hypothesis, tree_sitter, tree_sitter_java, tree_sitter_python, tree_sitter_go, tree_sitter_rust, tree_sitter_javascript, tree_sitter_typescript; print('all dependencies import')"

@@ -1,5 +1,5 @@
 """
-Tests for claude_light.providers.codex (specs/001-gemini-codex-providers: T015).
+Tests for llm_light.providers.codex (specs/001-gemini-codex-providers: T015).
 
 Covers US1 scenario 2, US2 scenarios 1-2, US4, FR-007, FR-010, FR-011 and the
 missing-tool and not-logged-in edge cases. argv and messages come from
@@ -17,13 +17,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light  # noqa: F401  (loads the package before the submodules)
-from claude_light import git_manager, llm, state
-from claude_light.providers import codex
-from claude_light.providers.base import ProviderError, transcript
+import llm_light  # noqa: F401  (loads the package before the submodules)
+from llm_light import git_manager, llm, state
+from llm_light.providers import codex
+from llm_light.providers.base import ProviderError, transcript
 
-_RUN = "claude_light.providers.codex.run_cli"
-_WHICH = "claude_light.providers.codex.shutil.which"
+_RUN = "llm_light.providers.codex.run_cli"
+_WHICH = "llm_light.providers.codex.shutil.which"
 
 _EXPECTED_ARGV_TAIL = [
     "exec", "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config",
@@ -289,8 +289,8 @@ def test_us2s2_undo_restores_the_file(codex_turn):
 
 
 def test_us4_edit_turn_runs_without_the_claude_and_gemini_modules(codex_turn, monkeypatch):
-    monkeypatch.setitem(sys.modules, "claude_light.providers.claude", None)
-    monkeypatch.setitem(sys.modules, "claude_light.providers.gemini", None)
+    monkeypatch.setitem(sys.modules, "llm_light.providers.claude", None)
+    monkeypatch.setitem(sys.modules, "llm_light.providers.gemini", None)
     _edit_turn()
     assert (codex_turn / "app.py").read_text(encoding="utf-8").strip() == "x = 2"
     assert _head_message(codex_turn).startswith(git_manager.COMMIT_PREFIX)

@@ -106,11 +106,11 @@ One job per OS, `fail-fast: false` so one failure does not hide the others:
 | `macos-latest` | `bash installers/install_macos.sh` | whatever the installer finds (Homebrew first), as on a user's machine; it creates `.venv` and `run.sh` |
 | `windows-latest` | `.\installers\install.ps1` under Windows PowerShell 5.1 | 3.12 from `setup-python` |
 
-Then **Start the installed tool** runs `claude_light.py --help` (`./run.sh --help` on macOS) and imports every dependency from `requirements.txt` with the interpreter the installer used. It sets no API key: `--help` must work on a fresh install with no credential (#101).
+Then **Start the installed tool** runs `llm_light.py --help` (`./run.sh --help` on macOS) and imports every dependency from `requirements.txt` with the interpreter the installer used. It sets no API key: `--help` must work on a fresh install with no credential (#101).
 
 The harden-runner step runs on the Linux job only.
 
-Local equivalent: run the installer for your OS in a clean checkout, then `python claude_light.py --help`.
+Local equivalent: run the installer for your OS in a clean checkout, then `python llm_light.py --help`.
 
 ## `diagrams.yml`: Diagrams
 

@@ -1,5 +1,5 @@
 """
-Tests for claude_light.tools — the read-only workspace tools the model can call
+Tests for llm_light.tools — the read-only workspace tools the model can call
 in API-key mode (read_file, grep, list_files).
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.tools import TOOLS, run_tool
+from llm_light.tools import TOOLS, run_tool
 
 
 class TestWorkspaceTools(unittest.TestCase):

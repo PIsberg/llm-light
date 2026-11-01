@@ -1,5 +1,5 @@
-# Claude Light installer -- Windows (PowerShell 5.1+)
-# Run from the claude_light directory:
+# LLM Light installer -- Windows (PowerShell 5.1+)
+# Run from the llm_light directory:
 #   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 #   .\installers\install.ps1
 #Requires -Version 5.1
@@ -46,4 +46,4 @@ if (-not $key) {
 
 Write-Host ""
 Info "Installation complete. Run the tool from your project root:"
-Write-Host "  python claude_light.py"
+Write-Host "  python llm_light.py"

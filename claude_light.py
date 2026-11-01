@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""
-Wrapper to run the modularized claude_light application.
-"""
-import os
-# Fix for Windows: prevent Intel Fortran runtime (from NumPy/PyTorch)
-# from intercepting Ctrl+C and causing a 'forrtl: error (200)' crash.
-if os.name == 'nt':
-    os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
+"""Old entry point, kept so existing `python claude_light.py` commands keep working.
 
-from claude_light.main import main
+The project is now llm_light; this file runs llm_light.py. It will be removed in
+a later release, so switch your scripts and shell aliases to llm_light.py.
+"""
+import runpy
+import sys
+from pathlib import Path
 
-if __name__ == "__main__":
-    main()
+print("claude_light.py is now llm_light.py; the old name will be removed.", file=sys.stderr)
+runpy.run_path(str(Path(__file__).with_name("llm_light.py")), run_name="__main__")

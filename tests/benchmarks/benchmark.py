@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-benchmark.py -- Token-savings benchmark for claude_light.py
+benchmark.py -- Token-savings benchmark for llm_light.py
 
 Measures, analytically, how many tokens and dollars each optimization layer
 saves vs naively sending the full codebase to Claude on every query.
@@ -11,7 +11,7 @@ Three cost scenarios per query:
   Warm  -- skeleton + RAG chunks at cache-read  price $0.30/M (subsequent hits)
 
 Uses the same synthetic data as --test-mode and replicates all formulas
-exactly from claude_light.py. No external dependencies required.
+exactly from llm_light.py. No external dependencies required.
 
 Usage:
   python benchmark.py                    # all presets, table output
@@ -24,7 +24,7 @@ import json
 import sys
 
 # ---------------------------------------------------------------------------
-# Pricing -- matches claude_light.py exactly (lines 208-211)
+# Pricing -- matches llm_light.py exactly (lines 208-211)
 # ---------------------------------------------------------------------------
 PRICE_INPUT  = 3.00    # $/M uncached input tokens
 PRICE_WRITE  = 3.75    # $/M cache-creation tokens (1.25x input)
@@ -120,7 +120,7 @@ def _make_file(i: int, num_methods: int) -> str:
 def _make_chunk_text(i: int, m: int) -> str:
     """
     Approximates the chunk format produced by _chunk_with_treesitter
-    (claude_light.py:654-662):
+    (llm_light.py:654-662):
 
         "// {filepath}\\n" + preamble + "\\n" + "    // ...\\n" + node_text.strip() + "\\n"
 
@@ -148,7 +148,7 @@ def _make_chunk_text(i: int, m: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Token computation -- all formulas match claude_light.py exactly
+# Token computation -- all formulas match llm_light.py exactly
 # ---------------------------------------------------------------------------
 
 def compute_naive_tokens(num_files: int, num_methods: int) -> int:
@@ -160,7 +160,7 @@ def compute_skeleton_tokens(num_files: int) -> int:
     """
     Tokens in the skeleton directory tree for the synthetic dataset.
 
-    _build_compressed_tree (claude_light.py:453-522) collapses the
+    _build_compressed_tree (llm_light.py:453-522) collapses the
     single-child chain src/main/java/com/synthetic/ into one line and
     brace-groups all .java siblings into one line:
 
@@ -190,7 +190,7 @@ def compute_avg_chunk_tokens(num_files: int, num_methods: int) -> int:
 
 
 def compute_top_k(avg_chunk_tokens: int) -> int:
-    """Exact replica of auto_tune TOP_K formula (claude_light.py:715)."""
+    """Exact replica of auto_tune TOP_K formula (llm_light.py:715)."""
     return max(2, min(15, round(TARGET_RETRIEVED_TOKENS / avg_chunk_tokens)))
 
 
@@ -201,7 +201,7 @@ def compute_retrieved_tokens(
     total_chunks: int,
 ) -> tuple:
     """
-    Exact replica of retrieve() k formula (claude_light.py:1002).
+    Exact replica of retrieve() k formula (llm_light.py:1002).
 
     Assumes all top-k chunks pass the MIN_SCORE threshold -- a realistic
     assumption for a real codebase where queries match relevant code.
@@ -555,7 +555,7 @@ def print_session_table(all_stats: list) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Token-savings benchmark for claude_light.py",
+        description="Token-savings benchmark for llm_light.py",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -575,7 +575,7 @@ def main() -> None:
 
     if not args.json:
         print(
-            f"\nClaude Light -- Token Savings Benchmark\n"
+            f"\nLLM Light -- Token Savings Benchmark\n"
             f"Pricing: input ${PRICE_INPUT:.2f}/M  |  "
             f"cache-write ${PRICE_WRITE:.2f}/M  |  "
             f"cache-read ${PRICE_READ:.2f}/M  |  "

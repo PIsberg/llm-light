@@ -6,12 +6,12 @@ import py_compile
 from pathlib import Path
 
 files_to_check = [
-    "claude_light/git_manager.py",
-    "claude_light/editor.py",
-    "claude_light/llm.py",
-    "claude_light/main.py",
-    "claude_light/testing.py",
-    "tests/unit/test_claude_light.py",
+    "llm_light/git_manager.py",
+    "llm_light/editor.py",
+    "llm_light/llm.py",
+    "llm_light/main.py",
+    "llm_light/testing.py",
+    "tests/unit/test_llm_light.py",
 ]
 
 # Go up 3 levels from tests/linting/

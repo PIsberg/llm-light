@@ -1,7 +1,7 @@
 """
 Tests for tests/linting/check_diagram_pngs.py, the PR check that a changed
 PlantUML source comes with its re-rendered PNG (#107). indexing_flow.puml
-was edited while Claude_Light_Indexing_Flow.png stayed months older (#67).
+was edited while LLM_Light_Indexing_Flow.png stayed months older (#67).
 """
 
 import os

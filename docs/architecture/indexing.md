@@ -5,13 +5,13 @@
 
 The indexing system builds and maintains an incremental cache of code embeddings.
 
-![Indexing Flow](../plantuml/Claude_Light_Indexing_Flow.png)
+![Indexing Flow](../plantuml/LLM_Light_Indexing_Flow.png)
 
 ### Hybrid index (default)
 
-Every chunk gets two vectors (#61). `indexer._index_files_hybrid()` first embeds stale chunks with the static model `static-retrieval-mrl-en-v1` (no transformer; about 2 s for this repo), saves the cache and returns, so retrieval works from the first question. A background thread (`_complete_dense_index()`) then adds `all-mpnet-base-v2` vectors a batch at a time (about 380 s cold on a CPU) and sets `state.dense_ready`. One-shot runs pass `dense="skip"` and use only dense vectors already cached. Until the dense pass finishes, retrieval uses the static scores alone; after it, each model's scores are z-scored and averaged (see [rag-pipeline.md](rag-pipeline.md)). `CLAUDE_LIGHT_HYBRID=0` switches to the single auto-tuned model below.
+Every chunk gets two vectors (#61). `indexer._index_files_hybrid()` first embeds stale chunks with the static model `static-retrieval-mrl-en-v1` (no transformer; about 2 s for this repo), saves the cache and returns, so retrieval works from the first question. A background thread (`_complete_dense_index()`) then adds `all-mpnet-base-v2` vectors a batch at a time (about 380 s cold on a CPU) and sets `state.dense_ready`. One-shot runs pass `dense="skip"` and use only dense vectors already cached. Until the dense pass finishes, retrieval uses the static scores alone; after it, each model's scores are z-scored and averaged (see [rag-pipeline.md](rag-pipeline.md)). `LLM_LIGHT_HYBRID=0` switches to the single auto-tuned model below.
 
-### Auto-Tuned Models (`CLAUDE_LIGHT_HYBRID=0`)
+### Auto-Tuned Models (`LLM_LIGHT_HYBRID=0`)
 
 | Repo Size | Model | Size | Use Case |
 |-----------|-------|------|----------|
@@ -55,8 +55,8 @@ text: // filepath
 <summary>View PlantUML Source</summary>
 
 ```plantuml
-@startuml Claude_Light_Indexing_Flow
-title Claude Light - File Indexing (hybrid index)
+@startuml LLM_Light_Indexing_Flow
+title LLM Light - File Indexing (hybrid index)
 
 start
 
@@ -64,7 +64,7 @@ start
 :Filter by INDEXABLE_EXTENSIONS;
 :Skip directories (.git, build, etc.);
 
-if (HYBRID_RETRIEVAL?\n(default on; CLAUDE_LIGHT_HYBRID=0 turns it off)) then (yes)
+if (HYBRID_RETRIEVAL?\n(default on; LLM_LIGHT_HYBRID=0 turns it off)) then (yes)
 
   partition "Cache Lookup" {
     :Load manifest.json + index.npz\n(allow_pickle=False);
@@ -164,4 +164,4 @@ end note
 
 ## Disk cache
 
-Embeddings persist to `.claude_light_cache/index.npz` between runs. Ids and texts are stored as JSON and vectors as float32 arrays. The file is loaded with `allow_pickle=False`: the directory may come from a cloned repo, and the old `index.pkl` ran whatever a repo shipped in it. An old `index.pkl` is deleted, never read. A `manifest.json` tracks per-file MD5 hashes and the embedding model used, so only changed or new files are re-embedded on restart. Command history (prompt_toolkit) is stored here too. The conversation is not: `session.py` saves it for `--continue` under `~/.claude_light_sessions/`, outside the project, so a cloned repo cannot supply one.
+Embeddings persist to `.llm_light_cache/index.npz` between runs. Ids and texts are stored as JSON and vectors as float32 arrays. The file is loaded with `allow_pickle=False`: the directory may come from a cloned repo, and the old `index.pkl` ran whatever a repo shipped in it. An old `index.pkl` is deleted, never read. A `manifest.json` tracks per-file MD5 hashes and the embedding model used, so only changed or new files are re-embedded on restart. Command history (prompt_toolkit) is stored here too. The conversation is not: `session.py` saves it for `--continue` under `~/.llm_light_sessions/`, outside the project, so a cloned repo cannot supply one.

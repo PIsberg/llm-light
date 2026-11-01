@@ -1,5 +1,5 @@
-@startuml Claude_Light_Component_Diagram
-title Claude Light - Component Architecture
+@startuml LLM_Light_Component_Diagram
+title LLM Light - Component Architecture
 
 skinparam componentStyle rectangle
 skinparam backgroundColor #FEFEFE

@@ -1,7 +1,7 @@
 """
-Tests for claude_light.skeleton — build_skeleton, _assemble_skeleton, _render_md_file,
+Tests for llm_light.skeleton — build_skeleton, _assemble_skeleton, _render_md_file,
 _refresh_single_md, _refresh_tree_only, and related helpers.
-Also tests for claude_light.indexer — _file_hash.
+Also tests for llm_light.indexer — _file_hash.
 """
 
 import os
@@ -14,11 +14,11 @@ from unittest.mock import patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.skeleton import (
+from llm_light.skeleton import (
     build_skeleton, _assemble_skeleton, _render_md_file,
     _refresh_single_md, _refresh_tree_only, _is_skipped,
 )
-from claude_light.indexer import _file_hash
+from llm_light.indexer import _file_hash
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ class TestBuildSkeleton(unittest.TestCase):
 
     def test_reuses_cached_md_when_unchanged(self):
         print("\n  ▶ TestBuildSkeleton.test_reuses_cached_md_when_unchanged")
-        import claude_light as cl
+        import llm_light as cl
         with tempfile.TemporaryDirectory() as tmpdir:
             orig = os.getcwd()
             os.chdir(tmpdir)
@@ -187,20 +187,20 @@ class TestBuildSkeleton(unittest.TestCase):
 class TestSkeletonHelpers(unittest.TestCase):
 
     def setUp(self):
-        import claude_light as cl
+        import llm_light as cl
         self._orig_tree = cl._skeleton_tree
         self._orig_hashes = dict(cl._skeleton_md_hashes)
         self._orig_parts = dict(cl._skeleton_md_parts)
 
     def tearDown(self):
-        import claude_light as cl
+        import llm_light as cl
         cl._skeleton_tree = self._orig_tree
         cl._skeleton_md_hashes = self._orig_hashes
         cl._skeleton_md_parts = self._orig_parts
 
     def test_assemble_skeleton_combines_tree_and_docs(self):
         print("\n  ▶ TestSkeletonHelpers.test_assemble_skeleton_combines_tree_and_docs")
-        import claude_light as cl
+        import llm_light as cl
         cl._skeleton_tree = "Directory structure:\n  foo/"
         cl._skeleton_md_parts = {"README.md": "<!-- README.md -->\nHello"}
         result = _assemble_skeleton()
@@ -209,7 +209,7 @@ class TestSkeletonHelpers(unittest.TestCase):
 
     def test_assemble_skeleton_empty_parts(self):
         print("\n  ▶ TestSkeletonHelpers.test_assemble_skeleton_empty_parts")
-        import claude_light as cl
+        import llm_light as cl
         cl._skeleton_tree = "Directory structure:\n"
         cl._skeleton_md_parts = {}
         result = _assemble_skeleton()
@@ -217,7 +217,7 @@ class TestSkeletonHelpers(unittest.TestCase):
 
     def test_refresh_single_md_nonexistent_cleans_up(self):
         print("\n  ▶ TestSkeletonHelpers.test_refresh_single_md_nonexistent_cleans_up")
-        import claude_light as cl
+        import llm_light as cl
         cl._skeleton_md_hashes = {"ghost.md": "abc123"}
         cl._skeleton_md_parts = {"ghost.md": "old content"}
         changed = _refresh_single_md("ghost.md")
@@ -226,7 +226,7 @@ class TestSkeletonHelpers(unittest.TestCase):
 
     def test_refresh_single_md_unchanged(self):
         print("\n  ▶ TestSkeletonHelpers.test_refresh_single_md_unchanged")
-        import claude_light as cl
+        import llm_light as cl
         with tempfile.TemporaryDirectory() as tmpdir:
             orig = os.getcwd()
             os.chdir(tmpdir)

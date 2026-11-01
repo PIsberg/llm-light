@@ -15,10 +15,10 @@ import pytest
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light  # noqa: F401  (loads the package before the submodules)
-from claude_light import retrieval, state
-from claude_light.providers import base
-from claude_light.providers.claude import ClaudeProvider
+import llm_light  # noqa: F401  (loads the package before the submodules)
+from llm_light import retrieval, state
+from llm_light.providers import base
+from llm_light.providers.claude import ClaudeProvider
 
 _BODY = "def place(self, order):\n    return self.repo.save(order_unique_marker)"
 _TEXT = "// order.py\n    // ...\n" + _BODY
@@ -40,7 +40,7 @@ def store(monkeypatch):
     monkeypatch.setattr(state, "chunk_store",
                         {"order.py::place": {"text": _TEXT}})
     monkeypatch.setattr(retrieval.config if hasattr(retrieval, "config") else
-                        __import__("claude_light.config", fromlist=["x"]),
+                        __import__("llm_light.config", fromlist=["x"]),
                         "CALL_GRAPH", False)
     return [("order.py::place", 0.9)]
 

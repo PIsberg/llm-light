@@ -4,7 +4,7 @@ Embedding-model benchmark on this repository (issue #61).
 
 For every question in tests/fixtures/repo_questions.json (a question about this
 repo and the file that answers it, or an unrelated question that should get no
-context), this runs claude_light's real retrieval selection and reports:
+context), this runs llm_light's real retrieval selection and reports:
 
   * file-level MRR: rank of the answering file by its best chunk
   * selected: did the answering file reach the context the model would see
@@ -33,11 +33,11 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-import claude_light.state as state  # noqa: E402
-from claude_light import config, retrieval  # noqa: E402
-from claude_light.config import INDEXABLE_EXTENSIONS, _DOC_PREFIX, _QUERY_PREFIX  # noqa: E402
-from claude_light.indexer import _is_skipped  # noqa: E402
-from claude_light.parsing import chunk_file  # noqa: E402
+import llm_light.state as state  # noqa: E402
+from llm_light import config, retrieval  # noqa: E402
+from llm_light.config import INDEXABLE_EXTENSIONS, _DOC_PREFIX, _QUERY_PREFIX  # noqa: E402
+from llm_light.indexer import _is_skipped  # noqa: E402
+from llm_light.parsing import chunk_file  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "repo_questions.json"
 FAST = config.FAST_EMBED_MODEL
@@ -122,7 +122,7 @@ def report(r):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cache-dir", type=Path, default=ROOT / ".claude_light_cache" / "bench")
+    ap.add_argument("--cache-dir", type=Path, default=ROOT / ".llm_light_cache" / "bench")
     ap.add_argument("--sweep", action="store_true", help="also sweep HYBRID_SCORE_GAP and the floors")
     ap.add_argument("--budgets", action="store_true", help="also report recall and tokens per effort budget")
     ap.add_argument("--callgraph", action="store_true",

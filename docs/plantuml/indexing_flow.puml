@@ -1,5 +1,5 @@
-@startuml Claude_Light_Indexing_Flow
-title Claude Light - File Indexing (hybrid index)
+@startuml LLM_Light_Indexing_Flow
+title LLM Light - File Indexing (hybrid index)
 
 start
 
@@ -7,7 +7,7 @@ start
 :Filter by INDEXABLE_EXTENSIONS;
 :Skip directories (.git, build, etc.);
 
-if (HYBRID_RETRIEVAL?\n(default on; CLAUDE_LIGHT_HYBRID=0 turns it off)) then (yes)
+if (HYBRID_RETRIEVAL?\n(default on; LLM_LIGHT_HYBRID=0 turns it off)) then (yes)
 
   partition "Cache Lookup" {
     :Load manifest.json + index.npz\n(allow_pickle=False);

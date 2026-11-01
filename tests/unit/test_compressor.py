@@ -1,4 +1,4 @@
-"""Tests for claude_light/compressor.py (LLMLingua-2 integration)."""
+"""Tests for llm_light/compressor.py (LLMLingua-2 integration)."""
 
 import os
 import sys
@@ -10,7 +10,7 @@ os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-key"
 project_root = str(Path(__file__).resolve().parent.parent.parent)
 sys.path.insert(0, project_root)
 
-from claude_light import compressor
+from llm_light import compressor
 
 
 def _reset_singleton():
@@ -144,14 +144,14 @@ class TestAccumulateCompressionStats(unittest.TestCase):
     """Sanity-check the stats accumulator wired into llm.py."""
 
     def test_skipped_info_is_noop(self):
-        from claude_light import llm, state
+        from llm_light import llm, state
         before = dict(state.global_stats)
         llm._accumulate_compression_stats({"skipped": True, "reason": "disabled"})
         self.assertEqual(state.global_stats, before)
 
     def test_accumulates_delta_and_dollars(self):
-        from claude_light import llm, state
-        from claude_light.config import PRICE_WRITE
+        from llm_light import llm, state
+        from llm_light.config import PRICE_WRITE
         with state.lock:
             pre_before  = state.global_stats["total_tokens_pre_compress"]
             post_before = state.global_stats["total_tokens_post_compress"]
@@ -200,10 +200,10 @@ class TestMinTokensSetting(unittest.TestCase):
 
     def test_min_tokens_is_read_from_environment(self):
         import subprocess
-        env = dict(os.environ, CLAUDE_LIGHT_LLMLINGUA_MIN_TOKENS="400",
+        env = dict(os.environ, LLM_LIGHT_LLMLINGUA_MIN_TOKENS="400",
                    ANTHROPIC_API_KEY="sk-ant-test-key")
         out = subprocess.run(
-            [sys.executable, "-c", "from claude_light import config; print(config.LLMLINGUA_MIN_TOKENS)"],
+            [sys.executable, "-c", "from llm_light import config; print(config.LLMLINGUA_MIN_TOKENS)"],
             cwd=project_root, env=env, capture_output=True, text=True, check=True,
         ).stdout.strip()
         self.assertEqual(out, "400")

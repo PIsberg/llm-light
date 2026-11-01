@@ -1,9 +1,9 @@
 #!/bin/bash
-cd /c/dev/private/claude_light
+cd /c/dev/private/llm_light
 git add -A
 git commit -m "Implement API rate-limit handling with exponential backoff
 
-- Add new retry module (claude_light/retry.py) with @retry_with_backoff decorator
+- Add new retry module (llm_light/retry.py) with @retry_with_backoff decorator
 - Handles transient errors: 429 rate limits, 5xx server errors, connection errors
 - Exponential backoff strategy: 2s -> 4s -> 8s (capped at 60s)
 - Max 3 retry attempts before failure

@@ -1,5 +1,5 @@
 """
-Tests for claude_light.session: saving the conversation after each turn and
+Tests for llm_light.session: saving the conversation after each turn and
 resuming it with --continue (issue #65).
 """
 
@@ -14,9 +14,9 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light as cl
-import claude_light.state as state
-from claude_light import config, session
+import llm_light as cl
+import llm_light.state as state
+from llm_light import config, session
 
 _HISTORY = [
     {"role": "user", "content": "What does OrderService do?"},
@@ -113,8 +113,8 @@ class TestSaveAndRestore(_SessionTest):
 
     def test_file_lives_outside_the_project(self):
         # A cloned repo could ship a crafted conversation in its own
-        # .claude_light_cache; --continue must only read the user's own.
-        with patch.object(config, "SESSION_DIR", Path.home() / ".claude_light_sessions"):
+        # .llm_light_cache; --continue must only read the user's own.
+        with patch.object(config, "SESSION_DIR", Path.home() / ".llm_light_sessions"):
             path = session.session_file()
         self.assertNotIn(Path.cwd().resolve(), path.resolve().parents)
 
@@ -158,8 +158,8 @@ class TestChatLoopSavesTheConversation(_SessionTest):
             state.turn_count += 1
 
         with patch.object(cl, "full_refresh"), \
-             patch("claude_light.Observer", return_value=MagicMock()), \
-             patch("claude_light.SourceHandler", return_value=MagicMock()), \
+             patch("llm_light.Observer", return_value=MagicMock()), \
+             patch("llm_light.SourceHandler", return_value=MagicMock()), \
              patch("threading.Thread", return_value=MagicMock()), \
              patch.object(cl, "_PROMPTTK_AVAILABLE", False), \
              patch.object(cl, "print_session_summary"), \
@@ -203,8 +203,8 @@ class TestChatLoopSavesTheConversation(_SessionTest):
 class TestContinueFlag(unittest.TestCase):
 
     def _main(self, argv, isatty=True):
-        import claude_light.main as main_mod
-        with patch.object(main_mod.sys, "argv", ["claude_light", *argv]), \
+        import llm_light.main as main_mod
+        with patch.object(main_mod.sys, "argv", ["llm_light", *argv]), \
              patch.object(main_mod.sys.stdin, "isatty", return_value=isatty), \
              patch.object(main_mod, "_start_llmlingua_load"), \
              patch.object(main_mod, "start_chat") as start_chat, \

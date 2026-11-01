@@ -1,5 +1,5 @@
 """
-Tests for claude_light.linter — _lint_python_content, _lint_content dispatcher,
+Tests for llm_light.linter — _lint_python_content, _lint_content dispatcher,
 and tree-sitter linting for Java/JS/TS.
 """
 
@@ -12,7 +12,7 @@ from unittest.mock import patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.linter import _lint_content, _lint_python_content
+from llm_light.linter import _lint_content, _lint_python_content
 
 
 class TestLintPythonContent(unittest.TestCase):
@@ -75,7 +75,7 @@ class TestLintViaTreesitter(unittest.TestCase):
 
     def test_valid_java_via_lint_content(self):
         print("\n  ▶ TestLintViaTreesitter.test_valid_java_via_lint_content")
-        import claude_light as cl
+        import llm_light as cl
         if not cl._TREESITTER_AVAILABLE:
             self.skipTest("tree-sitter not available")
         try:
@@ -93,7 +93,7 @@ class TestLintViaTreesitter(unittest.TestCase):
 
     def test_broken_java_reports_error(self):
         print("\n  ▶ TestLintViaTreesitter.test_broken_java_reports_error")
-        import claude_light as cl
+        import llm_light as cl
         if not cl._TREESITTER_AVAILABLE:
             self.skipTest("tree-sitter not available")
         try:
@@ -113,7 +113,7 @@ class TestLintViaTreesitter(unittest.TestCase):
 
     def test_valid_javascript_via_lint_content(self):
         print("\n  ▶ TestLintViaTreesitter.test_valid_javascript_via_lint_content")
-        import claude_light as cl
+        import llm_light as cl
         if not cl._TREESITTER_AVAILABLE:
             self.skipTest("tree-sitter not available")
         try:
@@ -125,7 +125,7 @@ class TestLintViaTreesitter(unittest.TestCase):
 
     def test_broken_javascript_reports_error(self):
         print("\n  ▶ TestLintViaTreesitter.test_broken_javascript_reports_error")
-        import claude_light as cl
+        import llm_light as cl
         if not cl._TREESITTER_AVAILABLE:
             self.skipTest("tree-sitter not available")
         try:
@@ -143,32 +143,32 @@ class TestLintLanguagesNoTreesitter(unittest.TestCase):
 
     def test_java_linter_no_treesitter(self):
         print("\n  ▶ TestLintLanguagesNoTreesitter.test_java_linter_no_treesitter")
-        from claude_light.linter import _lint_java_content
-        import claude_light as cl
+        from llm_light.linter import _lint_java_content
+        import llm_light as cl
         with patch.object(cl, "_TREESITTER_AVAILABLE", False):
             result = _lint_java_content("Foo.java", "class Foo {}")
         self.assertIsNone(result)
 
     def test_js_linter_no_treesitter(self):
         print("\n  ▶ TestLintLanguagesNoTreesitter.test_js_linter_no_treesitter")
-        from claude_light.linter import _lint_javascript_content
-        import claude_light as cl
+        from llm_light.linter import _lint_javascript_content
+        import llm_light as cl
         with patch.object(cl, "_TREESITTER_AVAILABLE", False):
             result = _lint_javascript_content("app.js", "function foo() {}")
         self.assertIsNone(result)
 
     def test_ts_linter_no_treesitter(self):
         print("\n  ▶ TestLintLanguagesNoTreesitter.test_ts_linter_no_treesitter")
-        from claude_light.linter import _lint_typescript_content
-        import claude_light as cl
+        from llm_light.linter import _lint_typescript_content
+        import llm_light as cl
         with patch.object(cl, "_TREESITTER_AVAILABLE", False):
             result = _lint_typescript_content("app.ts", "const x: number = 1;")
         self.assertIsNone(result)
 
     def test_java_linter_import_error(self):
         print("\n  ▶ TestLintLanguagesNoTreesitter.test_java_linter_import_error")
-        from claude_light.linter import _lint_java_content
-        import claude_light as cl
+        from llm_light.linter import _lint_java_content
+        import llm_light as cl
         with patch.object(cl, "_TREESITTER_AVAILABLE", True):
             with patch.dict("sys.modules", {"tree_sitter_java": None}):
                 result = _lint_java_content("Foo.java", "class Foo {}")

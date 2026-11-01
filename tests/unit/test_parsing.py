@@ -1,6 +1,6 @@
 """
-Tests for claude_light.parsing — _strip_comments, _walk, _extract_symbol_name, chunk_file.
-Also tests from claude_light.skeleton — _build_compressed_tree, _render_compressed_node.
+Tests for llm_light.parsing — _strip_comments, _walk, _extract_symbol_name, chunk_file.
+Also tests from llm_light.skeleton — _build_compressed_tree, _render_compressed_node.
 """
 
 import os
@@ -12,9 +12,9 @@ from unittest.mock import MagicMock
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.parsing import _strip_comments, _walk, _extract_symbol_name, chunk_file
-from claude_light.skeleton import _build_compressed_tree, _render_compressed_node
-from claude_light.indexer import _chunk_label
+from llm_light.parsing import _strip_comments, _walk, _extract_symbol_name, chunk_file
+from llm_light.skeleton import _build_compressed_tree, _render_compressed_node
+from llm_light.indexer import _chunk_label
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ class TestStripComments(unittest.TestCase):
         from unittest.mock import patch
         py = 'def foo():\n    """describe me"""\n    return 1\n'
         java = "/** javadoc text */\nint x() { return 0; }"
-        with patch("claude_light.config.STRIP_DOCSTRINGS", True):
+        with patch("llm_light.config.STRIP_DOCSTRINGS", True):
             self.assertNotIn("describe me", _strip_comments(py, ".py"))
             self.assertNotIn("javadoc text", _strip_comments(java, ".java"))
 
@@ -241,7 +241,7 @@ class TestChunkFile(unittest.TestCase):
 
     def test_python_file_produces_chunks(self):
         print("\n  ▶ TestChunkFile.test_python_file_produces_chunks")
-        import claude_light as cl
+        import llm_light as cl
         if not cl._TREESITTER_AVAILABLE:
             self.skipTest("tree-sitter not available")
         if ".py" not in cl._LANG_CONFIG or cl._LANG_CONFIG[".py"] is None:
