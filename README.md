@@ -1,6 +1,6 @@
 # LLM Light: Auto-Warmer & Hybrid RAG Chat CLI
 
-> **Renamed from `claude_light`.** The tool now runs Claude, Gemini (via `agy`) and Codex, so the name is `llm_light`. Existing installs keep working: the `claude-light` command and `claude_light.py` still run, `CLAUDE_LIGHT_*` environment variables are still read, and `~/.claude_light_automation_token`, `~/.claude_light_stats.json` and `~/.claude_light_sessions/` are copied to their `~/.llm_light_*` names on first use (the old ones are kept). The per-project index in `.llm_light_cache/` is rebuilt on the first run after the rename. See [docs/CONFIG.md](https://github.com/PIsberg/llm-light/blob/main/docs/CONFIG.md).
+> **Renamed from `claude_light`.** The tool runs Claude, Gemini (via `agy`) and Codex, so the name is `llm_light`. The old names are no longer read: run `llm-light` (or `python llm_light.py`), rename `CLAUDE_LIGHT_*` environment variables to `LLM_LIGHT_*`, and rename `~/.claude_light_automation_token`, `~/.claude_light_stats.json` and `~/.claude_light_sessions/` to their `~/.llm_light_*` names. Startup prints one line for each old setting or file it still finds. See [docs/CONFIG.md](https://github.com/PIsberg/llm-light/blob/main/docs/CONFIG.md).
 
 `llm_light.py` is an interactive CLI chat tool for querying and editing a codebase using Claude, Gemini or Codex. By combining Anthropic's prompt caching with a highly optimized hybrid RAG (Retrieval-Augmented Generation) pipeline, it drastically reduces API costs while maintaining full context of your project.
 

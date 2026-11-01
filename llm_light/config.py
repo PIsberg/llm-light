@@ -1,5 +1,4 @@
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -16,54 +15,36 @@ if os.name == 'nt':
 
 from llm_light.testing import is_test_mode_enabled, get_test_api_key
 
-# The project was called claude_light before it supported Gemini and Codex.
-# Every LLM_LIGHT_* setting still accepts its CLAUDE_LIGHT_* name, and the new
-# name wins when both are set.
 def env_get(name: str, default: str | None = None) -> str | None:
-    """Return LLM_LIGHT_<name>, else the legacy CLAUDE_LIGHT_<name>, else default."""
+    """Return LLM_LIGHT_<name>, else default."""
     value = os.environ.get("LLM_LIGHT_" + name)
-    if value is None:
-        value = os.environ.get("CLAUDE_LIGHT_" + name)
     return default if value is None else value
 
 
-def _migrate_path(new: Path, legacy: Path) -> Path:
-    """Copy the pre-rename file or folder to its new name once, so an existing
-    stats file, saved sessions or automation token keep working (#120).
+# The project was called claude_light before it supported Gemini and Codex. The
+# old names were read for one release and are not any more (#119).
+_LEGACY_HOME_FILES = (
+    (".claude_light_automation_token", ".llm_light_automation_token"),
+    (".claude_light_stats.json", ".llm_light_stats.json"),
+    (".claude_light_sessions", ".llm_light_sessions"),
+)
 
-    It copies rather than moves, so a downgrade still finds the old one, and
-    never touches an existing new path. One notice goes to stderr. If the copy
-    fails, or the call runs off the main thread (background threads never
-    print), the legacy path is used as it is.
+
+def legacy_notices() -> list:
+    """One line per pre-rename setting or home file still present, naming its new name.
+
+    None of them is read. main() prints these at startup, because a setting
+    that silently stops applying can matter: CLAUDE_LIGHT_PROXY would no longer
+    route the model traffic through the proxy.
     """
-    if new.exists() or not legacy.exists():
-        return new
-    import threading
-    if threading.current_thread() is not threading.main_thread():
-        return legacy
-    # Copy under a temporary name and rename, so a failed copy never leaves a
-    # partial new path that would win over the legacy one next time.
-    staging = new.with_name(new.name + ".migrating")
-    try:
-        if staging.is_dir():
-            shutil.rmtree(staging)
-        if legacy.is_dir():
-            shutil.copytree(legacy, staging)
-        else:
-            shutil.copy2(legacy, staging)
-        os.replace(staging, new)
-    except OSError:
-        if staging.is_dir():
-            shutil.rmtree(staging, ignore_errors=True)
-        elif staging.exists():
-            try:
-                staging.unlink()
-            except OSError:
-                pass
-        return legacy
-    print(f"llm_light: copied {legacy} to {new}; the old one is kept, "
-          f"delete it once you no longer run claude_light.", file=sys.stderr)
-    return new
+    notices = [f"{var} is no longer read; rename it LLM_LIGHT_{var[len('CLAUDE_LIGHT_'):]}."
+               for var in sorted(os.environ) if var.startswith("CLAUDE_LIGHT_")]
+    import pathlib  # not the module's Path: --test-mode swaps that for a mock
+    home = pathlib.Path.home()
+    for old, new in _LEGACY_HOME_FILES:
+        if (home / old).exists() and not (home / new).exists():
+            notices.append(f"~/{old} is no longer read; rename it ~/{new}.")
+    return notices
 
 
 try:
@@ -82,8 +63,7 @@ is_test_mode = is_test_mode_enabled()
 def _get_pro_token() -> str:
     """Read Claude CLI credentials. Prioritize the automation token if it exists."""
     # 1. Check for the local automation token (most reliable for subprocesses on Windows)
-    auto_token_path = _migrate_path(Path.home() / ".llm_light_automation_token",
-                                    Path.home() / ".claude_light_automation_token")
+    auto_token_path = Path.home() / ".llm_light_automation_token"
     if auto_token_path.exists():
         try:
             return auto_token_path.read_text(encoding="utf-8").strip()
@@ -258,16 +238,12 @@ SKIP_DIRS      = {
 
 # Global Stats - stored in home directory to persist across all repositories.
 # LLM_LIGHT_STATS_FILE moves it; the test suite points it at a temp file.
-GLOBAL_STATS_FILE = Path(env_get("STATS_FILE")
-                         or _migrate_path(Path.home() / ".llm_light_stats.json",
-                                          Path.home() / ".claude_light_stats.json"))
+GLOBAL_STATS_FILE = Path(env_get("STATS_FILE") or Path.home() / ".llm_light_stats.json")
 
 # Saved conversations for --continue, one file per project (session.py).
 # In the home directory, not the project, so a cloned repo cannot supply one.
 # LLM_LIGHT_SESSION_DIR moves it; the test suite points it at a temp dir.
-SESSION_DIR = Path(env_get("SESSION_DIR")
-                   or _migrate_path(Path.home() / ".llm_light_sessions",
-                                    Path.home() / ".claude_light_sessions"))
+SESSION_DIR = Path(env_get("SESSION_DIR") or Path.home() / ".llm_light_sessions")
 
 # Disk cache — stored in a hidden dir so _is_skipped() ignores it automatically
 CACHE_DIR      = Path(".llm_light_cache")

@@ -635,6 +635,8 @@ def main():
     if args.resume and not interactive:
         # A one-shot turn sends no history, so there is nothing to resume into.
         parser.error("--continue resumes an interactive session; it cannot take a question")
+    for notice in _config.legacy_notices():
+        print(f"  {_T_SYS}  {notice}", file=sys.stderr)
     provider = providers.select(args.provider)
     provider.require_auth()
     if proxy.active():
