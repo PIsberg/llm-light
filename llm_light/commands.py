@@ -21,6 +21,11 @@ from llm_light.providers.base import SHELL, TOP_TIER
 
 # --- version ------------------------------------------------------------------
 
+# The PyPI distribution name, pyproject.toml's [project] name. It is not
+# the import name: PyPI refuses "llm-light" as too similar to "LLMlight".
+DIST_NAME = "llm-light-cli"
+
+
 def version() -> str:
     """The project version: pyproject.toml in a source checkout (what the
     build stamps), else the installed package's metadata."""
@@ -32,7 +37,7 @@ def version() -> str:
         pass
     try:
         from importlib.metadata import version as _dist_version
-        return _dist_version("llm-light")
+        return _dist_version(DIST_NAME)
     except Exception:
         return "unknown"
 
