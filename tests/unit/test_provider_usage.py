@@ -206,3 +206,20 @@ def test_lint_retry_under_a_provider_without_usage_commits_once(monkeypatch, tmp
     assert _totals() == before
     no_figures.assert_not_called()
     assert MESSAGE in text
+
+
+def test_compression_savings_keep_tokens_but_no_dollars_without_pricing(monkeypatch, no_figures):
+    """#114: LLMLingua savings were priced at Claude's rates for every
+    provider, so 'Dollars Saved' grew under Gemini and Codex, which have no
+    dollar pricing. Token counts stay; the dollar figure does not move."""
+    gs = dict(state.global_stats)
+    gs.update(total_tokens_pre_compress=0, total_tokens_post_compress=0,
+              total_dollars_saved_llmlingua=0.0)
+    monkeypatch.setattr(state, "global_stats", gs)
+    llm._accumulate_compression_stats(
+        {"tokens_before": 10_000, "tokens_after": 4_000}, "some-model")
+    assert gs["total_tokens_pre_compress"] == 10_000
+    assert gs["total_tokens_post_compress"] == 4_000
+    assert state.session_tokens["compress_pre"] == 10_000
+    assert state.session_tokens["compress_post"] == 4_000
+    assert gs["total_dollars_saved_llmlingua"] == 0.0

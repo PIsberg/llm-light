@@ -22,7 +22,7 @@ Skeleton is **not** compressed (already cached across many queries, so per-query
 |---|---|
 | `llm_light/tools.py` | Read-only tools for API-key turns (`read_file`, `grep`, `list_files`); `providers/claude.py: _api_tool_loop()` streams each request, runs any `tool_use` blocks, sends all results back in one user message and repeats (max 8 rounds), never on a `max_tokens` or `refusal` stop |
 | `llm_light/compressor.py` | Thread-safe lazy-loaded `PromptCompressor` singleton + `compress_context(text, rate, force_tokens)` that never raises into the hot path |
-| `llm_light/llm.py` | Calls `compress_context()` in `chat()` and `one_shot()` right after `retrieve()`; routes stats via `_accumulate_compression_stats()` |
+| `llm_light/llm.py` | Calls `compress_context()` in `chat()` and `one_shot()` right after `retrieve()`; routes stats via `_accumulate_compression_stats()`, which prices the saved tokens only when the active provider has the `usd_budget` and `usage` capabilities (Claude). Under Gemini or Codex the token counts are recorded and `total_dollars_saved_llmlingua` does not move |
 | `llm_light/state.py` | Three new `global_stats` fields: `total_tokens_pre_compress`, `total_tokens_post_compress`, `total_dollars_saved_llmlingua` — additive with existing cache savings, tracked separately so the display is never ambiguous |
 | `llm_light/ui.py` | Per-turn `print_stats` gains a `LLMLingua N→M (pct%)` segment; session summary gains an `LLMLingua-2 Compression` panel below Global Lifetime Savings |
 | `llm_light/config.py` | `LLMLINGUA_ENABLED`, `LLMLINGUA_MODEL`, `LLMLINGUA_TARGET_RATE`, `LLMLINGUA_MIN_TOKENS`, `LLMLINGUA_FORCE_TOKENS` |
