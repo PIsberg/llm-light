@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import llm_light  # noqa: F401  (loads the package before the submodules)
 from llm_light import git_manager, llm, state
-from llm_light.providers import codex
+from llm_light.providers import base, codex
 from llm_light.providers.base import ProviderError, transcript
 
 _RUN = "llm_light.providers.codex.run_cli"
@@ -123,18 +123,69 @@ def test_us1s2_codex_identity_and_label():
     p = codex.PROVIDER
     assert codex.BINARY == "codex"
     assert p.name == "codex"
-    assert set(p.capabilities) == set()
+    # Token counts (#148), but no prices, effort, caching control or top tier.
+    assert set(p.capabilities) == {base.USAGE}
     assert p.model_label("claude-opus-4") == "CLI default model"
     assert p.header() == ("CLI default model", "codex CLI")
 
 
 # --- complete: argv, stdin, reply (US1 s2, FR-007, FR-010) --------------------
 
-def test_us1s2_complete_returns_agent_message_with_no_usage_and_not_printed():
-    (reply, usage, printed), _, _ = _complete(_jsonl("an answer"))
+def test_us1s2_complete_returns_agent_message_and_is_not_printed():
+    (reply, _usage, printed), _, _ = _complete(_jsonl("an answer"))
+    assert reply == "an answer"
+    assert printed is False
+
+
+def _usage_stdout(usage):
+    return "\n".join([_msg("an answer"), _event("turn.completed", usage=usage)]) + "\n"
+
+
+def test_148_usage_comes_from_turn_completed_with_cached_split_out():
+    # codex counts cached tokens inside input_tokens; llm_light keeps them apart,
+    # as Claude's usage does, so "cached" and the totals are not double-counted.
+    out = _usage_stdout({"input_tokens": 9_190, "cached_input_tokens": 5_760,
+                         "cache_write_input_tokens": 0, "output_tokens": 621,
+                         "reasoning_output_tokens": 91})
+    (_reply, usage, _p), _, _ = _complete(out)
+    assert usage.input_tokens == 3_430
+    assert usage.cache_read_input_tokens == 5_760
+    assert usage.cache_creation_input_tokens == 0
+    assert usage.output_tokens == 621
+
+
+def test_148_uncached_input_never_goes_negative():
+    out = _usage_stdout({"input_tokens": 100, "cached_input_tokens": 120, "output_tokens": 1})
+    (_reply, usage, _p), _, _ = _complete(out)
+    assert usage.input_tokens == 0
+    assert usage.cache_read_input_tokens == 120
+
+
+def test_148_usage_sums_every_turn_completed_event():
+    out = "\n".join([_msg("a"), _event("turn.completed", usage={"input_tokens": 10, "output_tokens": 1}),
+                     _msg("b"), _event("turn.completed", usage={"input_tokens": 30, "output_tokens": 2,
+                                                                "cached_input_tokens": 5})]) + "\n"
+    (_reply, usage, _p), _, _ = _complete(out)
+    assert (usage.input_tokens, usage.cache_read_input_tokens, usage.output_tokens) == (35, 5, 3)
+
+
+@pytest.mark.parametrize("events", [
+    [_msg("an answer")],                                               # no turn.completed
+    [_msg("an answer"), _event("turn.completed")],                     # no usage
+    [_msg("an answer"), _event("turn.completed", usage="lots")],       # not an object
+    [_msg("an answer"), _event("turn.completed", usage={"input_tokens": "9"})],  # not a number
+], ids=["missing", "no-usage", "not-object", "not-number"])
+def test_148_unreadable_usage_is_none_not_an_error(events):
+    (reply, usage, _p), _, _ = _complete("\n".join(events) + "\n")
     assert reply == "an answer"
     assert usage is None
-    assert printed is False
+
+
+def test_148_summarize_reports_usage():
+    out = _usage_stdout({"input_tokens": 800, "cached_input_tokens": 0, "output_tokens": 100})
+    with patch(_WHICH, return_value="/bin/codex"), patch(_RUN, return_value=out):
+        _text, usage = codex.PROVIDER.summarize("Summarize: X")
+    assert (usage.input_tokens, usage.output_tokens) == (800, 100)
 
 
 def test_us1s2_reply_is_the_last_agent_message_after_narration():
@@ -279,12 +330,11 @@ def test_fr011_run_cli_error_passes_through_unchanged():
 
 # --- summarize (contract table) ----------------------------------------------
 
-def test_summarize_uses_same_argv_with_summary_prefix_and_no_usage():
+def test_summarize_uses_same_argv_with_summary_prefix():
     with patch(_WHICH, return_value="/bin/codex"), \
          patch(_RUN, return_value=_jsonl("the summary")) as run:
-        text, usage = codex.PROVIDER.summarize("Summarize: X")
+        text, _usage = codex.PROVIDER.summarize("Summarize: X")
     assert text == "the summary"
-    assert usage is None
     args, _kw = run.call_args
     assert _without_config(args[1]) == ["/bin/codex"] + _EXPECTED_ARGV_TAIL
     assert args[2] == "You summarize conversations.\n\nSummarize: X"

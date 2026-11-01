@@ -58,7 +58,7 @@ instance.
 
 | | `claude.py: ClaudeProvider` | `gemini.py: GeminiProvider` | `codex.py: CodexProvider` |
 |---|---|---|---|
-| capabilities | all seven | none | none |
+| capabilities | all seven | none | `usage` since #148 (token counts from `turn.completed`, no prices; D5 no longer holds for Codex) |
 | `model_label(m)` | `m` | `"CLI default model"` | `"CLI default model"` |
 | `header()` | `None` | `("CLI default model", "agy CLI")` | `("CLI default model", "codex CLI")` |
 | `complete` | `_make_streaming_api_call(**request)`, moved from `llm` | `run_cli` of the argv below | `run_cli` of the argv below |

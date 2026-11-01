@@ -199,10 +199,29 @@ def calculate_cost(usage, model=None):
     return sum(cost_breakdown(usage, model).values())
 
 
-def print_stats(usage, label="Stats", file=sys.stdout, model=None):
+def priced() -> bool:
+    """True when the active provider reports usage at prices llm_light knows.
+
+    A provider with USAGE but no USD_BUDGET (Codex) reports exact token counts
+    at prices that are not Claude's, so its figures are shown as tokens only.
+    """
+    from llm_light import providers
+    from llm_light.providers.base import USAGE, USD_BUDGET
+    provider = providers.active()
+    return provider.has(USAGE) and provider.has(USD_BUDGET)
+
+
+def print_stats(usage, label="Stats", file=None, model=None):
+    file = file or sys.stdout
     write_tokens = getattr(usage, "cache_creation_input_tokens", 0)
     read_tokens  = getattr(usage, "cache_read_input_tokens",      0)
     total_input  = usage.input_tokens + write_tokens + read_tokens
+    if not priced():
+        hit_pct = (read_tokens / total_input * 100) if total_input > 0 else 0.0
+        print(f"  {_ANSI_DIM}{_SYM_MARK} {label}  ·  {total_input:,} tokens"
+              f"  ·  cached {read_tokens:,} ({hit_pct:.1f}%)"
+              f"  ·  output {usage.output_tokens:,}{_ANSI_RESET}", file=file)
+        return
 
     p = model_prices(model)
     actual_cost  = calculate_cost(usage, model)
@@ -247,6 +266,9 @@ def print_session_summary():
     if _lacks_usage():
         from llm_light import providers
         print(f"  {_ANSI_DIM}{usage_unavailable(providers.active().name)}{_ANSI_RESET}")
+        return
+    if not priced():
+        _print_token_summary()
         return
     with state.lock:
         inp          = state.session_tokens["input"]
@@ -345,6 +367,22 @@ def print_session_summary():
     print(f"{_B}└{'─'*57}┘{_R}")
 
 
+def _print_token_summary():
+    """/cost for a provider with token counts but no prices: tokens only."""
+    with state.lock:
+        inp, cw = state.session_tokens["input"], state.session_tokens["cache_write"]
+        cr, out = state.session_tokens["cache_read"], state.session_tokens["output"]
+        turns = state.turn_count
+    total = inp + cw + cr + out
+    hit = f"{cr / (inp + cw + cr) * 100:.1f}%" if inp + cw + cr else "—"
+    print(f"\n  {_ANSI_BOLD}Session tokens{_ANSI_RESET}")
+    for label, tokens in (("Input (uncached)", inp), ("Cache read", cr), ("Output", out),
+                          ("TOTAL", total)):
+        print(f"  {label:<18} {tokens:>12,}")
+    print(f"  Turns: {_ANSI_BOLD}{turns}{_ANSI_RESET}  ·  Cache hit rate: {hit}"
+          f"  ·  {_ANSI_DIM}no prices for this provider{_ANSI_RESET}")
+
+
 def print_session_footer():
     """One line on exit: turns, tokens, cache hits, cost. /cost has the tables."""
     if _lacks_usage():
@@ -363,6 +401,9 @@ def print_session_footer():
     parts = [f"{turns} turn{'' if turns == 1 else 's'}", f"{total:,} tokens"]
     if inp + cw + cr:
         parts.append(f"{cr / (inp + cw + cr) * 100:.1f}% cached")
+    if not priced():
+        print(f"\n  {_ANSI_DIM}{_SYM_MARK} " + "  ·  ".join(parts) + _ANSI_RESET)
+        return
     parts.append(f"{'Cost' if ECONOMY_MODE == 'USD' else 'API equiv.'} ${cost:.4f}")
     if without > 0:
         pct = (without - cost) / without * 100
