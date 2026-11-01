@@ -21,6 +21,7 @@ from llm_light import providers
 from llm_light.providers import base
 from llm_light.providers.base import NotLoggedIn, Provider, transcript
 from llm_light.providers.runner import kill_process_tree as _kill_process_tree
+from llm_light.providers.runner import new_session as _new_session
 from llm_light.retry import retry_with_backoff
 from llm_light.streaming import stream_chat_response, accumulate_usage_from_dict, calculate_usage_cost
 from llm_light.llm import (
@@ -330,6 +331,9 @@ def _make_cli_subprocess_call(
             shell=(current_os == 'nt'),
             stdin=subprocess.DEVNULL,
             bufsize=1,
+            # Own process group on POSIX, so a timeout or Ctrl+C kills the
+            # CLI and everything it started (_kill_process_tree).
+            start_new_session=_new_session(),
         )
 
         timed_out = _threading.Event()

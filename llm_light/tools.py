@@ -19,6 +19,7 @@ from pathlib import Path
 
 from llm_light.cli_shell_guard import SHELL_FORBIDDEN, forbidden_chars
 from llm_light.config import SKIP_DIRS, env_get
+from llm_light.providers.runner import kill_process_tree, new_session
 
 _MAX_READ_LINES = 400
 _MAX_OUTPUT_CHARS = 40_000
@@ -358,7 +359,7 @@ def _shell(root, tool_input):
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
             # Own process group on POSIX, so a timeout can kill sh and its children.
-            start_new_session=(os.name != "nt"),
+            start_new_session=new_session(),
         )
     except OSError as exc:
         raise _ToolError(f"failed to start: {exc}")
@@ -367,7 +368,7 @@ def _shell(root, tool_input):
     except subprocess.TimeoutExpired:
         # subprocess.run would only kill the shell; on Windows the child keeps
         # the pipe open and communicate() blocks until it exits on its own.
-        _kill_tree(proc)
+        kill_process_tree(proc)
         try:
             stdout, _ = proc.communicate(timeout=5)
         except Exception:
@@ -375,27 +376,6 @@ def _shell(root, tool_input):
         return f"$ {command}\n[TIMEOUT after {timeout:g}s, process killed]\n{_trim_output(stdout or '')}", True
     out = f"$ {command}\n(exit {proc.returncode})\n{_trim_output(stdout or '')}"
     return out, proc.returncode != 0
-
-
-def _kill_tree(proc):
-    """Kill a shell=True process and everything it started. Kept here rather
-    than imported from llm.py, whose import runs the auth check."""
-    import subprocess
-    if proc.poll() is not None:
-        return
-    try:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                           capture_output=True, stdin=subprocess.DEVNULL)
-        else:
-            import signal
-            os.killpg(proc.pid, signal.SIGKILL)
-    except Exception:
-        pass
-    try:
-        proc.kill()
-    except Exception:
-        pass
 
 
 def _grep(root, tool_input):
