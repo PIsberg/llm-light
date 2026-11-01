@@ -73,7 +73,15 @@ One-time setup, done by the maintainer and not by the YAML: register a trusted p
 To release:
 
 1. Set `version` in `pyproject.toml` and move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, in a PR.
-2. After it merges, run **Publish to PyPI** by hand on `main`, then `pipx install --index-url https://test.pypi.org/simple/ --pip-args="--extra-index-url https://pypi.org/simple/" llm-light` in a clean environment and run `llm-light --version`. The extra index supplies the dependencies, which TestPyPI does not have.
+2. After it merges, run **Publish to PyPI** by hand on `main`. In a clean venv, fetch only the wheel from TestPyPI and take its dependencies from PyPI, then run the tool:
+
+   ```bash
+   pip download --no-deps --index-url https://test.pypi.org/simple/ -d testpypi-dist llm-light==<version>
+   pip install testpypi-dist/llm_light-<version>-py3-none-any.whl
+   llm-light --version
+   ```
+
+   Keep TestPyPI away from dependency resolution: with `--extra-index-url`, pip takes the highest version of each dependency from either index, so anyone can shadow `rich` or `numpy` there.
 3. Publish a GitHub release whose tag is `v<version>`, for example `v0.1.0`. That runs the `pypi` job, and `sbom.yml` attaches `sbom.json` to the same release.
 
 Local equivalent of the tag check: `python tests/linting/check_release_tag.py v0.1.0`.
