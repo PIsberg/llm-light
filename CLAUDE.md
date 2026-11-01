@@ -66,7 +66,7 @@ Run from the root of the project you want to query. Exits with an error if no au
 
 Authentication, in order: `ANTHROPIC_API_KEY`; `~/.anthropic` or `./.env`; `~/.llm_light_automation_token` (recommended on Windows); `~/.claude/.credentials.json` from `claude auth login`. An API key bills per token; a Pro subscription is flat-rate. The mode follows the credential found. That order is the `claude` provider's. `--provider gemini` needs the Antigravity CLI `agy` on PATH (https://antigravity.google; it keeps no credential file, so a missing sign-in shows on the first question, and `search_web` still runs); `--provider codex` needs `codex login`. Both run in an empty temporary directory and have no caching, effort, top tier, `/budget` or shell; each says so when you use one.
 
-Install with `installers/install.sh`, `installers/install_macos.sh` or `installers/install.ps1`. Dependencies come from `requirements.txt`, which the installers and the CI test and fuzz jobs all install. Python 3.12 or newer.
+Users install with `pipx install llm-light` from PyPI (released by `.github/workflows/publish.yml`, see [docs/WORKFLOW.md](docs/WORKFLOW.md)); from a checkout, install with `installers/install.sh`, `installers/install_macos.sh` or `installers/install.ps1`. Dependencies come from `requirements.txt`, which the installers and the CI test and fuzz jobs all install. Python 3.12 or newer.
 
 ## Invariants: check these before editing
 

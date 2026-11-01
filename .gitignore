@@ -12,3 +12,7 @@ test_ts.py
 dummy.py
 .qwen/
 .hypothesis/
+# Package build output (python -m build)
+dist/
+build/
+*.egg-info/

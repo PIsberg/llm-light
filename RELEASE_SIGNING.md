@@ -2,6 +2,8 @@
 
 This document describes how to sign releases for this project to verify authenticity and integrity.
 
+The PyPI upload itself is done by `.github/workflows/publish.yml` when a GitHub release is published, with trusted publishing and PEP 740 attestations instead of GPG; see [docs/WORKFLOW.md](docs/WORKFLOW.md#publishyml-publish-to-pypi) for the release steps. The GPG steps below sign the GitHub release assets, and the `release.yml` example further down is a sketch that does not exist in `.github/workflows/`.
+
 ## Why Sign Releases?
 
 Signed releases allow users to verify that:
