@@ -10,6 +10,9 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `--permission-mode {default,acceptEdits,plan,bypassPermissions}` | Command-line flag, default `default` (`-y` means `acceptEdits`). Held in `state.permission_mode`; see [architecture/components.md](architecture/components.md#permission-modes) |
 | `--dangerously-skip-permissions`, `--yolo` | Command-line flag: start in `bypassPermissions` and allow it for the session. `--allow-dangerously-skip-permissions` allows it without starting in it (`state.bypass_allowed`) |
 | `--model NAME` | Command-line flag: pin every question to `opus`, `sonnet`, `haiku`, `fable` or a model id in `MODEL_PRICES` (`state.pinned_model`, as `/model` sets). The budget cap still drops to Haiku. Claude only |
+| `--proxy URL` / `LLM_LIGHT_PROXY` | Send the model traffic (Anthropic client, and the `claude`, `codex` and `agy` CLIs) through this HTTPS proxy, e.g. `http://127.0.0.1:8080` or `http://user:token@host:8080`. Wins over an `HTTPS_PROXY` in the environment. See [architecture/components.md](architecture/components.md#proxy) |
+| `--proxy-ca PATH` / `LLM_LIGHT_PROXY_CA` | CA certificate of an intercepting proxy, trusted on top of certifi's public roots. Needs a proxy |
+| `--llm-fw` | `--proxy http://127.0.0.1:8080 --proxy-ca ~/.llm-fw/ca.crt` (`proxy.LLM_FW_URL`, `proxy.LLM_FW_CA`), a local llm-fw firewall's defaults; an explicit `--proxy` or `--proxy-ca` wins |
 | `-p`, `--print` / `-v`, `--version` | Command-line flags: one-shot mode, as `claude -p`; print the version from `pyproject.toml` |
 | `commands.py: MENTION_MAX_CHARS` | Most characters attached per `@file` mention (default 50 000); the rest is cut with a note |
 | `providers/runner.py: TIMEOUT_SECS` | Seconds an agy (Gemini) or Codex run may take before its process tree is killed (default 600) |

@@ -29,6 +29,9 @@ os.environ["LLM_LIGHT_STATS_FILE"] = os.path.join(
     _tempfile.mkdtemp(prefix="llm_light_stats_"), "stats.json")
 # Same for the conversations saved for --continue (~/.llm_light_sessions).
 os.environ["LLM_LIGHT_SESSION_DIR"] = _tempfile.mkdtemp(prefix="llm_light_sessions_")
+# A developer's own --proxy setting (e.g. llm-fw) must not route the suite.
+for _var in ("LLM_LIGHT_PROXY", "LLM_LIGHT_PROXY_CA", "CLAUDE_LIGHT_PROXY", "CLAUDE_LIGHT_PROXY_CA"):
+    os.environ.pop(_var, None)
 
 import threading
 

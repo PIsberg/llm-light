@@ -17,7 +17,7 @@ from llm_light.ui import (
     _SYM_RESP, _SYM_TOOL, print_stats, _Spinner, calculate_cost, _print_reply, usage_unavailable, ResponseView, NullView, notify, choose,
 )
 import llm_light.state as state
-from llm_light import providers
+from llm_light import providers, proxy
 from llm_light.providers import base
 from llm_light.providers.base import NotLoggedIn, Provider, transcript
 from llm_light.providers.runner import kill_process_tree as _kill_process_tree
@@ -32,6 +32,21 @@ from llm_light.llm import (
 
 class ClaudeNotLoggedIn(NotLoggedIn):
     """Raised when the official Claude CLI is not logged in."""
+
+
+def _new_client():
+    """An Anthropic client; through the --proxy, trusting its CA, when one is set."""
+    import anthropic
+    if not proxy.active():
+        return anthropic.Anthropic(api_key=API_KEY)
+    import httpx
+    # Our own transport, not proxy=: the SDK mounts the environment's
+    # HTTPS_PROXY on https://, which beats the all:// mount proxy= gets, so an
+    # HTTPS_PROXY in the environment would win over --proxy. With a transport
+    # given, httpx reads no proxy from the environment.
+    transport = httpx.HTTPTransport(proxy=proxy.url(), verify=proxy.ssl_context())
+    http_client = anthropic.DefaultHttpxClient(transport=transport)
+    return anthropic.Anthropic(api_key=API_KEY, http_client=http_client)
 
 
 if API_KEY == "sk-ant-test-mock-key":
@@ -53,8 +68,7 @@ else:
         def __getattr__(self, name):
             with self._lock:
                 if self._client is None:
-                    import anthropic
-                    self._client = anthropic.Anthropic(api_key=API_KEY)
+                    self._client = _new_client()
             return getattr(self._client, name)
 
     client = _LazyClient()
@@ -149,7 +163,7 @@ def _make_cli_subprocess_call(
 
     try:
         # Prepare the environment
-        env = os.environ.copy()
+        env = proxy.child_env(os.environ.copy())
 
         # Inject the automation token on all platforms.
         # On Linux/macOS: primary auth mechanism (no Credential Manager).

@@ -199,6 +199,16 @@ If you prefer to pay per-token or don't have a Pro subscription:
     [System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY","sk-ant-your-key-here","User")
     ```
 
+#### Through a proxy, such as the llm-fw firewall
+To watch or filter what llm_light sends, route its model traffic through an HTTPS proxy. For a local [llm-fw](https://github.com/PIsberg/llm-fw) (run `llm-fw setup` once, then `llm-fw start`):
+```bash
+python3 llm_light.py --llm-fw
+```
+That is short for `--proxy http://127.0.0.1:8080 --proxy-ca ~/.llm-fw/ca.crt`. For another proxy, or llm-fw on another machine, give both: `--proxy http://llm-fw:TOKEN@192.168.1.50:8080 --proxy-ca /path/to/llm-fw-ca.crt`, or set `LLM_LIGHT_PROXY` and `LLM_LIGHT_PROXY_CA`. A startup line names the proxy (password hidden). The traffic then shows on the llm-fw dashboard at http://localhost:7731.
+*   **What goes through it**: the Anthropic API client, and the `claude`, `codex` and `agy` CLIs llm_light starts. `--proxy` wins over an `HTTPS_PROXY` already in your environment. Nothing else changes: embedding-model downloads, git and the commands the agent runs keep their own connection.
+*   **Trust**: the CA is added to the public roots, not swapped in for them, so hosts the proxy only tunnels still verify. The `claude` CLI gets it as `NODE_EXTRA_CA_CERTS`, `codex` as `SSL_CERT_FILE` (a temporary bundle of certifi's roots plus the CA). `agy` is a Go program, which on Windows and macOS trusts only the OS certificate store: install the CA there, which `llm-fw setup` does.
+*   **Sinkhole mode** needs none of this: llm-fw redirects the API hosts at the OS level, so only the CA trust matters.
+
 Run the script from the root of your project — it will immediately build the skeleton, chunk your files, and auto-tune the embedding model.
 
 ---

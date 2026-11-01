@@ -20,7 +20,7 @@ from pathlib import Path
 from watchdog.observers import Observer
 
 import llm_light.state as state
-from llm_light import commands, permissions, providers, session
+from llm_light import commands, permissions, providers, proxy, session
 from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, TOP_TIER, USD_BUDGET
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
 from llm_light.ui import (
@@ -535,6 +535,22 @@ def start_chat(auto_apply=False, resume=False):
         print_session_footer()
 
 
+def _configure_proxy(parser, args) -> None:
+    """Set the proxy from --proxy/--proxy-ca/--llm-fw or LLM_LIGHT_PROXY(_CA);
+    a bad setting is a usage error, before any request is sent."""
+    import llm_light.config as _config
+    url = args.proxy or _config.env_get("PROXY") or (proxy.LLM_FW_URL if args.llm_fw else None)
+    ca = args.proxy_ca or _config.env_get("PROXY_CA") or (str(proxy.LLM_FW_CA) if args.llm_fw else None)
+    if ca and not url:
+        parser.error("--proxy-ca needs --proxy (or LLM_LIGHT_PROXY)")
+    try:
+        proxy.configure(url, ca)
+    except ValueError as exc:
+        hint = ("; run `llm-fw setup` once, or give --proxy-ca"
+                if args.llm_fw and "not found" in str(exc) else "")
+        parser.error(f"{exc}{hint}")
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="LLM Light RAG Chat")
@@ -571,6 +587,15 @@ def main():
                         help="Resume this project's previous interactive conversation.")
     parser.add_argument("--provider", choices=providers.NAMES, default=providers.DEFAULT,
                         help="Which agent answers: " + ", ".join(providers.NAMES) + " (default: %(default)s).")
+    parser.add_argument("--proxy", metavar="URL",
+                        help="Send the model traffic through this HTTPS proxy, e.g. "
+                             "http://127.0.0.1:8080 or http://user:token@host:8080. Also LLM_LIGHT_PROXY.")
+    parser.add_argument("--proxy-ca", metavar="PATH",
+                        help="CA certificate of an intercepting --proxy, trusted on top of the public "
+                             "roots. Also LLM_LIGHT_PROXY_CA.")
+    parser.add_argument("--llm-fw", action="store_true",
+                        help="Go through a local llm-fw firewall: --proxy " + proxy.LLM_FW_URL
+                             + " --proxy-ca ~/.llm-fw/ca.crt, unless those are given.")
     parser.add_argument("query", nargs="*", help="Optional query for one-shot mode.")
     args, unknown = parser.parse_known_args()
 
@@ -578,6 +603,8 @@ def main():
     for prefix in args.allow_command:
         if _config.command_rule(prefix)[1] and prefix.strip() not in _config.ALLOWED_COMMANDS:
             _config.ALLOWED_COMMANDS.append(prefix.strip())
+
+    _configure_proxy(parser, args)
 
     if args.test_mode:
         from tests.utilities.test_mocks import MockManager
@@ -610,6 +637,9 @@ def main():
         parser.error("--continue resumes an interactive session; it cannot take a question")
     provider = providers.select(args.provider)
     provider.require_auth()
+    if proxy.active():
+        print(f"  {_T_SYS}  {provider.name} traffic goes through the proxy {proxy.display()}"
+              + (f", trusting {proxy.ca_cert()}" if proxy.ca_cert() else ""), file=sys.stderr)
     if _config.ALLOWED_COMMANDS and not provider.has(SHELL):
         print(f"  {_T_SYS}  shell access is disabled for {provider.name}: its agent cannot run commands. "
               "--allow-command only lets llm_light run the affected tests.", file=sys.stderr)
