@@ -1,4 +1,4 @@
-# claude_light Constitution
+# llm_light Constitution
 
 ## Core Principles
 
@@ -6,8 +6,8 @@
 
 Tests MUST NOT call a real API or a real agent CLI (`claude`, `gemini`, `codex`), and MUST NOT
 write the real stats or session files. Every test MUST run under the `tests/conftest.py`
-settings: a mock API key, `CLAUDE_LIGHT_HYBRID=0`, a temporary `CLAUDE_LIGHT_STATS_FILE` and a
-temporary `CLAUDE_LIGHT_SESSION_DIR`. SDKs and subprocesses are mocked at the boundary.
+settings: a mock API key, `LLM_LIGHT_HYBRID=0`, a temporary `LLM_LIGHT_STATS_FILE` and a
+temporary `LLM_LIGHT_SESSION_DIR`. SDKs and subprocesses are mocked at the boundary.
 
 Rationale: a test that reaches the network bills, flakes, and passes or fails on credentials
 rather than on code.
@@ -49,7 +49,7 @@ Any agent CLI that can run shell commands MUST be limited to the `--allow-comman
 with commands containing `; & | < > `` ` `` $` or a newline rejected, and for PowerShell also
 `( ) { } @`. A CLI that cannot be restricted this way MUST run with shell access disabled.
 
-Rationale: claude_light runs agents inside cloned repositories it does not control.
+Rationale: llm_light runs agents inside cloned repositories it does not control.
 
 ### VI. Docs Move With Code
 

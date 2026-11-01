@@ -23,11 +23,11 @@ class TestGitManagerImport(unittest.TestCase):
 
     def test_git_manager_importable(self):
         print("\n  ▶ TestGitManagerImport.test_git_manager_importable")
-        from claude_light import git_manager  # noqa: F401
+        from llm_light import git_manager  # noqa: F401
 
     def test_all_functions_present(self):
         print("\n  ▶ TestGitManagerImport.test_all_functions_present")
-        from claude_light import git_manager
+        from llm_light import git_manager
         for func_name in self._functions:
             with self.subTest(func=func_name):
                 self.assertTrue(

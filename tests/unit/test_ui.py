@@ -1,5 +1,5 @@
 """
-Tests for claude_light.ui — calculate_cost, print_stats, print_session_summary, _print_reply.
+Tests for llm_light.ui — calculate_cost, print_stats, print_session_summary, _print_reply.
 """
 
 import io
@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.ui import calculate_cost, print_stats, print_session_summary, _print_reply
+from llm_light.ui import calculate_cost, print_stats, print_session_summary, _print_reply
 
 
 class TestCalculateCost(unittest.TestCase):
@@ -106,18 +106,18 @@ class TestPrintStats(unittest.TestCase):
 class TestPrintSessionSummary(unittest.TestCase):
 
     def setUp(self):
-        import claude_light as cl
+        import llm_light as cl
         self._orig_tokens = dict(cl.session_tokens)
         self._orig_hist = list(cl.conversation_history)
 
     def tearDown(self):
-        import claude_light as cl
+        import llm_light as cl
         cl.session_tokens.update(self._orig_tokens)
         cl.conversation_history[:] = self._orig_hist
 
     def test_prints_summary_table(self):
         print("\n  ▶ TestPrintSessionSummary.test_prints_summary_table")
-        import claude_light as cl
+        import llm_light as cl
         cl.session_tokens.update({"input": 1000, "cache_write": 500, "cache_read": 200, "output": 300})
         captured = io.StringIO()
         with patch("sys.stdout", captured):
@@ -129,7 +129,7 @@ class TestPrintSessionSummary(unittest.TestCase):
 
     def test_zero_tokens_no_crash(self):
         print("\n  ▶ TestPrintSessionSummary.test_zero_tokens_no_crash")
-        import claude_light as cl
+        import llm_light as cl
         cl.session_tokens.update({"input": 0, "cache_write": 0, "cache_read": 0, "output": 0})
         captured = io.StringIO()
         with patch("sys.stdout", captured):
@@ -138,7 +138,7 @@ class TestPrintSessionSummary(unittest.TestCase):
 
     def test_shows_turn_count(self):
         print("\n  ▶ TestPrintSessionSummary.test_shows_turn_count")
-        import claude_light as cl
+        import llm_light as cl
         cl.session_tokens.update({"input": 500, "cache_write": 200, "cache_read": 100, "output": 300})
         cl.conversation_history[:] = [
             {"role": "user", "content": "q1"},
@@ -158,20 +158,20 @@ class TestSessionFooter(unittest.TestCase):
     the tables on /cost."""
 
     def setUp(self):
-        import claude_light.state as st
+        import llm_light.state as st
         self._tokens = dict(st.session_tokens)
         self._costs = dict(st.session_costs)
         self._turns = st.turn_count
 
     def tearDown(self):
-        import claude_light.state as st
+        import llm_light.state as st
         st.session_tokens.update(self._tokens)
         st.session_costs.update(self._costs)
         st.turn_count = self._turns
 
     def _footer(self, without_cache, actual):
-        import claude_light.state as st
-        from claude_light.ui import print_session_footer
+        import llm_light.state as st
+        from llm_light.ui import print_session_footer
         st.session_tokens.update({"input": 10, "cache_write": 600, "cache_read": 400, "output": 50})
         st.session_costs.update({"input": 0.0, "cache_write": actual, "cache_read": 0.0,
                                  "output": 0.0, "without_cache": without_cache})
@@ -199,8 +199,8 @@ class TestSessionFooter(unittest.TestCase):
 
     def test_nothing_to_report_prints_nothing(self):
         print("\n  ▶ TestSessionFooter.test_nothing_to_report_prints_nothing")
-        import claude_light.state as st
-        from claude_light.ui import print_session_footer
+        import llm_light.state as st
+        from llm_light.ui import print_session_footer
         for k in st.session_tokens:
             st.session_tokens[k] = 0
         out = io.StringIO()
@@ -211,7 +211,7 @@ class TestSessionFooter(unittest.TestCase):
     def test_summary_reports_turns_from_the_counter_not_the_history(self):
         print("\n  ▶ TestSessionFooter.test_summary_reports_turns_from_the_counter_not_the_history")
         # History compression shrinks the stored history; 7 turns are still 7.
-        import claude_light.state as st
+        import llm_light.state as st
         st.turn_count = 7
         out = io.StringIO()
         with patch("sys.stdout", out):
@@ -220,7 +220,7 @@ class TestSessionFooter(unittest.TestCase):
 
     def test_summary_shows_a_loss_as_overhead(self):
         print("\n  ▶ TestSessionFooter.test_summary_shows_a_loss_as_overhead")
-        import claude_light.state as st
+        import llm_light.state as st
         st.session_tokens.update({"input": 10, "cache_write": 600, "cache_read": 0, "output": 50})
         st.session_costs.update({"input": 0.0, "cache_write": 0.0106, "cache_read": 0.0,
                                  "output": 0.0, "without_cache": 0.01})
@@ -235,7 +235,7 @@ class TestDiffDisplay(unittest.TestCase):
 
     def _lines(self, fn):
         import re
-        import claude_light.ui as ui
+        import llm_light.ui as ui
         out = io.StringIO()
         with patch("sys.stdout", out):
             fn(ui)
@@ -247,7 +247,7 @@ class TestDiffDisplay(unittest.TestCase):
         # The lines kept their newline and were joined with another one, so
         # every diff line was followed by a blank line.
         for rich_available in (True, False):
-            with patch("claude_light.ui._RICH_AVAILABLE", rich_available):
+            with patch("llm_light.ui._RICH_AVAILABLE", rich_available):
                 lines = self._lines(lambda ui: ui.show_diff("x.py", "a\nB\nc\n", old_content="a\nb\nc\n"))
             i = next(i for i, l in enumerate(lines) if l.strip() == "-b")
             self.assertEqual(lines[i + 1].strip(), "+B", (rich_available, lines))
@@ -257,7 +257,7 @@ class TestDiffDisplay(unittest.TestCase):
         # The path comes from the model's edit block; rich markup in it
         # could restyle or disguise the title of the diff being approved.
         evil = "x[/cyan][green]safe.py"
-        with patch("claude_light.ui._RICH_AVAILABLE", True):
+        with patch("llm_light.ui._RICH_AVAILABLE", True):
             text = "\n".join(self._lines(lambda ui: ui.show_unified_diff(evil, "@@ -1 +1 @@\n-a\n+b")))
             new = "\n".join(self._lines(lambda ui: ui.show_diff(evil, "b\n", old_content="")))
         self.assertIn("[/cyan][green]", text)
@@ -280,14 +280,14 @@ class TestAccessLabel(unittest.TestCase):
 
     def test_known_sources_get_readable_labels(self):
         print("\n  ▶ TestAccessLabel.test_known_sources_get_readable_labels")
-        from claude_light.ui import access_label
+        from llm_light.ui import access_label
         self.assertEqual(access_label("Claude CLI (Pro Subscription)"), "Claude subscription")
         self.assertEqual(access_label("Environment"), "API key from ANTHROPIC_API_KEY")
         self.assertEqual(access_label("Dotfile (.env)"), "API key from .env")
 
     def test_anything_else_is_not_echoed(self):
         print("\n  ▶ TestAccessLabel.test_anything_else_is_not_echoed")
-        from claude_light.ui import access_label
+        from llm_light.ui import access_label
         self.assertEqual(access_label("sk-ant-api03-secret"), "")
 
 
@@ -301,7 +301,7 @@ class TestChoose(unittest.TestCase):
     def _pick(self, keys):
         from prompt_toolkit.input import create_pipe_input
         from prompt_toolkit.output import DummyOutput
-        from claude_light.ui import choose
+        from llm_light.ui import choose
         with create_pipe_input() as inp, patch("sys.stdout", io.StringIO()):
             inp.send_text(keys)
             return choose("Apply 1 change?", self._OPTS, _input=inp, _output=DummyOutput())
@@ -324,7 +324,7 @@ class TestChoose(unittest.TestCase):
 
     def test_keys_typed_before_the_menu_are_discarded(self):
         print("\n  ▶ TestChoose.test_keys_typed_before_the_menu_are_discarded")
-        from claude_light import ui
+        from llm_light import ui
         order = []
         with patch.object(ui, "_discard_typeahead", side_effect=lambda: order.append("flush")), \
              patch.object(ui, "_choose_menu", side_effect=lambda *a: order.append("menu") or "no"), \
@@ -334,7 +334,7 @@ class TestChoose(unittest.TestCase):
 
     def test_discard_typeahead_never_raises(self):
         print("\n  ▶ TestChoose.test_discard_typeahead_never_raises")
-        from claude_light import ui
+        from llm_light import ui
         ui._discard_typeahead()  # stdin is not a console under pytest
 
     def test_ctrl_c_cancels(self):
@@ -343,7 +343,7 @@ class TestChoose(unittest.TestCase):
 
     def test_typed_fallback_without_a_terminal(self):
         print("\n  ▶ TestChoose.test_typed_fallback_without_a_terminal")
-        from claude_light.ui import choose
+        from llm_light.ui import choose
         for typed, expected in (("y", "yes"), ("3", "no"), ("always", "always"), ("", None), ("zzz", None)):
             with patch("builtins.input", return_value=typed), patch("sys.stdout", io.StringIO()):
                 self.assertEqual(choose("Apply?", self._OPTS, _force_plain=True), expected, typed)
@@ -353,7 +353,7 @@ class TestChoose(unittest.TestCase):
         # The menu erases itself; one line records what was picked.
         from prompt_toolkit.input import create_pipe_input
         from prompt_toolkit.output import DummyOutput
-        from claude_light.ui import choose
+        from llm_light.ui import choose
         out = io.StringIO()
         with create_pipe_input() as inp, patch("sys.stdout", out):
             inp.send_text("3")
@@ -368,13 +368,13 @@ class TestStartupHeader(unittest.TestCase):
         print("\n  ▶ TestStartupHeader.test_header_names_the_model_access_and_help")
         # The model line and help hint used to appear only after the first
         # query; they belong on the welcome screen.
-        import claude_light.ui as ui
+        import llm_light.ui as ui
         for rich_available in (True, False):
             out = io.StringIO()
             with patch.object(ui, "_RICH_AVAILABLE", rich_available), patch("sys.stdout", out):
                 ui.print_startup_header("claude-sonnet-5-5", "Claude subscription")
             text = out.getvalue()
-            self.assertIn("claude light", text)
+            self.assertIn("llm light", text)
             self.assertIn("sonnet-5-5", text)
             self.assertIn("Claude subscription", text)
             self.assertIn("/help", text)
@@ -384,7 +384,7 @@ class TestPrintReply(unittest.TestCase):
 
     def test_plain_text_fallback(self):
         print("\n  ▶ TestPrintReply.test_plain_text_fallback")
-        import claude_light as cl
+        import llm_light as cl
         orig = cl._RICH_AVAILABLE
         try:
             cl._RICH_AVAILABLE = False
@@ -397,7 +397,7 @@ class TestPrintReply(unittest.TestCase):
 
     def test_rich_path_called(self):
         print("\n  ▶ TestPrintReply.test_rich_path_called")
-        import claude_light as cl
+        import llm_light as cl
         orig = cl._RICH_AVAILABLE
         orig_console = cl.console
         try:
@@ -412,7 +412,7 @@ class TestPrintReply(unittest.TestCase):
 
     def test_plain_text_with_newlines(self):
         print("\n  ▶ TestPrintReply.test_plain_text_with_newlines")
-        import claude_light as cl
+        import llm_light as cl
         orig = cl._RICH_AVAILABLE
         try:
             cl._RICH_AVAILABLE = False
@@ -430,7 +430,7 @@ class TestSpinner(unittest.TestCase):
 
     def test_spinner_context_manager(self):
         print("\n  ▶ TestSpinner.test_spinner_context_manager")
-        from claude_light.ui import _Spinner
+        from llm_light.ui import _Spinner
         with patch("builtins.print"):
             with _Spinner("Testing") as sp:
                 self.assertIsNotNone(sp)
@@ -438,7 +438,7 @@ class TestSpinner(unittest.TestCase):
 
     def test_spinner_does_not_crash(self):
         print("\n  ▶ TestSpinner.test_spinner_does_not_crash")
-        from claude_light.ui import _Spinner
+        from llm_light.ui import _Spinner
         with patch("builtins.print"), patch("time.sleep"):
             with _Spinner("Working"):
                 pass
@@ -466,7 +466,7 @@ class TestPerModelPricing(unittest.TestCase):
 
     def test_each_model_has_its_own_rates(self):
         print("\n  ▶ TestPerModelPricing.test_each_model_has_its_own_rates")
-        from claude_light.config import MODEL_HAIKU, MODEL_SONNET, MODEL_OPUS
+        from llm_light.config import MODEL_HAIKU, MODEL_SONNET, MODEL_OPUS
         m = 1_000_000
         self.assertAlmostEqual(calculate_cost(self._usage(inp=m), MODEL_HAIKU), 0.10)
         self.assertAlmostEqual(calculate_cost(self._usage(out=m), MODEL_HAIKU), 0.50)
@@ -477,7 +477,7 @@ class TestPerModelPricing(unittest.TestCase):
 
     def test_one_hour_cache_writes_cost_double_input(self):
         print("\n  ▶ TestPerModelPricing.test_one_hour_cache_writes_cost_double_input")
-        from claude_light.config import MODEL_SONNET
+        from llm_light.config import MODEL_SONNET
         m = 1_000_000
         # The skeleton is cached with ttl=1h: those writes cost 2x input, not 1.25x.
         self.assertAlmostEqual(calculate_cost(self._usage(cw=m, cw_1h=m), MODEL_SONNET), 4.00)
@@ -486,23 +486,23 @@ class TestPerModelPricing(unittest.TestCase):
 
     def test_cost_reported_by_the_cli_wins(self):
         print("\n  ▶ TestPerModelPricing.test_cost_reported_by_the_cli_wins")
-        from claude_light.config import MODEL_SONNET
+        from llm_light.config import MODEL_SONNET
         # The CLI may run several models in one turn and reports the exact total.
         usage = self._usage(inp=1000, out=1000, cost_usd=0.0723477)
         self.assertAlmostEqual(calculate_cost(usage, MODEL_SONNET), 0.0723477)
 
     def test_unknown_model_falls_back_to_default_rates(self):
         print("\n  ▶ TestPerModelPricing.test_unknown_model_falls_back_to_default_rates")
-        from claude_light.config import MODEL
+        from llm_light.config import MODEL
         u = self._usage(inp=1_000_000)
         self.assertAlmostEqual(calculate_cost(u, "claude-something-new"), calculate_cost(u, MODEL))
 
     def test_session_summary_adds_turns_at_their_own_rates(self):
         print("\n  ▶ TestPerModelPricing.test_session_summary_adds_turns_at_their_own_rates")
         import re
-        import claude_light.state as state
-        from claude_light import llm
-        from claude_light.config import MODEL_HAIKU, MODEL_OPUS
+        import llm_light.state as state
+        from llm_light import llm
+        from llm_light.config import MODEL_HAIKU, MODEL_OPUS
         saved_tokens = dict(state.session_tokens)
         saved_costs = dict(getattr(state, "session_costs", {}))
         try:
@@ -539,27 +539,27 @@ class TestStreamedMarkdownSplit(unittest.TestCase):
 
     def test_paragraph_is_committed_once_a_blank_line_follows(self):
         print("\n  ▶ TestStreamedMarkdownSplit.test_paragraph_is_committed_once_a_blank_line_follows")
-        from claude_light.ui import _split_committable
+        from llm_light.ui import _split_committable
         done, rest = _split_committable("First paragraph.\n\nSecond is still arr")
         self.assertEqual(done, "First paragraph.\n\n")
         self.assertEqual(rest, "Second is still arr")
 
     def test_nothing_is_committed_inside_an_open_code_fence(self):
         print("\n  ▶ TestStreamedMarkdownSplit.test_nothing_is_committed_inside_an_open_code_fence")
-        from claude_light.ui import _split_committable
+        from llm_light.ui import _split_committable
         text = "```python\nx = 1\n\ny = 2\n"
         self.assertEqual(_split_committable(text), ("", text))
 
     def test_a_closed_fence_is_committed(self):
         print("\n  ▶ TestStreamedMarkdownSplit.test_a_closed_fence_is_committed")
-        from claude_light.ui import _split_committable
+        from llm_light.ui import _split_committable
         done, rest = _split_committable("```\na\n\nb\n```\nAfter")
         self.assertEqual(done, "```\na\n\nb\n```\n")
         self.assertEqual(rest, "After")
 
     def test_table_rows_stay_together(self):
         print("\n  ▶ TestStreamedMarkdownSplit.test_table_rows_stay_together")
-        from claude_light.ui import _split_committable
+        from llm_light.ui import _split_committable
         text = "| a | b |\n|---|---|\n| 1 | 2 |\n"
         self.assertEqual(_split_committable(text), ("", text))
 
@@ -569,7 +569,7 @@ class TestResponseViewTerminal(unittest.TestCase):
     the raw text: tables showed as pipes and **bold** as asterisks."""
 
     def _render(self, chunks, tools_after=None):
-        from claude_light.ui import ResponseView
+        from llm_light.ui import ResponseView
         con, buf = _live_console()
         with ResponseView(console=con, animate=False) as view:
             for i, chunk in enumerate(chunks):
@@ -602,10 +602,10 @@ class TestResponseViewTerminal(unittest.TestCase):
 
     def test_tool_call_gets_its_own_line_between_text_segments(self):
         print("\n  ▶ TestResponseViewTerminal.test_tool_call_gets_its_own_line_between_text_segments")
-        out = self._render(["Let me look.", "Found it."], tools_after={0: "Read claude_light/llm.py"})
+        out = self._render(["Let me look.", "Found it."], tools_after={0: "Read llm_light/llm.py"})
         lines = [l.strip() for l in out.splitlines() if l.strip()]
         i_look = next(i for i, l in enumerate(lines) if "Let me look." in l)
-        i_tool = next(i for i, l in enumerate(lines) if "Read claude_light/llm.py" in l)
+        i_tool = next(i for i, l in enumerate(lines) if "Read llm_light/llm.py" in l)
         i_found = next(i for i, l in enumerate(lines) if "Found it." in l)
         self.assertLess(i_look, i_tool)
         self.assertLess(i_tool, i_found)
@@ -630,7 +630,7 @@ class TestResponseViewTerminal(unittest.TestCase):
 
     def test_unfinished_edit_block_shows_as_writing(self):
         print("\n  ▶ TestResponseViewTerminal.test_unfinished_edit_block_shows_as_writing")
-        from claude_light.ui import ResponseView
+        from llm_light.ui import ResponseView
         con, buf = _live_console()
         view = ResponseView(console=con, animate=False)
         view.text("```python:calc.py\n<<<<<<< SEARCH\nold = 1\n")
@@ -645,7 +645,7 @@ class TestResponseViewTerminal(unittest.TestCase):
         # A full-width line wraps in ConPTY and throws off Live's erase,
         # leaving a stale frame (an empty marker bar) in the scrollback.
         import re
-        from claude_light.ui import ResponseView
+        from llm_light.ui import ResponseView
         con, buf = _live_console(width=60)
         view = ResponseView(console=con, animate=False)
         view.text("```python\nx = 1\n")  # only the live tail: nothing committed yet
@@ -661,7 +661,7 @@ class TestResponseViewTerminal(unittest.TestCase):
 
     def test_tail_taller_than_the_screen_is_cropped_to_its_last_lines(self):
         print("\n  ▶ TestResponseViewTerminal.test_tail_taller_than_the_screen_is_cropped_to_its_last_lines")
-        from claude_light.ui import _Gutter, _reply_markdown
+        from llm_light.ui import _Gutter, _reply_markdown
         con, buf = _live_console(height=10)
         body = "\n".join(f"line{i}" for i in range(40))
         con.print(_Gutter(_reply_markdown(f"```\n{body}\n```"), max_lines=5))
@@ -672,12 +672,12 @@ class TestResponseViewTerminal(unittest.TestCase):
 
 class TestResponseViewPiped(unittest.TestCase):
     """With stdout redirected, the reply goes to it as plain text and every
-    progress mark goes to stderr, so `claude_light "q" > answer.md` holds
+    progress mark goes to stderr, so `llm_light "q" > answer.md` holds
     only the answer. Live, the file started with \\r spinner frames."""
 
     def test_piped_stdout_gets_only_the_reply(self):
         print("\n  ▶ TestResponseViewPiped.test_piped_stdout_gets_only_the_reply")
-        from claude_light.ui import ResponseView
+        from llm_light.ui import ResponseView
         out, err = io.StringIO(), io.StringIO()
         with patch("sys.stdout", out), patch("sys.stderr", err):
             with ResponseView() as view:
@@ -698,7 +698,7 @@ class TestResponseViewCleanup(unittest.TestCase):
 
     def test_live_spinner_stops_when_the_turn_raises(self):
         print("\n  ▶ TestResponseViewCleanup.test_live_spinner_stops_when_the_turn_raises")
-        from claude_light.ui import ResponseView
+        from llm_light.ui import ResponseView
         con, _ = _live_console()
         before = self._threads()
         with self.assertRaises(KeyboardInterrupt):
@@ -716,7 +716,7 @@ class TestResponseViewCleanup(unittest.TestCase):
 
     def test_stderr_ticker_stops_when_the_turn_raises(self):
         print("\n  ▶ TestResponseViewCleanup.test_stderr_ticker_stops_when_the_turn_raises")
-        from claude_light.ui import ResponseView
+        from llm_light.ui import ResponseView
         out, err = io.StringIO(), io.StringIO()
         err.isatty = lambda: True
         before = self._threads()

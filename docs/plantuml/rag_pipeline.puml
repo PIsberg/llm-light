@@ -1,5 +1,5 @@
-@startuml Claude_Light_RAG_Pipeline
-title Claude Light - Hybrid RAG Pipeline
+@startuml LLM_Light_RAG_Pipeline
+title LLM Light - Hybrid RAG Pipeline
 
 start
 
@@ -43,7 +43,7 @@ partition "2. Chunk Retrieval (hybrid, default)" {
   :Keep chunks within HYBRID_SCORE_GAP (1.5)\nof the top fused score;
   :Select top-k chunks within token budget,\nfile diversity first;
   note right
-    CLAUDE_LIGHT_HYBRID=0: one model,
+    LLM_LIGHT_HYBRID=0: one model,
     MIN_SCORE 0.35 absolute floor and
     score >= top * 0.60 relative floor
   end note

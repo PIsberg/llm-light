@@ -15,7 +15,7 @@ from pathlib import Path
 project_root = str(Path(__file__).resolve().parent.parent.parent)
 sys.path.insert(0, project_root)
 
-from claude_light.retry import retry_with_backoff, _should_retry, MAX_RETRIES, INITIAL_BACKOFF_SECS, MAX_BACKOFF_SECS
+from llm_light.retry import retry_with_backoff, _should_retry, MAX_RETRIES, INITIAL_BACKOFF_SECS, MAX_BACKOFF_SECS
 import anthropic
 
 # anthropic>=2 replaced httpx with httpx2 and no longer installs httpx at all,
@@ -228,7 +228,7 @@ class TestRetryIntegration(unittest.TestCase):
 
     def test_chat_retry_on_rate_limit(self):
         """Chat function should retry on rate limit."""
-        from claude_light import llm
+        from llm_light import llm
         
         call_count = [0]
         
@@ -250,13 +250,13 @@ class TestRetryIntegration(unittest.TestCase):
             resp.usage.cache_read_input_tokens = 0
             return resp
         
-        with patch("claude_light.providers.claude.client.messages.create", side_effect=mock_create), \
-             patch("claude_light.llm.ENABLE_STREAMING", False), \
-             patch("claude_light.llm._update_skeleton"), \
-             patch("claude_light.llm.retrieve", return_value=("", [])), \
-             patch("claude_light.llm._print_reply"), \
-             patch("claude_light.llm.print_stats"), \
-             patch("claude_light.llm.state.lock"), \
+        with patch("llm_light.providers.claude.client.messages.create", side_effect=mock_create), \
+             patch("llm_light.llm.ENABLE_STREAMING", False), \
+             patch("llm_light.llm._update_skeleton"), \
+             patch("llm_light.llm.retrieve", return_value=("", [])), \
+             patch("llm_light.llm._print_reply"), \
+             patch("llm_light.llm.print_stats"), \
+             patch("llm_light.llm.state.lock"), \
              patch("builtins.print"):
             
             # Suppress print output

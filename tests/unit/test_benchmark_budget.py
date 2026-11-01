@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-import claude_light.config as config
-import claude_light.retrieval as retrieval
-import claude_light.state as state
+import llm_light.config as config
+import llm_light.retrieval as retrieval
+import llm_light.state as state
 
 _BENCH = Path(__file__).resolve().parents[1] / "benchmarks" / "benchmark_models.py"
 

@@ -10,7 +10,7 @@ Checked 2026-10-30 on the maintainer's machine. "Help" means the installed CLI's
 | agy (Gemini, D10) | probe, R3 | every agy flag and why |
 | `codex exec ... -` | help (0.162.1): "if `-` is used, instructions are read from stdin" | prompt on stdin; avoids the Windows 8,191-character command line |
 | `codex exec --json` | help + probe: `thread.started`, `turn.started`, `item.completed` (`item.type == "agent_message"`, `text`), `turn.completed` (`usage`) | reply = last agent message |
-| `--ephemeral`, `--skip-git-repo-check` | help | no session files; claude_light also runs outside git |
+| `--ephemeral`, `--skip-git-repo-check` | help | no session files; llm_light also runs outside git |
 | `--ignore-user-config` | help + probe | drops `~/.codex/config.toml`, and with it user MCP servers; auth still works (probe answered) |
 | `--sandbox read-only`, `--disable shell_tool`, `--disable unified_exec`, `--disable apps` | help; `codex features list` shows `shell_tool`, `unified_exec`, `apps` | no shell, no writes, no connectors |
 
@@ -52,7 +52,7 @@ the user's agy settings; the argv passes no `--model` (D3).
   permission`. Decision: that override plus `--mode plan` (FR-010, constitution V).
 - Limit: `search_web` still ran (three searches) under the override, and no permission kind was
   found that stops it. With the empty cwd and `allowNonWorkspaceAccess` false, what it can send is
-  the prompt claude_light gives it.
+  the prompt llm_light gives it.
 - Auth: agy keeps no credential file under `~/.gemini/antigravity-cli`, so `require_auth` checks
   only that `agy` is on PATH.
 
@@ -66,18 +66,18 @@ from `llm`) is not copied.
 
 ## R5. Which existing tests change when Claude's transport moves (D2)
 
-Existing tests reach Claude's transport through `claude_light.llm` (grep, 2026-10-30):
-`patch("claude_light.llm.client.messages.create")` 36 times, `...llm.stream_chat_response` 21,
+Existing tests reach Claude's transport through `llm_light.llm` (grep, 2026-10-30):
+`patch("llm_light.llm.client.messages.create")` 36 times, `...llm.stream_chat_response` 21,
 `...llm.print_stats` 9, `...llm._make_streaming_api_call` 6, and `patch.object(llm, ...)` on
 `client` 3, `_make_cli_subprocess_call` 3, `AUTH_MODE` 3, `_make_streaming_api_call` 2,
 `_CLI_IDLE_TIMEOUT_SECS` 2, `_CLI_MAX_SECS` 1, `warm_cache` 1. The eight files:
-`tests/unit/test_claude_light.py`, `test_llm.py`, `test_effort_cache.py`, `test_cli_shell_guard.py`,
+`tests/unit/test_llm_light.py`, `test_llm.py`, `test_effort_cache.py`, `test_cli_shell_guard.py`,
 `test_retry.py`, `test_top_tier.py`, `tests/integration/test_api_tool_loop.py` and
-`tests/utilities/test_mocks.py` (which patches `claude_light.llm.client.messages`).
+`tests/utilities/test_mocks.py` (which patches `llm_light.llm.client.messages`).
 
 A patch on `llm` does not reach code moved to another module. So each patch whose name the moved
-code now looks up in `providers/claude.py` is retargeted to `claude_light.providers.claude`
+code now looks up in `providers/claude.py` is retargeted to `llm_light.providers.claude`
 (FR-006). Patches that still reach their code stay as they are: names neutral `llm` code keeps
 using (`print_stats` in `chat`, `AUTH_MODE` in the OAuth checks), and attributes set through a
-module object `llm` still imports (`claude_light.llm.subprocess.Popen` sets `Popen` on `subprocess`
+module object `llm` still imports (`llm_light.llm.subprocess.Popen` sets `Popen` on `subprocess`
 itself, 12 patches). A test that steers both `llm`'s and the transport's `AUTH_MODE` patches both.

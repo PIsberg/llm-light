@@ -18,10 +18,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light  # noqa: F401
-from claude_light import config, llm, state
-from claude_light import main as main_mod
-from claude_light.providers import base
+import llm_light  # noqa: F401
+from llm_light import config, llm, state
+from llm_light import main as main_mod
+from llm_light.providers import base
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 

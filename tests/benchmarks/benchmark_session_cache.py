@@ -49,9 +49,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-import claude_light.llm as llm  # noqa: E402
-import claude_light.state as state  # noqa: E402
-from claude_light import config  # noqa: E402
+import llm_light.llm as llm  # noqa: E402
+import llm_light.state as state  # noqa: E402
+from llm_light import config  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "repo_questions.json"
 OUTPUT = {"low": 600, "medium": 1_500, "high": 3_000, "max": 6_000}  # thinking + answer, assumed
@@ -63,8 +63,8 @@ POLICIES = ("old", "effort", "pinned")   # "first" is reported per opening model
 
 def prefix_tokens():
     """Skeleton + tools + system prompt, at 4 characters per token."""
-    from claude_light import tools
-    from claude_light.skeleton import build_skeleton
+    from llm_light import tools
+    from llm_light.skeleton import build_skeleton
     chars = len(build_skeleton()) + len(json.dumps(tools.TOOLS)) + len(config.SYSTEM_PROMPT)
     return chars // 4
 

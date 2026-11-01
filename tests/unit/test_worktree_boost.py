@@ -1,6 +1,6 @@
 import numpy as np
 
-from claude_light import config, retrieval
+from llm_light import config, retrieval
 
 
 def _setup(monkeypatch, modified):

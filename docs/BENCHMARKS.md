@@ -1,6 +1,6 @@
-# claude_light — Benchmark Suite
+# llm_light — Benchmark Suite
 
-Three standalone benchmarks ship with `claude_light.py`. Each tests a different
+Three standalone benchmarks ship with `llm_light.py`. Each tests a different
 aspect of what the tool optimises and can be shared independently to demonstrate
 its value.
 
@@ -8,11 +8,11 @@ its value.
 
 The current headline benchmark figures published in [`README.md`](../README.md)
 come from `benchmark_claude_code.py`, which compares Claude Code against
-`claude_light` on the same 4 Python repositories and 10-query workload.
+`llm_light` on the same 4 Python repositories and 10-query workload.
 
 Measured on 2026-03-23:
 
-| Repository | Repo size | Claude Code | claude_light | Savings |
+| Repository | Repo size | Claude Code | llm_light | Savings |
 |---|---:|---:|---:|---:|
 | `psf/requests` v2.31.0 | 108K tokens | $0.91 | $0.23 | **75%** |
 | `pallets/flask` 3.0.0 | 144K tokens | $1.62 | $0.17 | **89%** |
@@ -21,7 +21,7 @@ Measured on 2026-03-23:
 | **Total (≈40 queries)** | | **$5.81** | **$1.16** | **80% / 5× cheaper** |
 
 `benchmark_cost.py` is still useful, but it answers a different question:
-Claude Light vs a naive "send the whole repo" baseline. The README headline
+LLM Light vs a naive "send the whole repo" baseline. The README headline
 stats should therefore be treated as the source of truth for tool-vs-tool cost
 comparison, and this document now reflects that.
 
@@ -37,7 +37,7 @@ comparison, and this document now reflects that.
 | `benchmark_router.py` | Effort tier and model the router picks for each question | No | Free (static model download on first run) |
 | `benchmark_session_cache.py` | Session cost of four routing policies under a prompt-cache model | No | Free (static model download on first run) |
 | `benchmark_cost.py` | Real-world cost savings vs naive baseline | Yes | ~$0.05–$0.50 |
-| `benchmark_claude_code.py` | Claude Code vs `claude_light` vs naive baseline | Yes | Varies with live API/tool runs |
+| `benchmark_claude_code.py` | Claude Code vs `llm_light` vs naive baseline | Yes | Varies with live API/tool runs |
 
 \* Offline fixture mode is fully local. Live SWE-bench mode downloads HuggingFace data + sentence-transformers on first run (~1.5 GB).
 
@@ -47,10 +47,10 @@ comparison, and this document now reflects that.
 
 ### Purpose
 
-Answers: *"How much cheaper is claude_light than sending the whole codebase on
+Answers: *"How much cheaper is llm_light than sending the whole codebase on
 every query?"* using pure arithmetic — no API calls, no network, no GPU.
 
-It replicates every formula from `claude_light.py` (token proxy, TOP_K,
+It replicates every formula from `llm_light.py` (token proxy, TOP_K,
 retrieval k, cost calculation) on synthetic Java repositories generated
 identically to `--test-mode`.
 
@@ -64,7 +64,7 @@ Three cost scenarios are compared for every (preset × query × effort) combinat
 | **Cold** | First query of a session — cache write + retrieval | $3.75/M write |
 | **Warm** | Follow-up queries — cache read + retrieval | $0.30/M read |
 
-Formulas replicated from `claude_light.py`:
+Formulas replicated from `llm_light.py`:
 
 ```
 token_count  = len(text) // 4
@@ -76,7 +76,7 @@ retrieved_k  = min(retrieved_k, total_chunks)
 Pricing constants:  `PRICE_INPUT=3.00`, `PRICE_WRITE=3.75`, `PRICE_READ=0.30`,
 `PRICE_OUTPUT=15.00` (per million tokens). These are a fixed reference rate (Sonnet 4.6)
 defined in the benchmark scripts themselves, so results stay comparable with the committed
-baselines. claude_light prices real calls per model (`MODEL_PRICES` in `config.py`).
+baselines. llm_light prices real calls per model (`MODEL_PRICES` in `config.py`).
 
 A 10-turn session model `[low×3, medium×3, high×3, max×1]` is used to compute
 realistic session costs (turn 1 = cold, turns 2–10 = warm).
@@ -142,21 +142,21 @@ Ratio:                  346x
 
 ### Purpose
 
-Answers: *"Does claude_light's RAG pipeline retrieve the right code?"* in two modes:
+Answers: *"Does llm_light's RAG pipeline retrieve the right code?"* in two modes:
 
 - Offline fixture mode for deterministic CI regression checks
 - Live [SWE-bench Lite](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite) mode for broader retrieval studies
 
 Given a natural-language issue description, the benchmark checks whether the
 correct source files appear in the top-K retrieved chunks — the same chunks
-claude_light would send to Claude.
+llm_light would send to Claude.
 
 ### Methodology
 
 Offline fixture mode:
 1. Load `tests/fixtures/retrieval_cases.json`.
 2. Index the committed tiny repo in `tests/fixtures/retrieval_repo/`.
-3. Chunk source files with the same tree-sitter pipeline used by `claude_light.py`.
+3. Chunk source files with the same tree-sitter pipeline used by `llm_light.py`.
 4. Embed with the deterministic local `offline-token-overlap-v1` embedder.
 5. Query with the issue text and rank chunks by cosine similarity.
 6. Measure Hit@K, Recall@K, Precision@K, and MRR at K = [5, 10, 15].
@@ -167,7 +167,7 @@ Live SWE-bench mode:
    shallow clone (`git clone --filter=blob:none --no-checkout`).
 3. Parse the `patch` field to extract gold files (the files modified by the fix).
 4. Chunk all source files with the same tree-sitter pipeline used by
-   `claude_light.py` (method-level, with preamble injection).
+   `llm_light.py` (method-level, with preamble injection).
 5. Embed with the same auto-selected sentence-transformers model.
 6. Query with the issue description text and rank chunks by cosine similarity.
 7. Measure Hit@K, Recall@K, Precision@K, and MRR at K = [5, 10, 15].
@@ -256,7 +256,7 @@ Results: dev split  23 instances  K=[5,10,15]
 
 - Gold files come from the patch diff — new files added by the fix are excluded
   (they don't exist at the base commit). Deleted files are also excluded.
-- The issue text is used directly as the query; `claude_light.py` would let
+- The issue text is used directly as the query; `llm_light.py` would let
   Claude rephrase or disambiguate first, which could improve recall.
 - `MIN_SCORE` (0.35) cosine threshold is **not applied** in this benchmark so
   that recall at all K values is measurable. In production, low-scoring chunks
@@ -264,9 +264,9 @@ Results: dev split  23 instances  K=[5,10,15]
 - Some SWE-bench instances touch only configuration files or test files that are
   outside the indexed extensions — these count as misses.
 - It reimplements chunking and ranks by cosine similarity alone; it does not
-  import `claude_light.retrieval`. Hybrid fusion, the test-file exclusion, the
+  import `llm_light.retrieval`. Hybrid fusion, the test-file exclusion, the
   working-tree boost and call-graph expansion never run here, so their env vars
-  (`CLAUDE_LIGHT_CALLGRAPH`, `CLAUDE_LIGHT_WORKTREE_BOOST`) do not change its
+  (`LLM_LIGHT_CALLGRAPH`, `LLM_LIGHT_WORKTREE_BOOST`) do not change its
   output. Measure those with `benchmark_models.py` (section 2b).
 
 ---
@@ -286,9 +286,9 @@ that answers the question reach the context the model is given?
   paraphrases with no identifiers ("Where do we wait longer and longer between
   attempts after the server says it is overloaded?") and 6 off-topic ones
   ("what's the weather like in Paris today"), each with its answering file.
-* The repository is chunked with claude_light's own chunker (tests included,
+* The repository is chunked with llm_light's own chunker (tests included,
   since they compete in real use) and embedded with each model. Vectors are
-  cached in `.claude_light_cache/bench/`, keyed on the chunk texts.
+  cached in `.llm_light_cache/bench/`, keyed on the chunk texts.
 * For every question the production selection code runs at the medium
   budget: `_adaptive_select_pairs` for single dense models,
   `hybrid_scores` + `_hybrid_select_pairs` for the hybrid index.
@@ -420,7 +420,7 @@ all-mpnet-base-v2, test-file exclusion on:
 
 No extra right-file hits at any budget, and 20-28% more mean tokens from
 medium up (low skips expansion by design). So `CALL_GRAPH` defaults to off;
-`CLAUDE_LIGHT_CALLGRAPH=1` turns it on. Limit: the metric is whether the
+`LLM_LIGHT_CALLGRAPH=1` turns it on. Limit: the metric is whether the
 answering file is sent, not answer quality. A caller's body may help an answer
 even when the file was already found, and nothing offline measures that. The
 model can still pull callers and callees on demand with `fetch_chunk`.
@@ -524,7 +524,7 @@ The fixed top-level effort is never more expensive, and saves most when an effor
 | 2 min | x1.0 | yes | +71.1% | -91.0% |
 | 3 min | x0.3 | no | +75.0% | -90.9% |
 
-Averaged over openers in the repo mix, `first` costs about 54% less than `effort`, but all of that comes from sessions that open on Haiku and then answer the 10 Sonnet-routed questions on Haiku as well. Whichever question happens to come first decides the session's model. It is the default by the developer's choice, for one predictable model per session; `CLAUDE_LIGHT_ROUTE_ONCE=0` restores per-turn routing.
+Averaged over openers in the repo mix, `first` costs about 54% less than `effort`, but all of that comes from sessions that open on Haiku and then answer the 10 Sonnet-routed questions on Haiku as well. Whichever question happens to come first decides the session's model. It is the default by the developer's choice, for one predictable model per session; `LLM_LIGHT_ROUTE_ONCE=0` restores per-turn routing.
 
 ---
 
@@ -532,7 +532,7 @@ Averaged over openers in the repo mix, `first` costs about 54% less than `effort
 
 ### Purpose
 
-Answers: *"How much money does claude_light actually save on real code?"* by
+Answers: *"How much money does llm_light actually save on real code?"* by
 running the tool against four popular Python open-source projects and comparing
 the actual API spend to a naive baseline (sending the whole repo every query).
 
@@ -543,10 +543,10 @@ real dollar amounts on real codebases.
 
 1. Clone 4 Python repos at fixed stable tags (shallow, `--depth 1`).
 2. Count total source tokens in each repo (same extensions and SKIP_DIRS as
-   `claude_light.py`) to compute the naive baseline.
-3. For each of 10 standard queries, run `claude_light.py` in one-shot mode:
+   `llm_light.py`) to compute the naive baseline.
+3. For each of 10 standard queries, run `llm_light.py` in one-shot mode:
    ```bash
-   python claude_light.py "query"
+   python llm_light.py "query"
    ```
    with `stdin=/dev/null` so it runs non-interactively.
 4. Strip ANSI codes from stderr and extract the `[Stats]` and `[Cost]` lines.
@@ -662,8 +662,8 @@ Naive/Actual ratio: 174x
   higher.
 - **Naive baseline**: Assumes the entire repo is re-sent on every query at full
   $3.00/M input price. This is the absolute worst case. Other tools may use
-  smaller context windows but still be more expensive than claude_light's RAG.
-- **Model routing**: claude_light's router picks model and effort automatically.
+  smaller context windows but still be more expensive than llm_light's RAG.
+- **Model routing**: llm_light's router picks model and effort automatically.
   The benchmark does not force a specific model — it measures the tool as-is.
 - **tree-sitter**: If tree-sitter is installed, chunks are method-level. Without
   it, whole-file chunks are used. Whole-file mode increases retrieved tokens and
@@ -674,11 +674,11 @@ Naive/Actual ratio: 174x
 
 ---
 
-## 4 · `benchmark_claude_code.py` — Claude Code vs Claude Light
+## 4 · `benchmark_claude_code.py` — Claude Code vs LLM Light
 
 ### Purpose
 
-Answers: *"How does `claude_light` compare to Claude Code on the same real
+Answers: *"How does `llm_light` compare to Claude Code on the same real
 queries?"* by combining live Claude Code runs with the saved JSON output from
 `benchmark_cost.py`.
 
@@ -689,7 +689,7 @@ This is the benchmark that feeds the README headline comparison table.
 For each repo/query pair it compares:
 
 - **Claude Code**: `claude --print` in a fresh isolated session
-- **claude_light**: JSON results captured from `benchmark_cost.py --json`
+- **llm_light**: JSON results captured from `benchmark_cost.py --json`
 - **Naive baseline**: sending the entire repo every time
 
 ### Repo Set
@@ -706,21 +706,21 @@ The current published comparison uses:
 ### Running
 
 ```bash
-# First capture claude_light's real-cost benchmark output
+# First capture llm_light's real-cost benchmark output
 python tests/benchmarks/benchmark_cost.py --json > cl_results.json
 
 # Then run the Claude Code comparison
-python tests/benchmarks/benchmark_claude_code.py --claude-light-results cl_results.json
+python tests/benchmarks/benchmark_claude_code.py --llm-light-results cl_results.json
 
 # One repo only
-python tests/benchmarks/benchmark_claude_code.py --repo pallets/flask --claude-light-results cl_results.json
+python tests/benchmarks/benchmark_claude_code.py --repo pallets/flask --llm-light-results cl_results.json
 ```
 
 ### Published Result Snapshot
 
 The current README numbers are:
 
-| Repository | Claude Code | claude_light | Savings |
+| Repository | Claude Code | llm_light | Savings |
 |---|---:|---:|---:|
 | `psf/requests` | $0.91 | $0.23 | **75%** |
 | `pallets/flask` | $1.62 | $0.17 | **89%** |
@@ -747,12 +747,12 @@ python tests/benchmarks/benchmark_cost.py            # real run
 
 # 4. Claude Code comparison (requires Claude Code plus benchmark_cost JSON)
 python tests/benchmarks/benchmark_cost.py --json > cl_results.json
-python tests/benchmarks/benchmark_claude_code.py --claude-light-results cl_results.json
+python tests/benchmarks/benchmark_claude_code.py --llm-light-results cl_results.json
 ```
 
 ## Sharing Results
 
-To share benchmark results with other claude_light users:
+To share benchmark results with other llm_light users:
 
 ```bash
 # Capture all three
@@ -769,7 +769,7 @@ or compare results across runs.
 
 ## CI Regression Testing
 
-`claude_light` includes an automated GitHub Actions pipeline that ensures token costs do not spike and retrieval accuracy does not degrade over time!
+`llm_light` includes an automated GitHub Actions pipeline that ensures token costs do not spike and retrieval accuracy does not degrade over time!
 It implements a hard block on any pull request that reduces `Hit@10` / `Recall@10` by >2% or increases analytical token costs by >1%.
 
 If a developer legitimately changes the chunking behavior for the better, they simply run the benchmarks locally, overwrite the `baseline_*.json` files, and commit them.

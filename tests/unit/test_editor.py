@@ -1,6 +1,6 @@
 """
-Tests for claude_light.editor — parse_edit_blocks, _resolve_new_content, apply_edits.
-Also tests for claude_light.ui — show_diff, _colorize_diff.
+Tests for llm_light.editor — parse_edit_blocks, _resolve_new_content, apply_edits.
+Also tests for llm_light.ui — show_diff, _colorize_diff.
 """
 
 import io
@@ -14,8 +14,8 @@ from unittest.mock import patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.editor import parse_edit_blocks, apply_edits, _resolve_new_content
-from claude_light.ui import show_diff, _colorize_diff
+from llm_light.editor import parse_edit_blocks, apply_edits, _resolve_new_content
+from llm_light.ui import show_diff, _colorize_diff
 
 
 # ---------------------------------------------------------------------------
@@ -439,13 +439,13 @@ class TestApplyEditsWrite(unittest.TestCase):
 
     def test_dont_ask_again_holds_for_the_session(self):
         print("\n  ▶ TestApplyEditsWrite.test_dont_ask_again_holds_for_the_session")
-        import claude_light.state as st
+        import llm_light.state as st
         st.auto_approve_edits = False
         try:
             Path("a.py").write_text("x = 1\n", encoding="utf-8")
             Path("b.py").write_text("y = 1\n", encoding="utf-8")
             with patch("sys.stdin") as mock_stdin, \
-                 patch("claude_light.editor.choose", return_value="always") as ask, \
+                 patch("llm_light.editor.choose", return_value="always") as ask, \
                  patch("sys.stdout", io.StringIO()):
                 mock_stdin.isatty.return_value = True
                 apply_edits([{"type": "edit", "path": "a.py", "search": "x = 1", "replace": "x = 2"}],
@@ -462,7 +462,7 @@ class TestApplyEditsWrite(unittest.TestCase):
         print("\n  ▶ TestApplyEditsWrite.test_cancelled_menu_applies_nothing")
         Path("c.py").write_text("x = 1\n", encoding="utf-8")
         with patch("sys.stdin") as mock_stdin, \
-             patch("claude_light.editor.choose", return_value=None), \
+             patch("llm_light.editor.choose", return_value=None), \
              patch("sys.stdout", io.StringIO()):
             mock_stdin.isatty.return_value = True
             apply_edits([{"type": "edit", "path": "c.py", "search": "x = 1", "replace": "x = 2"}],

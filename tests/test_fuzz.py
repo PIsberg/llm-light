@@ -1,8 +1,8 @@
 """
-Fuzz tests for claude_light using Hypothesis.
+Fuzz tests for llm_light using Hypothesis.
 
 This module provides property-based testing to find edge cases
-in the core functionality of claude_light.
+in the core functionality of llm_light.
 """
 
 import pytest
@@ -11,7 +11,7 @@ from hypothesis import given, strategies as st, settings, HealthCheck
 
 # Import functions to test - adjust based on actual module structure
 try:
-    from claude_light import (
+    from llm_light import (
         _build_compressed_tree,
         _dedup_retrieved_context,
         route_query,
@@ -113,7 +113,7 @@ class TestFuzzChunking:
         """Test chunking with arbitrary Python-like content."""
         # Test that chunking doesn't crash on arbitrary input
         try:
-            from claude_light import chunk_python_file
+            from llm_light import chunk_python_file
             chunks = chunk_python_file("test.py", code)
             assert isinstance(chunks, list)
         except (NameError, ImportError):

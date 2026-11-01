@@ -1,14 +1,14 @@
 @startuml Test_Mock_Architecture
-title Claude Light - Test Mock Architecture
+title LLM Light - Test Mock Architecture
 
 skinparam backgroundColor #FEFEFE
 
 package "Production Code" {
-  [claude_light.llm] as LLM
-  [claude_light.indexer] as Indexer
-  [claude_light.skeleton] as Skeleton
-  [claude_light.editor] as Editor
-  [claude_light.config] as Config
+  [llm_light.llm] as LLM
+  [llm_light.indexer] as Indexer
+  [llm_light.skeleton] as Skeleton
+  [llm_light.editor] as Editor
+  [llm_light.config] as Config
 }
 
 package "Test Mocks (test_mocks.py)" {
@@ -88,7 +88,7 @@ rectangle "Presets" as Presets {
 Synthetic -[hidden]--> Presets
 
 note bottom
-  Usage: python -m claude_light --test-mode small "query"
+  Usage: python -m llm_light --test-mode small "query"
   
   The MockManager intercepts all file I/O and API calls,
   allowing full integration testing without:

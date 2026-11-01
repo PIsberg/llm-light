@@ -1,4 +1,4 @@
-"""benchmark_claude_code.py — Claude Code vs claude_light vs naive baseline
+"""benchmark_claude_code.py — Claude Code vs llm_light vs naive baseline
 
 PURPOSE
 -------
@@ -7,8 +7,8 @@ the same queries used in benchmark_cost.py, then compares three approaches:
 
   1. Naive baseline  — sending the entire repo as context on every call ($3/M)
   2. Claude Code     — the Anthropic CLI, using its built-in tool-calling RAG
-  3. claude_light    — hybrid RAG + prompt caching (from a saved benchmark_cost
-                       --json run, via --claude-light-results)
+  3. llm_light    — hybrid RAG + prompt caching (from a saved benchmark_cost
+                       --json run, via --llm-light-results)
 
 WHAT CLAUDE CODE DOES
 ---------------------
@@ -50,9 +50,9 @@ USAGE
   # Only one repo
   python benchmark_claude_code.py --repo pallets/flask
 
-  # Three-way comparison: also show claude_light numbers
+  # Three-way comparison: also show llm_light numbers
   python benchmark_cost.py --json > cl_results.json
-  python benchmark_claude_code.py --claude-light-results cl_results.json
+  python benchmark_claude_code.py --llm-light-results cl_results.json
 
   # Machine-readable output
   python benchmark_claude_code.py --json
@@ -356,13 +356,13 @@ def print_repo_table(repo_result: dict):
 
 
 def print_aggregate_table(all_results: list, cl_results: dict | None = None):
-    """Print aggregate table. Optionally include claude_light column."""
+    """Print aggregate table. Optionally include llm_light column."""
     print("\n\n  AGGREGATE RESULTS")
     print("  " + "="*80)
 
     has_cl = cl_results is not None
     if has_cl:
-        headers = ["Repo", "Naive $", "Claude Code $", "CC save%", "claude_light $", "CL save%", "CC vs CL"]
+        headers = ["Repo", "Naive $", "Claude Code $", "CC save%", "llm_light $", "CL save%", "CC vs CL"]
         widths  = [20, 10, 14, 9, 15, 9, 10]
     else:
         headers = ["Repo", "Desc", "Queries", "Naive $", "Claude Code $", "Save%"]
@@ -391,7 +391,7 @@ def print_aggregate_table(all_results: list, cl_results: dict | None = None):
         total_ok    += len(ok_qs)
 
         if has_cl:
-            # Look up claude_light result for this repo
+            # Look up llm_light result for this repo
             cl_repo = next((x for x in cl_results if x["repo"] == r["repo"]), None)
             if cl_repo:
                 cl_ok = [q for q in cl_repo["queries"] if q.get("ok")]
@@ -451,8 +451,8 @@ def print_aggregate_table(all_results: list, cl_results: dict | None = None):
     if has_cl and total_cl > 0:
         cl_ratio = total_naive / total_cl
         cc_cl_ratio = total_cc / total_cl
-        print(f"  Naive/claude_light ratio: {cl_ratio:.1f}×")
-        print(f"  Claude Code / claude_light ratio: {cc_cl_ratio:.1f}× (Claude Code costs this much more than claude_light)")
+        print(f"  Naive/llm_light ratio: {cl_ratio:.1f}×")
+        print(f"  Claude Code / llm_light ratio: {cc_cl_ratio:.1f}× (Claude Code costs this much more than llm_light)")
 
 
 # ---------------------------------------------------------------------------
@@ -469,7 +469,7 @@ def main():
                         help="Run only one repo (e.g. pallets/flask)")
     parser.add_argument("--repos-dir", default=".benchmark_repos", metavar="DIR",
                         help="Directory where repos are cloned (default: .benchmark_repos)")
-    parser.add_argument("--claude-light-results", metavar="JSON_FILE",
+    parser.add_argument("--llm-light-results", metavar="JSON_FILE",
                         help="JSON output from `benchmark_cost.py --json` for three-way comparison")
     parser.add_argument("--json", action="store_true",
                         help="Emit full results as JSON to stdout")
@@ -486,14 +486,14 @@ def main():
         print("[error] `claude` CLI not found. Install Claude Code first.", file=sys.stderr)
         sys.exit(1)
 
-    # Load optional claude_light results
+    # Load optional llm_light results
     cl_results = None
-    if args.claude_light_results:
+    if args.llm_light_results:
         try:
-            cl_results = json.loads(Path(args.claude_light_results).read_text())
-            print(f"  Loaded claude_light results from {args.claude_light_results}")
+            cl_results = json.loads(Path(args.llm_light_results).read_text())
+            print(f"  Loaded llm_light results from {args.llm_light_results}")
         except Exception as e:
-            print(f"[warning] Could not load --claude-light-results: {e}", file=sys.stderr)
+            print(f"[warning] Could not load --llm-light-results: {e}", file=sys.stderr)
 
     repos_dir = Path(args.repos_dir)
     repos_dir.mkdir(parents=True, exist_ok=True)

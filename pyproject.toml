@@ -3,14 +3,14 @@ requires = ["setuptools>=84.2.1", "wheel>=0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "claude-light"
+name = "llm-light"
 version = "0.1.0"
-description = "Interactive CLI chat tool for querying and editing a codebase using Claude — hybrid RAG + prompt caching."
+description = "Interactive CLI chat tool for querying and editing a codebase with an LLM agent (Claude, Gemini via agy, Codex), using hybrid RAG and prompt caching."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
 authors = [{ name = "Peter Isberg", email = "isberg.peter+cl@gmail.com" }]
-keywords = ["claude", "anthropic", "rag", "llm", "cli", "code-search", "prompt-caching"]
+keywords = ["claude", "anthropic", "gemini", "codex", "rag", "llm", "cli", "code-search", "prompt-caching"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -49,13 +49,15 @@ dev = [
 ]
 
 [project.scripts]
-claude-light = "claude_light.__main__:main"
+llm-light = "llm_light.__main__:main"
+# Old name, kept for existing installs. Both run the same entry point.
+claude-light = "llm_light.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/PIsberg/claude_light"
-Repository = "https://github.com/PIsberg/claude_light"
-Issues = "https://github.com/PIsberg/claude_light/issues"
+Homepage = "https://github.com/PIsberg/llm-light"
+Repository = "https://github.com/PIsberg/llm-light"
+Issues = "https://github.com/PIsberg/llm-light/issues"
 
 [tool.setuptools.packages.find]
-include = ["claude_light*"]
+include = ["llm_light*"]
 exclude = ["tests*", "scripts*", "installers*", "docs*"]

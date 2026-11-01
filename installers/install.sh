@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Light installer — Linux / macOS
+# LLM Light installer — Linux / macOS
 set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -43,4 +43,4 @@ fi
 
 echo ""
 info "Installation complete. Run the tool from your project root:"
-echo "  python3 claude_light.py"
+echo "  python3 llm_light.py"

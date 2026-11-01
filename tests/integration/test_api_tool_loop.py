@@ -21,7 +21,7 @@ from unittest.mock import patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light.providers import claude as _claude_mod  # noqa: E402  (T017: moved transport)
+from llm_light.providers import claude as _claude_mod  # noqa: E402  (T017: moved transport)
 
 
 def _sse(events):
@@ -102,8 +102,8 @@ class TestApiToolLoopThroughSdk(unittest.TestCase):
         print("\n  ▶ TestApiToolLoopThroughSdk.test_read_file_round_trip")
         import io
         import anthropic
-        import claude_light.config as config
-        from claude_light import llm
+        import llm_light.config as config
+        from llm_light import llm
 
         stub = anthropic.Anthropic(api_key="sk-ant-stub",
                                    base_url=f"http://127.0.0.1:{self.server.server_port}")
@@ -135,8 +135,8 @@ class TestApiToolLoopThroughSdk(unittest.TestCase):
         print("\n  ▶ TestApiToolLoopThroughSdk.test_effort_message_and_beta_reach_the_wire")
         import io
         import anthropic
-        import claude_light.config as config
-        from claude_light import llm
+        import llm_light.config as config
+        from llm_light import llm
 
         stub = anthropic.Anthropic(api_key="sk-ant-stub",
                                    base_url=f"http://127.0.0.1:{self.server.server_port}")

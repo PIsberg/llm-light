@@ -5,9 +5,9 @@
 
 Prompt caching is a Claude capability. Gemini and Codex have none: they get the same skeleton and chunks as text on standard input, `warm_cache()` does nothing for them, and the turn stats say `tokens, cost and caching unavailable for <provider>`. The rest of this page is about Claude.
 
-Claude Light uses Anthropic's ephemeral caching with three strategic breakpoints to minimize costs.
+LLM Light uses Anthropic's ephemeral caching with three strategic breakpoints to minimize costs.
 
-![Caching Diagram](../plantuml/Claude_Light_Caching_Diagram.png)
+![Caching Diagram](../plantuml/LLM_Light_Caching_Diagram.png)
 
 ### Cache Breakpoints
 
@@ -20,7 +20,7 @@ Claude Light uses Anthropic's ephemeral caching with three strategic breakpoints
 ### Effort and model changes
 
 - **Effort.** A top-level `output_config.effort` change invalidates the history cache, and on some models the skeleton cache too. Requests therefore always send `BASE_EFFORT` at the top level, and the routed effort goes in an effort-only system message after the history breakpoint (`_apply_effort()`, see [routing.md](routing.md)). `warm_cache()` (it calls `ClaudeProvider.warm()` in `providers/claude.py`) sends the same top-level effort, or it would warm an entry no turn reads.
-- **Model.** The cache is scoped per model; nothing written on Sonnet is read by Haiku or Opus. `warm_cache()` warms `MODEL` (Sonnet) only, so the first Haiku or Opus turn writes that model's skeleton entry, once per hour. By default the first turn's model is kept for the session (`ROUTE_ONCE`), so a session writes one model's cache only; after that turn, `warm_cache()` warms the session model rather than `MODEL`. `CLAUDE_LIGHT_ROUTE_ONCE=0` routes the model per turn. Keeping a session on its strongest model instead cost more in `tests/benchmarks/benchmark_session_cache.py` than the cache writes it saves.
+- **Model.** The cache is scoped per model; nothing written on Sonnet is read by Haiku or Opus. `warm_cache()` warms `MODEL` (Sonnet) only, so the first Haiku or Opus turn writes that model's skeleton entry, once per hour. By default the first turn's model is kept for the session (`ROUTE_ONCE`), so a session writes one model's cache only; after that turn, `warm_cache()` warms the session model rather than `MODEL`. `LLM_LIGHT_ROUTE_ONCE=0` routes the model per turn. Keeping a session on its strongest model instead cost more in `tests/benchmarks/benchmark_session_cache.py` than the cache writes it saves.
 
 ### Pricing (USD per 1M tokens)
 
@@ -37,8 +37,8 @@ Every call is priced at the model that ran it (`MODEL_PRICES` in `config.py`, li
 <summary>View PlantUML Source</summary>
 
 ```plantuml
-@startuml Claude_Light_Caching_Diagram
-title Claude Light - Three-Tier Prompt Caching Strategy
+@startuml LLM_Light_Caching_Diagram
+title LLM Light - Three-Tier Prompt Caching Strategy
 
 skinparam backgroundColor #FEFEFE
 

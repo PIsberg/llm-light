@@ -1,4 +1,4 @@
-"""Integration tests for claude_light.
+"""Integration tests for llm_light.
 
 This package contains integration tests that verify multiple components
 working together, including end-to-end workflows.

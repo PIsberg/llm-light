@@ -16,7 +16,7 @@ from unittest.mock import Mock, MagicMock, patch
 # Add parent to path - go up 3 levels from tests/utilities/
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from claude_light.executor import (
+from llm_light.executor import (
     _check_model_cached, _get_model_cache_dir, 
     _load_embedding_model, _MODEL_SIZES
 )
@@ -55,7 +55,7 @@ class TestModelLoading:
 
     def test_load_embedding_model_quiet_mode(self):
         """Test loading model in quiet mode."""
-        with patch('claude_light.executor.SentenceTransformer') as mock_st:
+        with patch('llm_light.executor.SentenceTransformer') as mock_st:
             mock_model = MagicMock()
             mock_st.return_value = mock_model
             
@@ -67,8 +67,8 @@ class TestModelLoading:
 
     def test_load_embedding_model_cached(self):
         """Test that cached models load without progress display."""
-        with patch('claude_light.executor._check_model_cached', return_value=True):
-            with patch('claude_light.executor.SentenceTransformer') as mock_st:
+        with patch('llm_light.executor._check_model_cached', return_value=True):
+            with patch('llm_light.executor.SentenceTransformer') as mock_st:
                 mock_model = MagicMock()
                 mock_st.return_value = mock_model
                 
@@ -80,13 +80,13 @@ class TestModelLoading:
 
     def test_load_embedding_model_with_tqdm(self):
         """Test loading with tqdm progress display."""
-        with patch('claude_light.executor._check_model_cached', return_value=False):
-            with patch('claude_light.executor._TQDM_AVAILABLE', True):
-                with patch('claude_light.executor.tqdm') as mock_tqdm:
+        with patch('llm_light.executor._check_model_cached', return_value=False):
+            with patch('llm_light.executor._TQDM_AVAILABLE', True):
+                with patch('llm_light.executor.tqdm') as mock_tqdm:
                     mock_progress = MagicMock()
                     mock_tqdm.return_value.__enter__.return_value = mock_progress
                     
-                    with patch('claude_light.executor.SentenceTransformer') as mock_st:
+                    with patch('llm_light.executor.SentenceTransformer') as mock_st:
                         mock_model = MagicMock()
                         mock_st.return_value = mock_model
                         
@@ -100,9 +100,9 @@ class TestModelLoading:
 
     def test_load_embedding_model_without_tqdm(self):
         """Test loading without tqdm (fallback)."""
-        with patch('claude_light.executor._check_model_cached', return_value=False):
-            with patch('claude_light.executor._TQDM_AVAILABLE', False):
-                with patch('claude_light.executor.SentenceTransformer') as mock_st:
+        with patch('llm_light.executor._check_model_cached', return_value=False):
+            with patch('llm_light.executor._TQDM_AVAILABLE', False):
+                with patch('llm_light.executor.SentenceTransformer') as mock_st:
                     mock_model = MagicMock()
                     mock_st.return_value = mock_model
                     
@@ -121,8 +121,8 @@ class TestModelLoading:
         ]
         
         for model_name in models:
-            with patch('claude_light.executor._check_model_cached', return_value=True):
-                with patch('claude_light.executor.SentenceTransformer') as mock_st:
+            with patch('llm_light.executor._check_model_cached', return_value=True):
+                with patch('llm_light.executor.SentenceTransformer') as mock_st:
                     mock_model = MagicMock()
                     mock_st.return_value = mock_model
                     
@@ -145,10 +145,10 @@ class TestProgressDisplay:
 
     def test_download_message_structure(self):
         """Test download messages are properly formatted."""
-        with patch('claude_light.executor._check_model_cached', return_value=False):
-            with patch('claude_light.executor._TQDM_AVAILABLE', False):
+        with patch('llm_light.executor._check_model_cached', return_value=False):
+            with patch('llm_light.executor._TQDM_AVAILABLE', False):
                 with patch('builtins.print') as mock_print:
-                    with patch('claude_light.executor.SentenceTransformer'):
+                    with patch('llm_light.executor.SentenceTransformer'):
                         _load_embedding_model("all-MiniLM-L6-v2", quiet=False)
                     
                     # Should have printed something about download
@@ -160,15 +160,15 @@ class TestAutoTuneIntegration:
 
     def test_auto_tune_uses_new_loader(self):
         """Test that auto_tune uses the new model loading function."""
-        from claude_light.executor import auto_tune
-        import claude_light.state as state
+        from llm_light.executor import auto_tune
+        import llm_light.state as state
         
         mock_files = [Mock(spec=Path) for _ in range(50)]
         for f in mock_files:
             f.exists.return_value = True
             f.stat.return_value.st_size = 1000
         
-        with patch('claude_light.executor._load_embedding_model') as mock_loader:
+        with patch('llm_light.executor._load_embedding_model') as mock_loader:
             mock_embedder = MagicMock()
             mock_loader.return_value = mock_embedder
             

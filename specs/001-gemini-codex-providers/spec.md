@@ -6,33 +6,33 @@
 
 **Status**: Draft
 
-**Input**: User description: "implement support for gemini and codex too. make it modular and well written code so each claude, gemini and codex is seperated in code. at the end test each codex and gemini client with claude_light to see that it works too"
+**Input**: User description: "implement support for gemini and codex too. make it modular and well written code so each claude, gemini and codex is seperated in code. at the end test each codex and gemini client with llm_light to see that it works too"
 
 ## Clarifications
 
 ### Session 2026-10-30
 
-- Q: What happens when `--continue` resumes a session saved with a different provider? → A: claude_light warns, naming both providers, and starts a fresh conversation; the old session file is left untouched.
-- Q: Where does Claude's transport live after the move behind the shared contract (D2)? → A: Fully in `providers/claude.py`; existing Claude tests change only their patch targets, from `claude_light.llm` to `claude_light.providers.claude`.
+- Q: What happens when `--continue` resumes a session saved with a different provider? → A: llm_light warns, naming both providers, and starts a fresh conversation; the old session file is left untouched.
+- Q: Where does Claude's transport live after the move behind the shared contract (D2)? → A: Fully in `providers/claude.py`; existing Claude tests change only their patch targets, from `llm_light.llm` to `llm_light.providers.claude`.
 - Q: What does the route line show per provider (D3)? → A: With Gemini or Codex, the provider and its model, or "CLI default model" when the provider's tool picks it; with Claude, chosen or by default, the route line is unchanged.
-- Q: How does Gemini behave when its tool is installed but not signed in, given agy keeps no credential claude_light can check? → A: No startup probe; the first question fails with an error naming agy and the remedy "run agy once and sign in", and the session does not end (user decision 2026-10-30, amends the not-logged-in edge case).
+- Q: How does Gemini behave when its tool is installed but not signed in, given agy keeps no credential llm_light can check? → A: No startup probe; the first question fails with an error naming agy and the remedy "run agy once and sign in", and the session does not end (user decision 2026-10-30, amends the not-logged-in edge case).
 - Q: Which tool does the Gemini provider run, and which version is assumed? → A: Google's Antigravity CLI `agy` (1.4.11 at the time of writing; decision D10), because Google no longer accepts the `gemini` CLI for individual accounts (user decision 2026-10-30).
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ask a question through Gemini or Codex (Priority: P1)
 
-A user who has the Gemini agent tool or the Codex agent tool installed and logged in on their machine picks that provider when starting claude_light. They ask a question about their codebase and get an answer built from the same retrieved code chunks and project skeleton that a Claude session would use.
+A user who has the Gemini agent tool or the Codex agent tool installed and logged in on their machine picks that provider when starting llm_light. They ask a question about their codebase and get an answer built from the same retrieved code chunks and project skeleton that a Claude session would use.
 
 **Why this priority**: Without a working question-and-answer path no other part of the feature has value.
 
-**Independent Test**: Start claude_light once with each of the two new providers against a small test project, ask "What does OrderService do?", and check that a non-empty answer that refers to the project's code is printed.
+**Independent Test**: Start llm_light once with each of the two new providers against a small test project, ask "What does OrderService do?", and check that a non-empty answer that refers to the project's code is printed.
 
 **Acceptance Scenarios**:
 
-1. **Given** the Gemini tool is installed and logged in, **When** the user starts claude_light choosing Gemini and asks a question, **Then** the answer is printed and the route/status line names Gemini as the provider.
-2. **Given** the Codex tool is installed and logged in, **When** the user starts claude_light choosing Codex and asks a question, **Then** the answer is printed and the route/status line names Codex as the provider.
-3. **Given** the user makes no provider choice, **When** claude_light starts, **Then** it behaves exactly as before this feature: Claude, with the existing credential order.
+1. **Given** the Gemini tool is installed and logged in, **When** the user starts llm_light choosing Gemini and asks a question, **Then** the answer is printed and the route/status line names Gemini as the provider.
+2. **Given** the Codex tool is installed and logged in, **When** the user starts llm_light choosing Codex and asks a question, **Then** the answer is printed and the route/status line names Codex as the provider.
+3. **Given** the user makes no provider choice, **When** llm_light starts, **Then** it behaves exactly as before this feature: Claude, with the existing credential order.
 4. **Given** the user chose Gemini or Codex, **When** a question is asked, **Then** no Claude credential is required and no Claude request is made.
 
 ---
@@ -41,7 +41,7 @@ A user who has the Gemini agent tool or the Codex agent tool installed and logge
 
 A user on Gemini or Codex asks for a code change. The change is applied, committed through the same auto-commit path as Claude edits, and `/undo` reverts it.
 
-**Why this priority**: Editing is a core claude_light capability, but a read-only provider is still useful, so it follows question answering.
+**Why this priority**: Editing is a core llm_light capability, but a read-only provider is still useful, so it follows question answering.
 
 **Independent Test**: With each new provider, ask for a one-line change in a scratch git repository, confirm a commit with the auto-commit message exists, run `/undo`, and confirm the file is restored.
 
@@ -86,9 +86,9 @@ A maintainer edits or removes one provider's code without touching the other two
 
 ### User Story 5 - Verified against the real tools (Priority: P3)
 
-Before the work is called done, the maintainer runs claude_light against the real Gemini tool and the real Codex tool and records the commands and their output.
+Before the work is called done, the maintainer runs llm_light against the real Gemini tool and the real Codex tool and records the commands and their output.
 
-**Why this priority**: Mocked tests prove the wiring, not that the real tools accept what claude_light sends.
+**Why this priority**: Mocked tests prove the wiring, not that the real tools accept what llm_light sends.
 
 **Independent Test**: Follow the recorded commands for each tool on a test project and compare the output.
 
@@ -101,26 +101,26 @@ Before the work is called done, the maintainer runs claude_light against the rea
 
 ### Edge Cases
 
-- The chosen provider's tool is not installed: claude_light exits before the first question with a message naming the missing tool and how to get it.
-- The tool is installed but not logged in: the same early exit, naming the login step; no partial answer is printed. Exception, Gemini: its tool, agy (decision D10), keeps no credential claude_light can check, so a missing sign-in surfaces on the first question as an error naming agy with the remedy 'run agy once and sign in'; the session does not end.
+- The chosen provider's tool is not installed: llm_light exits before the first question with a message naming the missing tool and how to get it.
+- The tool is installed but not logged in: the same early exit, naming the login step; no partial answer is printed. Exception, Gemini: its tool, agy (decision D10), keeps no credential llm_light can check, so a missing sign-in surfaces on the first question as an error naming agy with the remedy 'run agy once and sign in'; the session does not end.
 - The tool fails or times out mid-answer: the user sees an error naming the provider, the session stays usable, and no auto-commit is made for a failed turn.
 - The tool's output cannot be parsed: the user sees an error naming the provider and the turn is not recorded as answered.
 - Two providers' credentials are both present: only the chosen provider's is used.
-- An unknown provider name is given: claude_light exits listing the valid names.
+- An unknown provider name is given: llm_light exits listing the valid names.
 - A provider has no cost or token figures: the status line shows them as unavailable, not as zero.
 - Retrieved context larger than a provider's limit: it is trimmed the same way for every provider, and the user is told when it was.
-- The user resumes a saved session (`--continue`) made with a different provider: claude_light warns, naming the saved and the chosen provider, and starts a fresh conversation. The saved session file is not modified or deleted, and resuming it with its own provider still works.
+- The user resumes a saved session (`--continue`) made with a different provider: llm_light warns, naming the saved and the chosen provider, and starts a fresh conversation. The saved session file is not modified or deleted, and resuming it with its own provider still works.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: Users MUST be able to choose Claude, Gemini or Codex explicitly when starting claude_light.
-- **FR-002**: With no provider chosen, claude_light MUST behave exactly as before, including the existing Claude credential order and both Claude transports.
+- **FR-001**: Users MUST be able to choose Claude, Gemini or Codex explicitly when starting llm_light.
+- **FR-002**: With no provider chosen, llm_light MUST behave exactly as before, including the existing Claude credential order and both Claude transports.
 - **FR-003**: With Gemini or Codex chosen, a question MUST be answered from the same project skeleton and top-K retrieved chunks as for Claude.
 - **FR-004**: Each provider's code MUST live in its own module; no code outside a provider's module may import that provider's SDK or name its tool binary.
 - **FR-005**: Provider-neutral code MUST NOT branch on a provider's name; it MUST reach providers only through one shared contract.
-- **FR-006**: Moving Claude behind the shared contract MUST NOT change Claude behaviour: the existing Claude tests pass with only their patch targets moved from `claude_light.llm` to `claude_light.providers.claude`, and the CI token and retrieval regression gates pass.
+- **FR-006**: Moving Claude behind the shared contract MUST NOT change Claude behaviour: the existing Claude tests pass with only their patch targets moved from `llm_light.llm` to `llm_light.providers.claude`, and the CI token and retrieval regression gates pass.
 - **FR-007**: Model ids, prices and effort levels MUST belong to their provider; Gemini and Codex MUST NOT use Claude constants.
 - **FR-008**: A feature a provider lacks (prompt caching, per-turn effort, top-tier model prompt, dollar budget) MUST produce a visible "unavailable for <provider>" message when the user uses it, and MUST NOT be silently ignored.
 - **FR-009**: Edits by any provider MUST go through the same auto-commit path so `/undo` works; the commit message prefix MUST identify the change as an AI edit.
@@ -129,8 +129,8 @@ Before the work is called done, the maintainer runs claude_light against the rea
 - **FR-012**: With Gemini or Codex chosen, the route line MUST show the provider and its model, or "CLI default model" when the provider's tool picks it. With Claude, chosen or by default, the route line is unchanged.
 - **FR-013**: Tests for all three providers MUST run without a real API, a real tool or real stats/session files, under the existing test settings.
 - **FR-014**: Documentation (README, CLAUDE.md commands and authentication, configuration reference, architecture doc, harness map) MUST describe provider selection, per-provider authentication and per-provider unavailable features in the same change.
-- **FR-015**: Before completion, claude_light MUST be run once against the real Gemini tool and once against the real Codex tool, and the commands and output recorded; a tool that is not logged in is reported as "not run".
-- **FR-016**: When `--continue` finds a saved session made with a different provider than the one chosen, claude_light MUST print a warning naming both providers, MUST start a fresh conversation, and MUST leave the saved session file byte-identical.
+- **FR-015**: Before completion, llm_light MUST be run once against the real Gemini tool and once against the real Codex tool, and the commands and output recorded; a tool that is not logged in is reported as "not run".
+- **FR-016**: When `--continue` finds a saved session made with a different provider than the one chosen, llm_light MUST print a warning naming both providers, MUST start a fresh conversation, and MUST leave the saved session file byte-identical.
 
 ### Key Entities
 
@@ -154,7 +154,7 @@ Before the work is called done, the maintainer runs claude_light against the rea
 ## Assumptions
 
 - The Gemini provider runs Google's Antigravity CLI `agy` (1.4.11 at the time of writing; decision D10), because Google no longer accepts the `gemini` CLI for individual accounts.
-- The Gemini and Codex tools are already installed (agy 1.4.11, Codex 0.162.1 on the maintainer's machine); claude_light does not install them or log users in.
+- The Gemini and Codex tools are already installed (agy 1.4.11, Codex 0.162.1 on the maintainer's machine); llm_light does not install them or log users in.
 - Providers are chosen per launch; switching provider inside a running session is out of scope.
 - Gemini and Codex are driven through their installed command-line tools, not through vendor SDKs, in this version.
 - Prompt caching, per-turn effort, and dollar budgets stay Claude-only; equivalents for other providers are out of scope.

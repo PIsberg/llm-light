@@ -1,5 +1,5 @@
 """
-Tests for claude_light.callgraph, the fetch_chunk tool, and call-graph expansion
+Tests for llm_light.callgraph, the fetch_chunk tool, and call-graph expansion
 in retrieval.
 """
 
@@ -14,10 +14,10 @@ import numpy as np
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light.state as state
-from claude_light import callgraph
-from claude_light.retrieval import _related_pairs, _finish
-from claude_light.tools import run_tool
+import llm_light.state as state
+from llm_light import callgraph
+from llm_light.retrieval import _related_pairs, _finish
+from llm_light.tools import run_tool
 
 _SEP = "\n    // ...\n"
 
@@ -152,11 +152,11 @@ class TestFetchChunk(_StoreCase):
 
 
 class TestRelatedExpansion(_StoreCase):
-    """Expansion is opt-in (CLAUDE_LIGHT_CALLGRAPH=1), so these turn it on."""
+    """Expansion is opt-in (LLM_LIGHT_CALLGRAPH=1), so these turn it on."""
 
     def setUp(self):
         super().setUp()
-        patcher = patch("claude_light.config.CALL_GRAPH", True)
+        patcher = patch("llm_light.config.CALL_GRAPH", True)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -175,7 +175,7 @@ class TestRelatedExpansion(_StoreCase):
         print("\n  ▶ TestRelatedExpansion.test_skipped_at_low_effort_and_when_disabled")
         top = [("app/api.py::handle", 0.9)]
         self.assertEqual(_related_pairs(top, 10_000, "low"), [])
-        with patch("claude_light.config.CALL_GRAPH", False):
+        with patch("llm_light.config.CALL_GRAPH", False):
             self.assertEqual(_related_pairs(top, 10_000, "high"), [])
 
     def test_does_not_repeat_selected_chunks(self):

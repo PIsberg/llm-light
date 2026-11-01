@@ -2,7 +2,7 @@
 Tests for per-provider session files (specs/001-gemini-codex-providers: T007).
 
 Covers FR-016 and the --continue edge case (data-model.md rules, message from
-contracts/provider.md). The active provider is faked on claude_light.providers.
+contracts/provider.md). The active provider is faked on llm_light.providers.
 """
 
 import os
@@ -15,9 +15,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light  # noqa: F401
-import claude_light.state as state
-from claude_light import config, providers, session
+import llm_light  # noqa: F401
+import llm_light.state as state
+from llm_light import config, providers, session
 
 _CLAUDE_HISTORY = [
     {"role": "user", "content": "claude question"},

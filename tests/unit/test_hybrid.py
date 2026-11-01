@@ -21,8 +21,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light.state as state
-from claude_light import config, indexer, retrieval
+import llm_light.state as state
+from llm_light import config, indexer, retrieval
 
 
 class _BagOfWords:
@@ -76,7 +76,7 @@ class _HybridProject(unittest.TestCase):
         state.hybrid_index = False
         for p in (patch.object(config, "HYBRID_RETRIEVAL", True),
                   patch.object(indexer, "_load_embedding_model", side_effect=self._load),
-                  patch("claude_light.executor._load_embedding_model", side_effect=self._load)):
+                  patch("llm_light.executor._load_embedding_model", side_effect=self._load)):
             p.start()
             self.addCleanup(p.stop)
 
@@ -217,7 +217,7 @@ class TestHybridIndex(_HybridProject):
                 gate.wait(5)
             return loaded(name, quiet)
 
-        with patch("claude_light.executor._load_embedding_model", side_effect=slow_load):
+        with patch("llm_light.executor._load_embedding_model", side_effect=slow_load):
             indexer.index_files(quiet=True, dense="background")
             threading.Timer(0.2, gate.set).start()
             self._files_retrieved("login user password")
@@ -227,7 +227,7 @@ class TestHybridIndex(_HybridProject):
         print("\n  ▶ TestHybridIndex.test_saved_file_gets_both_vectors")
         indexer.index_files(quiet=True, dense="sync")
         Path("billing.py").write_text("def refund_order(order_id):\n    return order_id\n", encoding="utf-8")
-        with patch("claude_light.indexer.notify"):
+        with patch("llm_light.indexer.notify"):
             indexer.reindex_file(os.path.join(".", "billing.py"))
         ids = [cid for cid in state.chunk_store if cid.startswith("billing.py")]
         self.assertTrue(ids)

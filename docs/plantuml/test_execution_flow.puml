@@ -1,5 +1,5 @@
 @startuml Test_Execution_Flow
-title Claude Light - Test Execution Flow
+title LLM Light - Test Execution Flow
 
 start
 

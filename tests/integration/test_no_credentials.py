@@ -21,9 +21,9 @@ def _run(*args):
         # Empty home and cwd: no ~/.anthropic, ./.env, automation token or
         # ~/.claude/.credentials.json to find.
         env.update(HOME=home, USERPROFILE=home, PYTHONIOENCODING="utf-8",
-                   CLAUDE_LIGHT_LLMLINGUA="0")
+                   LLM_LIGHT_LLMLINGUA="0")
         return subprocess.run(
-            [sys.executable, str(ROOT / "claude_light.py"), *args],
+            [sys.executable, str(ROOT / "llm_light.py"), *args],
             cwd=home, env=env, capture_output=True, text=True,
             encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=120)
 

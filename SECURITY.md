@@ -18,7 +18,7 @@ We take the security of this project seriously. If you discover a security vulne
 **Do not open a public issue.** Instead, report vulnerabilities using one of these methods:
 
 1. **GitHub Private Vulnerability Reporting** (preferred):
-   - Go to the [Security](https://github.com/PIsberg/claude_light/security) tab
+   - Go to the [Security](https://github.com/PIsberg/llm-light/security) tab
    - Click "Report a vulnerability"
    - Provide details about the vulnerability
 

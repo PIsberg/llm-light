@@ -4,18 +4,18 @@ The one shared contract of FR-005, the `--provider` flag of FR-001, and the user
 FR-008, FR-010, FR-011, FR-012 and FR-016. Written as the answers recorded in `plan.md` D1-D10
 make it.
 
-## Package `claude_light/providers/`
+## Package `llm_light/providers/`
 
 ```python
-# claude_light/providers/__init__.py
+# llm_light/providers/__init__.py
 NAMES: tuple[str, ...] = ("claude", "gemini", "codex")
 DEFAULT: str = "claude"             # the provider when none is chosen; neutral code names it only through this
-def get(name: str) -> Provider      # imports claude_light.providers.<name> on first use, returns its PROVIDER;
+def get(name: str) -> Provider      # imports llm_light.providers.<name> on first use, returns its PROVIDER;
                                     # ValueError naming NAMES for an unknown name
 def select(name: str) -> Provider   # get(name), then state.provider = it under state.lock
 def active() -> Provider            # state.provider, or get(DEFAULT) when it is None
 
-# claude_light/providers/base.py
+# llm_light/providers/base.py
 CACHING, EFFORT, TOP_TIER, USD_BUDGET, USAGE, AGENT, SHELL = (
     "caching", "effort", "top_tier", "usd_budget", "usage", "agent", "shell")
 
@@ -42,7 +42,7 @@ def json_events(stdout: str) -> Iterator[dict]
     # lines and JSON that is not an object are skipped. Codex's _agent_reply and Gemini's
     # _result_reply only select their event from it.
 
-# claude_light/providers/runner.py
+# llm_light/providers/runner.py
 TIMEOUT_SECS: int = 600
 def run_cli(provider: str, argv: list[str], stdin_text: str, timeout: float = TIMEOUT_SECS) -> str
     # stdout of a finished run with exit 0; ProviderError otherwise; kills the process tree on timeout
@@ -101,7 +101,7 @@ capabilities: none; shell disabled with the existing notice.
 
 Known limit: `search_web` still runs under these settings (three searches in the probe), and no
 permission kind was found that stops it. With the empty cwd and `allowNonWorkspaceAccess` false,
-what it can send is the prompt claude_light gives it.
+what it can send is the prompt llm_light gives it.
 
 ### Codex adapter
 
@@ -118,7 +118,7 @@ Neither argv carries `-m` or any Claude model id (FR-007, D3). Why each flag: `r
 
 ## Isolation rule (FR-004, SC-003)
 
-For every `claude_light/**/*.py` except `providers/<name>.py` and the registry
+For every `llm_light/**/*.py` except `providers/<name>.py` and the registry
 `providers/__init__.py` (whose `NAMES` and `DEFAULT` are provider names, not binaries; it imports
 no SDK and runs nothing): no `import`/`from` of that provider's SDK (`anthropic` for claude;
 `google.genai`, `google.generativeai` for gemini; `openai` for codex), and no string constant,
@@ -127,9 +127,9 @@ docstrings excluded, matching
 gemini's binary, D10). f-string parts
 count as constants. The rule matches the binary as a bare name (`"claude"`, `"agy"`, `which("agy")`) or
 as the first word of a command line (`"claude setup-token"`); it does not match a file name with
-a suffix (`"claude.md"` in `claude_light/skeleton.py: _FULL_MD_NAMES`, the project doc every
-provider's skeleton keeps under FR-003), the product name `claude light` (`claude_light/ui.py`
-banner) or `claude_light` (an identifier character follows). Neutral code that needs the
+a suffix (`"claude.md"` in `llm_light/skeleton.py: _FULL_MD_NAMES`, the project doc every
+provider's skeleton keeps under FR-003), the product name `llm light` (`llm_light/ui.py`
+banner) or `llm_light` (an identifier character follows). Neutral code that needs the
 default provider's name uses `providers.DEFAULT`.
 
 ## Messages
@@ -147,7 +147,7 @@ default provider's name uses `providers.DEFAULT`.
 | route line | `◆  <p>  ·  CLI default model  ·  effort unavailable for <p>`, plus `  ·  top tier unavailable for <p>` when routed to the top tier |
 | `/budget <x>` | `Budget unavailable for <p>: it has no dollar pricing. No cap set.` |
 | turn stats, `/cost`, exit footer, status bar | `tokens, cost and caching unavailable for <p>` |
-| `--allow-command` given | `shell access is disabled for <p>: its agent cannot run commands. --allow-command only lets claude_light run the affected tests.` |
+| `--allow-command` given | `shell access is disabled for <p>: its agent cannot run commands. --allow-command only lets llm_light run the affected tests.` |
 | `--continue`, other provider's file | `The saved conversation was made with <saved>; starting a fresh <p> conversation. Resume it with --provider <saved> --continue.` |
 
 A `ProviderError` inside a turn reaches the existing handler in `llm.chat()` (`[Error] API call

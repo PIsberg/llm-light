@@ -1,5 +1,7 @@
 .claude/
 __pycache__/
+.llm_light_cache/
+# Index cache from before the rename (claude_light); still present in existing checkouts.
 .claude_light_cache/
 .benchmark_repos/
 .benchmark_retrieval_cache/

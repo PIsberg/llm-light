@@ -8,9 +8,9 @@ from pathlib import Path
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import claude_light.state as state
-from claude_light import llm
-from claude_light.main import _budget_command
+import llm_light.state as state
+from llm_light import llm
+from llm_light.main import _budget_command
 
 
 class TestBudget(unittest.TestCase):

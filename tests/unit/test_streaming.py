@@ -14,11 +14,11 @@ from typing import Iterator
 # Add parent to path - go up 3 levels from tests/unit/
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from claude_light.streaming import (
+from llm_light.streaming import (
     StreamingResponseHandler, stream_chat_response,
     calculate_usage_cost, accumulate_usage_from_dict
 )
-import claude_light.state as state
+import llm_light.state as state
 
 
 class MockStreamEvent:
@@ -36,7 +36,7 @@ class TestStreamingResponseHandler:
         """Reset state before each test."""
         state.session_cost = 0.0
         # Reset in place: other modules hold references to this dict, and
-        # replacing it broke later tests that read it through claude_light.
+        # replacing it broke later tests that read it through llm_light.
         for key in state.session_tokens:
             state.session_tokens[key] = 0
 
@@ -198,7 +198,7 @@ class TestAccumulateUsageFromDict:
         """Reset state before each test."""
         state.session_cost = 0.0
         # Reset in place: other modules hold references to this dict, and
-        # replacing it broke later tests that read it through claude_light.
+        # replacing it broke later tests that read it through llm_light.
         for key in state.session_tokens:
             state.session_tokens[key] = 0
 

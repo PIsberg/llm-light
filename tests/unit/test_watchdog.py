@@ -15,7 +15,7 @@ from unittest.mock import Mock, MagicMock, patch
 # Add parent to path - go up 3 levels from tests/unit/
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import claude_light.state as state
+import llm_light.state as state
 
 
 class MockObserver:
@@ -52,11 +52,11 @@ class TestWatchdogResourceManagement:
 
     def test_observer_starts_successfully(self):
         """Test that observer starts and schedules correctly."""
-        with patch('claude_light.main.Observer', return_value=MockObserver()) as mock_observer_class:
-            with patch('claude_light.main.full_refresh'):
-                with patch('claude_light.main._PROMPTTK_AVAILABLE', False):
+        with patch('llm_light.main.Observer', return_value=MockObserver()) as mock_observer_class:
+            with patch('llm_light.main.full_refresh'):
+                with patch('llm_light.main._PROMPTTK_AVAILABLE', False):
                     with patch('builtins.input', return_value='exit'):
-                        from claude_light.main import start_chat
+                        from llm_light.main import start_chat
                         try:
                             start_chat()
                         except (KeyboardInterrupt, EOFError):
@@ -69,11 +69,11 @@ class TestWatchdogResourceManagement:
         """Test that observer is properly stopped when session exits."""
         mock_observer = MockObserver()
         
-        with patch('claude_light.main.Observer', return_value=mock_observer):
-            with patch('claude_light.main.full_refresh'):
-                with patch('claude_light.main._PROMPTTK_AVAILABLE', False):
+        with patch('llm_light.main.Observer', return_value=mock_observer):
+            with patch('llm_light.main.full_refresh'):
+                with patch('llm_light.main._PROMPTTK_AVAILABLE', False):
                     with patch('builtins.input', side_effect=EOFError):
-                        from claude_light.main import start_chat
+                        from llm_light.main import start_chat
                         try:
                             start_chat()
                         except (KeyboardInterrupt, EOFError):
@@ -88,15 +88,15 @@ class TestWatchdogResourceManagement:
         # full_refresh now runs in a background thread; with threading.Thread
         # mocked (no real thread) _bg_refresh runs inline, so the exception
         # propagates synchronously just as before.
-        import claude_light as cl
+        import llm_light as cl
         mock_observer = MagicMock()
 
         def raise_error(*args, **kwargs):
             raise RuntimeError("Test error")
 
         with patch.object(cl, 'full_refresh', side_effect=raise_error), \
-             patch('claude_light.Observer', return_value=mock_observer), \
-             patch('claude_light.SourceHandler', return_value=MagicMock()), \
+             patch('llm_light.Observer', return_value=mock_observer), \
+             patch('llm_light.SourceHandler', return_value=MagicMock()), \
              patch('threading.Thread', return_value=MagicMock()), \
              patch('builtins.print'):
             try:
@@ -109,11 +109,11 @@ class TestWatchdogResourceManagement:
         mock_observer = MagicMock()
         mock_observer.join = MagicMock()
         
-        with patch('claude_light.main.Observer', return_value=mock_observer):
-            with patch('claude_light.main.full_refresh'):
-                with patch('claude_light.main._PROMPTTK_AVAILABLE', False):
+        with patch('llm_light.main.Observer', return_value=mock_observer):
+            with patch('llm_light.main.full_refresh'):
+                with patch('llm_light.main._PROMPTTK_AVAILABLE', False):
                     with patch('builtins.input', side_effect=EOFError):
-                        from claude_light.main import start_chat
+                        from llm_light.main import start_chat
                         try:
                             start_chat()
                         except (KeyboardInterrupt, EOFError):
@@ -130,11 +130,11 @@ class TestWatchdogResourceManagement:
         def raise_on_create(*args, **kwargs):
             raise RuntimeError("Failed to create observer")
         
-        with patch('claude_light.main.Observer', side_effect=raise_on_create):
-            with patch('claude_light.main.full_refresh'):
-                with patch('claude_light.main._PROMPTTK_AVAILABLE', False):
+        with patch('llm_light.main.Observer', side_effect=raise_on_create):
+            with patch('llm_light.main.full_refresh'):
+                with patch('llm_light.main._PROMPTTK_AVAILABLE', False):
                     with patch('builtins.input', return_value='exit'):
-                        from claude_light.main import start_chat
+                        from llm_light.main import start_chat
                         # Should not crash
                         try:
                             start_chat()
@@ -145,12 +145,12 @@ class TestWatchdogResourceManagement:
         """Test that SourceHandler is properly scheduled."""
         mock_observer = MockObserver()
         
-        with patch('claude_light.main.Observer', return_value=mock_observer):
-            with patch('claude_light.main.full_refresh'):
-                with patch('claude_light.main.SourceHandler'):
-                    with patch('claude_light.main._PROMPTTK_AVAILABLE', False):
+        with patch('llm_light.main.Observer', return_value=mock_observer):
+            with patch('llm_light.main.full_refresh'):
+                with patch('llm_light.main.SourceHandler'):
+                    with patch('llm_light.main._PROMPTTK_AVAILABLE', False):
                         with patch('builtins.input', return_value='exit'):
-                            from claude_light.main import start_chat
+                            from llm_light.main import start_chat
                             try:
                                 start_chat()
                             except (KeyboardInterrupt, EOFError):
@@ -166,11 +166,11 @@ class TestWatchdogResourceManagement:
         """Test that Ctrl+C triggers proper cleanup."""
         mock_observer = MockObserver()
         
-        with patch('claude_light.main.Observer', return_value=mock_observer):
-            with patch('claude_light.main.full_refresh'):
-                with patch('claude_light.main._PROMPTTK_AVAILABLE', False):
+        with patch('llm_light.main.Observer', return_value=mock_observer):
+            with patch('llm_light.main.full_refresh'):
+                with patch('llm_light.main._PROMPTTK_AVAILABLE', False):
                     with patch('builtins.input', side_effect=KeyboardInterrupt):
-                        from claude_light.main import start_chat
+                        from llm_light.main import start_chat
                         # Should handle interrupt gracefully
                         start_chat()
         
@@ -178,8 +178,8 @@ class TestWatchdogResourceManagement:
         assert mock_observer.stopped
 
     def test_signal_handler_stops_session(self):
-        """Handlers register without error (behaviour: TestCtrlC in test_claude_light.py)."""
-        from claude_light.main import _setup_signal_handlers
+        """Handlers register without error (behaviour: TestCtrlC in test_llm_light.py)."""
+        from llm_light.main import _setup_signal_handlers
         
         # Setup handlers
         _setup_signal_handlers()
@@ -196,11 +196,11 @@ class TestObserverErrorHandling:
         mock_observer = MagicMock()
         mock_observer.stop.side_effect = RuntimeError("Stop failed")
         
-        with patch('claude_light.main.Observer', return_value=mock_observer):
-            with patch('claude_light.main.full_refresh'):
-                with patch('claude_light.main._PROMPTTK_AVAILABLE', False):
+        with patch('llm_light.main.Observer', return_value=mock_observer):
+            with patch('llm_light.main.full_refresh'):
+                with patch('llm_light.main._PROMPTTK_AVAILABLE', False):
                     with patch('builtins.input', return_value='exit'):
-                        from claude_light.main import start_chat
+                        from llm_light.main import start_chat
                         # Should not crash despite stop error
                         try:
                             start_chat()
@@ -212,11 +212,11 @@ class TestObserverErrorHandling:
         mock_observer = MagicMock()
         mock_observer.join.side_effect = TimeoutError()
         
-        with patch('claude_light.main.Observer', return_value=mock_observer):
-            with patch('claude_light.main.full_refresh'):
-                with patch('claude_light.main._PROMPTTK_AVAILABLE', False):
+        with patch('llm_light.main.Observer', return_value=mock_observer):
+            with patch('llm_light.main.full_refresh'):
+                with patch('llm_light.main._PROMPTTK_AVAILABLE', False):
                     with patch('builtins.input', return_value='exit'):
-                        from claude_light.main import start_chat
+                        from llm_light.main import start_chat
                         # Should not crash despite timeout
                         try:
                             start_chat()
@@ -233,7 +233,7 @@ class TestSignalHandling:
 
     def test_signal_handler_setup_no_exception(self):
         """Test that signal handler setup doesn't raise."""
-        from claude_light.main import _setup_signal_handlers
+        from llm_light.main import _setup_signal_handlers
         
         # Should not raise regardless of platform
         _setup_signal_handlers()

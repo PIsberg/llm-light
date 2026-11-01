@@ -5,7 +5,7 @@
 
 This sequence diagram illustrates the complete flow from user query to response, including background processes.
 
-![Sequence Diagram](../plantuml/Claude_Light_Sequence_Diagram.png)
+![Sequence Diagram](../plantuml/LLM_Light_Sequence_Diagram.png)
 
 ### Key Phases
 
@@ -38,8 +38,8 @@ This sequence diagram illustrates the complete flow from user query to response,
 <summary>View PlantUML Source</summary>
 
 ```plantuml
-@startuml Claude_Light_Sequence_Diagram
-title Claude Light - Query Processing Sequence
+@startuml LLM_Light_Sequence_Diagram
+title LLM Light - Query Processing Sequence
 
 actor User
 participant "main.py\n(Entry)" as Main

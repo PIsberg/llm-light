@@ -1,6 +1,6 @@
-# Claude Light - Test Strategy
+# LLM Light - Test Strategy
 
-This document describes the testing strategy, architecture, and infrastructure for Claude Light. The test suite ensures code quality, prevents regressions, and validates the token optimization claims through automated regression checks.
+This document describes the testing strategy, architecture, and infrastructure for LLM Light. The test suite ensures code quality, prevents regressions, and validates the token optimization claims through automated regression checks.
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ The test suite is organized into multiple directories, each serving a specific p
 
 | File | Tests |
 |------|-------|
-| `test_claude_light.py` | Core functionality (6,600+ lines) |
+| `test_llm_light.py` | Core functionality (6,600+ lines) |
 | `test_llm.py` | Query routing, API calls, history compression |
 | `test_retrieval.py` | RAG retrieval, deduplication, filtering |
 | `test_editor.py` | Edit parsing, SEARCH/REPLACE, apply edits |
@@ -46,7 +46,7 @@ The test suite is organized into multiple directories, each serving a specific p
 
 ```plantuml
 @startuml Test_Suite_Structure
-title Claude Light - Test Suite Structure
+title LLM Light - Test Suite Structure
 
 skinparam backgroundColor #FEFEFE
 skinparam rectangle {
@@ -60,7 +60,7 @@ package "tests/" {
   rectangle "conftest.py\n(Shared Fixtures)" as Conftest
   
   package "unit/" <<unit>> {
-    rectangle "test_claude_light.py\n(Core Tests)" as TestCore
+    rectangle "test_llm_light.py\n(Core Tests)" as TestCore
     rectangle "test_llm.py\n(Routing & API)" as TestLLM
     rectangle "test_retrieval.py\n(RAG)" as TestRetrieval
     rectangle "test_editor.py\n(Edit Parsing)" as TestEditor
@@ -188,7 +188,7 @@ addopts =
 
 ```plantuml
 @startuml Test_Execution_Flow
-title Claude Light - Test Execution Flow
+title LLM Light - Test Execution Flow
 
 start
 
@@ -279,9 +279,9 @@ The test suite includes a comprehensive mocking system for testing without API c
 
 ```bash
 # Run with synthetic codebase
-python -m claude_light --test-mode small "List all public classes"
-python -m claude_light --test-mode medium "Find the authentication module"
-python -m claude_light --test-mode large "Explain the request handling flow"
+python -m llm_light --test-mode small "List all public classes"
+python -m llm_light --test-mode medium "Find the authentication module"
+python -m llm_light --test-mode large "Explain the request handling flow"
 ```
 
 ### Mocked Behaviors
@@ -309,16 +309,16 @@ python -m claude_light --test-mode large "Explain the request handling flow"
 
 ```plantuml
 @startuml Test_Mock_Architecture
-title Claude Light - Test Mock Architecture
+title LLM Light - Test Mock Architecture
 
 skinparam backgroundColor #FEFEFE
 
 package "Production Code" {
-  [claude_light.llm] as LLM
-  [claude_light.indexer] as Indexer
-  [claude_light.skeleton] as Skeleton
-  [claude_light.editor] as Editor
-  [claude_light.config] as Config
+  [llm_light.llm] as LLM
+  [llm_light.indexer] as Indexer
+  [llm_light.skeleton] as Skeleton
+  [llm_light.editor] as Editor
+  [llm_light.config] as Config
 }
 
 package "Test Mocks (test_mocks.py)" {
@@ -394,7 +394,7 @@ rectangle "Presets" as Presets {
 Synthetic -[hidden]--> Presets
 
 note bottom
-  Usage: python -m claude_light --test-mode small "query"
+  Usage: python -m llm_light --test-mode small "query"
   
   The MockManager intercepts all file I/O and API calls,
   allowing full integration testing without:
@@ -486,7 +486,7 @@ jobs:
 
 ```plantuml
 @startuml CI_CD_Pipeline
-title Claude Light - CI/CD Pipeline
+title LLM Light - CI/CD Pipeline
 
 skinparam backgroundColor #FEFEFE
 
@@ -645,16 +645,16 @@ python -m pytest tests/unit/test_llm.py::TestRouteQuery::test_low_effort_simple_
 
 ```bash
 # Small synthetic codebase
-python -m claude_light --test-mode small "List all public classes"
+python -m llm_light --test-mode small "List all public classes"
 
 # Medium synthetic codebase
-python -m claude_light --test-mode medium "Find authentication module"
+python -m llm_light --test-mode medium "Find authentication module"
 
 # Large synthetic codebase
-python -m claude_light --test-mode large "Explain request handling"
+python -m llm_light --test-mode large "Explain request handling"
 
 # Extra-large synthetic codebase
-python -m claude_light --test-mode extra-large "Analyze architecture"
+python -m llm_light --test-mode extra-large "Analyze architecture"
 ```
 
 ### Benchmark and Regression
@@ -677,7 +677,7 @@ python tests/check_regression.py retrieval tests/baseline_retrieval_stats.json t
 
 ```bash
 # Run with coverage
-python -m pytest --cov=claude_light --cov-report=html
+python -m pytest --cov=llm_light --cov-report=html
 
 # View coverage report
 open htmlcov/index.html  # macOS

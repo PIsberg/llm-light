@@ -1,6 +1,6 @@
 # Startup Performance Optimizations
 
-This document summarizes the optimizations made to improve claude_light startup time.
+This document summarizes the optimizations made to improve llm_light startup time.
 
 ## Bottlenecks Identified
 
@@ -112,9 +112,9 @@ auto_tune(source_files, chunks=all_chunk_texts, quiet=quiet, load_model=False)
 
 ## Files Modified
 
-- `claude_light/skeleton.py` - Added path caching and parallel hashing
-- `claude_light/indexer.py` - Cache-aware indexing flow
-- `claude_light/executor.py` - Optional model loading in `auto_tune()`
+- `llm_light/skeleton.py` - Added path caching and parallel hashing
+- `llm_light/indexer.py` - Cache-aware indexing flow
+- `llm_light/executor.py` - Optional model loading in `auto_tune()`
 - `scripts/benchmark_startup.py` - New benchmark script
 
 ## Usage

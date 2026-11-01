@@ -24,10 +24,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
 os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 
-import claude_light.state as state
-from claude_light.skeleton import build_skeleton, _get_cached_paths, _invalidate_path_cache, _file_hash, _file_hash_parallel
-from claude_light.indexer import index_files
-from claude_light.executor import auto_tune, _check_model_cached
+import llm_light.state as state
+from llm_light.skeleton import build_skeleton, _get_cached_paths, _invalidate_path_cache, _file_hash, _file_hash_parallel
+from llm_light.indexer import index_files
+from llm_light.executor import auto_tune, _check_model_cached
 
 
 def time_func(fn, *args, **kwargs):
@@ -180,13 +180,13 @@ def benchmark_full_startup(iterations=3):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Benchmark claude_light startup performance")
+    parser = argparse.ArgumentParser(description="Benchmark llm_light startup performance")
     parser.add_argument("--iterations", type=int, default=3, help="Number of iterations for averaging")
     parser.add_argument("--test-mode", choices=["small", "medium", "large", "extra-large"],
                         help="Run in test mode with a synthetic codebase")
     args = parser.parse_args()
     
-    print("Claude Light Startup Benchmark")
+    print("LLM Light Startup Benchmark")
     print("="*60)
     
     if args.test_mode:

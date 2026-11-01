@@ -1,5 +1,5 @@
 @startuml CI_CD_Pipeline
-title Claude Light - CI/CD Pipeline
+title LLM Light - CI/CD Pipeline
 
 skinparam backgroundColor #FEFEFE
 

@@ -1,6 +1,6 @@
 """Fail a PR that changes a PlantUML source without its rendered PNG (#107).
 
-indexing_flow.puml was edited while Claude_Light_Indexing_Flow.png stayed at a
+indexing_flow.puml was edited while LLM_Light_Indexing_Flow.png stayed at a
 render months older (#67). A fresh render is not compared byte for byte: PNG
 output depends on the PlantUML version, Graphviz and fonts. This only checks
 that a changed .puml under docs/plantuml/ arrives with its PNG, which is named

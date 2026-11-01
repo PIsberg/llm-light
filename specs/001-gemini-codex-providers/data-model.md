@@ -2,26 +2,26 @@
 
 Only new or changed state. The Provider interface itself is in `contracts/provider.md`.
 
-## `state.provider` (new, `claude_light/state.py`)
+## `state.provider` (new, `llm_light/state.py`)
 
 - Type: `Provider | None`, default `None`, which `providers.active()` reads as Claude (FR-002).
 - Written once, by `providers.select()` from `main.main()`, under `state.lock`. Never changed
   while a session runs (spec Assumptions: one provider per launch).
-- Not re-exported by `claude_light/__init__.py`, so `_sync_bindings()`/`_wrap()` need no entry,
+- Not re-exported by `llm_light/__init__.py`, so `_sync_bindings()`/`_wrap()` need no entry,
   as with `state.session_model`.
 - Tests set it with `monkeypatch.setattr(state, "provider", ...)`, which restores it after the test.
 
-## `client` (moved, `claude_light/llm.py` to `claude_light/providers/claude.py`)
+## `client` (moved, `llm_light/llm.py` to `llm_light/providers/claude.py`)
 
 - The Anthropic client (`MockClient` under the test key, `_LazyClient` otherwise) moves unchanged
   with Claude's transport (D2).
-- `claude_light/__init__.py` imports `claude_light.providers.claude` inside `try/except
+- `llm_light/__init__.py` imports `llm_light.providers.claude` inside `try/except
   ImportError`, so the package loads without it (US4). When present, `_MODULE_ATTR_MAP["client"]`
   becomes `[(claude, "client")]`, `"print_stats"` gains `(claude, "print_stats")`, and
   `_refresh_exports` takes `client` from it, so `_wrap()` syncs both as before (constitution IV).
   When absent, the package exports no `client`.
 
-## Session file (changed, `claude_light/session.py`)
+## Session file (changed, `llm_light/session.py`)
 
 | Provider | File in `config.SESSION_DIR` | Content |
 |---|---|---|

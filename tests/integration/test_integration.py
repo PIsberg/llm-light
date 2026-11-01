@@ -18,16 +18,16 @@ print("=" * 60)
 # Test 1: Import all modules
 print("\n1. Testing imports...")
 try:
-    from claude_light import git_manager
+    from llm_light import git_manager
     print("   ✓ git_manager imported")
     
-    from claude_light.editor import apply_edits
+    from llm_light.editor import apply_edits
     print("   ✓ editor.apply_edits imported")
     
-    from claude_light.main import start_chat
+    from llm_light.main import start_chat
     print("   ✓ main.start_chat imported")
     
-    from claude_light.llm import chat
+    from llm_light.llm import chat
     print("   ✓ llm.chat imported")
 except ImportError as e:
     print(f"   ✗ Import failed: {e}")
@@ -93,7 +93,7 @@ if claude_md.exists():
 
 # Test 5: Verify tests exist
 print("\n5. Checking test coverage...")
-test_file = project_root / "tests" / "test_claude_light.py"
+test_file = project_root / "tests" / "test_llm_light.py"
 if test_file.exists():
     test_content = test_file.read_text()
     if "TestGitManager" in test_content:

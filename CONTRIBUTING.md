@@ -1,6 +1,6 @@
-# Contributing to Claude Light
+# Contributing to LLM Light
 
-Thank you for considering contributing to claude_light! This document provides guidelines and instructions for contributing.
+Thank you for considering contributing to llm_light! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 
@@ -23,8 +23,8 @@ Thank you for considering contributing to claude_light! This document provides g
 1. **Fork** the repository on GitHub
 2. **Clone** your fork locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/claude_light.git
-   cd claude_light
+   git clone https://github.com/YOUR_USERNAME/llm_light.git
+   cd llm_light
    ```
 3. **Set up** your development environment (see below)
 
@@ -81,7 +81,7 @@ python -m pytest tests/unit/ -q
 python -m pytest tests/test_fuzz.py -v
 
 # Run with coverage
-python -m pytest --cov=claude_light tests/
+python -m pytest --cov=llm_light tests/
 
 # Run specific test file
 python -m pytest tests/unit/test_chunking.py -v
@@ -155,9 +155,9 @@ feat: add method-level chunking for Python files
 ### Code Organization
 
 ```
-claude_light/
-├── claude_light.py      # Main entry point
-├── claude_light/        # Package modules
+llm_light/
+├── llm_light.py      # Main entry point
+├── llm_light/        # Package modules
 │   ├── chunking.py      # Code chunking logic
 │   ├── embedding.py     # Vector embeddings
 │   ├── rag.py           # Retrieval logic

@@ -19,7 +19,7 @@ try:
     print("✓ All test classes defined")
     
     # Verify state module
-    import claude_light.state as state
+    import llm_light.state as state
     assert hasattr(state, 'lock')
     print("✓ state.lock exists")
     

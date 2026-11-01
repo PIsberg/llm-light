@@ -1,4 +1,4 @@
-"""Tests for the allowlist-gated `shell` tool in claude_light.tools."""
+"""Tests for the allowlist-gated `shell` tool in llm_light.tools."""
 
 import os
 import sys
@@ -11,8 +11,8 @@ from unittest import mock
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from claude_light import config
-from claude_light.tools import run_tool
+from llm_light import config
+from llm_light.tools import run_tool
 
 _PY = f'"{sys.executable}"' if os.name == "nt" else sys.executable
 
@@ -86,7 +86,7 @@ class TestShellTool(unittest.TestCase):
         # before the timeout path ever ran.
         cmd = f"{_PY} -c \"__import__('time').sleep(30)\""
         start = time.monotonic()
-        with mock.patch.dict(os.environ, {"CLAUDE_LIGHT_RUN_TIMEOUT": "1"}):
+        with mock.patch.dict(os.environ, {"LLM_LIGHT_RUN_TIMEOUT": "1"}):
             out, is_error = self.run_shell(cmd, allowed=[_PY])
         elapsed = time.monotonic() - start
         self.assertTrue(is_error)

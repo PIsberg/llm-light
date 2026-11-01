@@ -5,7 +5,7 @@ benchmark_retrieval.py -- RAG Retrieval Quality Benchmark
 
 PURPOSE
 -------
-Tests whether claude_light's embedding + retrieval pipeline correctly surfaces
+Tests whether llm_light's embedding + retrieval pipeline correctly surfaces
 the *files* that need to change when a developer describes a real bug.
 
 Supports two benchmark modes:
@@ -18,7 +18,7 @@ This is purely an embedding benchmark. No API key or Anthropic calls are made.
 
 WHAT IT MEASURES
 ----------------
-For K values [5, 10, 15] (matching claude_light's retrieval range):
+For K values [5, 10, 15] (matching llm_light's retrieval range):
 
   Hit@K         -- fraction of instances where >= 1 gold file is in top-K chunks
                    (binary: did we surface ANY relevant file?)
@@ -35,10 +35,10 @@ METHODOLOGY
 2. For each instance:
    a. Clone the repo at base_commit (cached in --repos-dir between runs).
    b. Scan all source files using the same SKIP_DIRS + extension filter as
-      claude_light.py (lines 106-162 of that script).
-   c. Chunk files using the exact same tree-sitter logic as claude_light.py
+      llm_light.py (lines 106-162 of that script).
+   c. Chunk files using the exact same tree-sitter logic as llm_light.py
       (lines 600-678), with whole-file fallback if tree-sitter is missing.
-   d. Embed chunks with the same SentenceTransformer model that claude_light
+   d. Embed chunks with the same SentenceTransformer model that llm_light
       would auto_tune to (lines 692-700): MiniLM for <50 files, mpnet for
       50-199, nomic for 200+.
    e. Embed the problem_statement (using the same query prefix convention).
@@ -54,7 +54,7 @@ ASSUMPTIONS AND LIMITATIONS
   These match when indexing is run from the repo root, which we enforce.
 - Truncation: problem statements up to 6 700 chars; we pass them as-is to the
   embedder, which truncates at its own max token limit (typically 256-512 tok).
-- MIN_SCORE filter: claude_light drops chunks below cosine similarity 0.35 in
+- MIN_SCORE filter: llm_light drops chunks below cosine similarity 0.35 in
   production. We skip this filter here to get unbiased Hit@K and Recall@K
   curves. Real production recall may be lower for noisy queries.
 - Language coverage: SWE-bench Lite is Python-only, so the .py grammar carries
@@ -147,22 +147,22 @@ def require_sentence_transformers():
     return SentenceTransformer
 
 # ---------------------------------------------------------------------------
-# Constants -- mirrored from claude_light.py to ensure identical behaviour
+# Constants -- mirrored from llm_light.py to ensure identical behaviour
 # ---------------------------------------------------------------------------
 
-# K values to evaluate retrieval at (matches claude_light's retrieval range)
+# K values to evaluate retrieval at (matches llm_light's retrieval range)
 DEFAULT_K_VALUES = [5, 10, 15]
 
-# From claude_light.py line 106-109 -- directories to skip during indexing
+# From llm_light.py line 106-109 -- directories to skip during indexing
 SKIP_DIRS = {
     ".git", "target", "build", "node_modules",
     ".idea", "__pycache__", ".mvn", ".gradle",
 }
 
-# From claude_light.py lines 125-136 -- extensions we index
+# From llm_light.py lines 125-136 -- extensions we index
 INDEXABLE_EXTENSIONS = {".java", ".py", ".js", ".go", ".rs", ".ts", ".tsx"}
 
-# Embedding model selection thresholds -- from claude_light.py auto_tune() lines 692-700
+# Embedding model selection thresholds -- from llm_light.py auto_tune() lines 692-700
 # < 50 files -> MiniLM, 50-199 -> mpnet, 200+ -> nomic
 EMBED_THRESHOLDS = [
     (50,  "all-MiniLM-L6-v2"),
@@ -170,11 +170,11 @@ EMBED_THRESHOLDS = [
     (None, "nomic-ai/nomic-embed-text-v1.5"),
 ]
 
-# Nomic model needs explicit prefixes -- from claude_light.py lines 204-205
+# Nomic model needs explicit prefixes -- from llm_light.py lines 204-205
 DOC_PREFIX   = {"nomic-ai/nomic-embed-text-v1.5": "search_document: "}
 QUERY_PREFIX = {"nomic-ai/nomic-embed-text-v1.5": "search_query: "}
 
-# AST node types per language -- from claude_light.py _WANTED_LANGS lines 126-136
+# AST node types per language -- from llm_light.py _WANTED_LANGS lines 126-136
 _WANTED_LANGS = {
     ".java": (lambda: _ts_lang("tree_sitter_java"),
               ["method_declaration", "constructor_declaration"]),
@@ -192,7 +192,7 @@ _WANTED_LANGS = {
 _NAME_CHILD_TYPES = {"identifier", "name", "field_identifier", "type_identifier"}
 
 # ---------------------------------------------------------------------------
-# Tree-sitter helpers -- replicated from claude_light.py lines 600-678
+# Tree-sitter helpers -- replicated from llm_light.py lines 600-678
 # (with references to original line numbers for auditability)
 # ---------------------------------------------------------------------------
 
@@ -209,7 +209,7 @@ def load_language_config() -> dict:
     Load tree-sitter grammars.
     Returns {ext: {"lang": Language, "node_types": list} | None}.
     Returns {ext: None} for all extensions if tree-sitter is not installed.
-    Replicates claude_light.py _load_languages() logic (lines 139-165).
+    Replicates llm_light.py _load_languages() logic (lines 139-165).
     """
     try:
         from tree_sitter import Language, Parser  # noqa: F401
@@ -244,7 +244,7 @@ def load_language_config() -> dict:
 
 def _walk(node, node_types: list, results: list) -> None:
     """DFS: collect AST nodes whose type is in node_types.
-    Replicated from claude_light.py lines 600-605."""
+    Replicated from llm_light.py lines 600-605."""
     if node.type in node_types:
         results.append(node)
         return
@@ -254,7 +254,7 @@ def _walk(node, node_types: list, results: list) -> None:
 
 def _extract_symbol_name(node) -> str:
     """Return the identifier string for an AST symbol node.
-    Replicated from claude_light.py lines 609-619."""
+    Replicated from llm_light.py lines 609-619."""
     if node.type == "decorated_definition":
         for child in node.children:
             if child.type in {"function_definition", "async_function_definition"}:
@@ -269,7 +269,7 @@ def _chunk_with_treesitter(filepath: str, source: str, lang_cfg: dict) -> list:
     """
     Parse source with tree-sitter and return one chunk per symbol.
     Chunk format: "// filepath\\n{preamble}\\n    // ...\\n{method_body}\\n"
-    Replicated from claude_light.py lines 622-664.
+    Replicated from llm_light.py lines 622-664.
     """
     from tree_sitter import Parser
     language = lang_cfg["lang"]
@@ -309,7 +309,7 @@ def chunk_file(filepath: str, source: str, lang_config: dict) -> list:
     """
     Chunk a source file into symbol-level pieces.
     Falls back to whole-file if tree-sitter is unavailable or no symbols found.
-    Replicates claude_light.py chunk_file() lines 667-678.
+    Replicates llm_light.py chunk_file() lines 667-678.
     """
     ext = Path(filepath).suffix.lower()
     cfg = lang_config.get(ext)
@@ -320,7 +320,7 @@ def chunk_file(filepath: str, source: str, lang_config: dict) -> list:
 
 def is_skipped(path: Path) -> bool:
     """Return True if this path should be excluded from indexing.
-    Replicates claude_light.py _is_skipped() line 449-450."""
+    Replicates llm_light.py _is_skipped() line 449-450."""
     return any(p in SKIP_DIRS or p.startswith(".") for p in path.parts)
 
 
@@ -329,7 +329,7 @@ def is_skipped(path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 def select_embed_model(n_files: int) -> str:
-    """Select embedding model based on file count, matching claude_light auto_tune()."""
+    """Select embedding model based on file count, matching llm_light auto_tune()."""
     for threshold, model in EMBED_THRESHOLDS:
         if threshold is None or n_files < threshold:
             return model
@@ -558,7 +558,7 @@ def retrieve_top_k(query_emb: np.ndarray, chunk_embs: np.ndarray,
     """
     Return top-K (chunk_id, score) pairs by cosine similarity.
     Assumes embeddings are already L2-normalised (so dot product = cosine similarity).
-    Replicates claude_light.py retrieve() scoring (line 1012), without MIN_SCORE
+    Replicates llm_light.py retrieve() scoring (line 1012), without MIN_SCORE
     filtering (we want unfiltered curves for the benchmark).
     """
     scores = chunk_embs @ query_emb
