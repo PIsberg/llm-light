@@ -33,7 +33,9 @@ _PREAMBLE = ("You have no tools in this session: do not call any tool, run any c
              "any file. Everything you can use is in this message. For an edit, write "
              "SEARCH/REPLACE blocks from the code shown here.\n\n")
 _EXPECTED_ARGV_HEAD = [_AGY, "--input-format", "stream-json", "--output-format", "stream-json",
-                       "--mode", "plan", "--settings"]
+                       "--mode", "plan", "--agent", "llm-light", "--settings"]
+# The agent file the run installs in its own temporary home (#122, #149).
+_AGENT_FILE = (".gemini", "config", "agents", "llm-light.md")
 
 
 def _request():
@@ -404,7 +406,7 @@ def test_t027_done_forbidden_tool_with_its_kind_denied_does_not_raise(tool, kind
     assert reply == "a fine answer"
 
 
-_ALLOWED = ["search_web", "read_file", "view_file", "list_dir", "find_by_name", "grep_search"]
+_ALLOWED = ["read_file", "view_file", "list_dir", "find_by_name", "grep_search"]
 
 
 @pytest.mark.parametrize("tool", _ALLOWED)
@@ -414,7 +416,9 @@ def test_t027_allowlisted_read_only_tools_do_not_raise(tool):
     assert reply == "a fine answer"
 
 
-_NOT_ALLOWED = ["execute_browser_javascript", "browser_input", "invoke_subagent",
+# search_web is here since #122: the llm-light agent has no tools, so a search
+# means the agent did not load, and the query (which can quote repo code) left.
+_NOT_ALLOWED = ["search_web", "execute_browser_javascript", "browser_input", "invoke_subagent",
                 "run_workflow", "schedule", "generate_image", "define_subagent",
                 "some_new_tool"]
 
@@ -472,7 +476,11 @@ def _capture_env_run(seen, stdout=None, error=None):
         seen["env"] = env
         seen["cwd"] = kw.get("cwd")
         seen["argv"] = argv
-        seen["home_listing"] = os.listdir(env["HOME"])
+        seen["home_files"] = sorted(
+            os.path.relpath(os.path.join(d, f), env["HOME"])
+            for d, _, files in os.walk(env["HOME"]) for f in files)
+        agent = os.path.join(env["HOME"], *_AGENT_FILE)
+        seen["agent"] = Path(agent).read_text(encoding="utf-8") if os.path.exists(agent) else None
         if error:
             raise error
         return stdout
@@ -495,7 +503,8 @@ def test_118_agy_runs_with_an_empty_home_removed_afterwards(method, fail, _no_re
             call()
     env = seen["env"]
     assert env["HOME"] == env["USERPROFILE"]
-    assert seen["home_listing"] == []
+    # Empty but for the agent file llm_light writes there (#122).
+    assert seen["home_files"] == [os.path.join(*_AGENT_FILE)]
     assert os.path.realpath(env["HOME"]) != os.path.realpath(seen["cwd"])
     assert os.path.realpath(env["HOME"]) != os.path.realpath(str(_no_real_agy_settings))
     assert env.get("PATH") == os.environ.get("PATH")
@@ -545,9 +554,9 @@ def _complete_with_write(path_for):
     def fake(provider, argv, stdin_text, *a, **kw):
         home, cwd = kw["env"]["HOME"], kw["cwd"]
         path = path_for(home, cwd)
-        return _ndjson({"event": "init"}, {"event": "step_update", "step_update": {
-            "step_type": "tool", "tool_name": "search_web", "state": "DONE"}},
-            _write_step(path), _result("a fine answer"))
+        # The probe that found this also ran search_web; that now fails closed
+        # on its own (#122, test_t027_done_tool_outside_the_allowlist_raises...).
+        return _ndjson({"event": "init"}, _write_step(path), _result("a fine answer"))
     with patch(_WHICH, return_value=_AGY), patch(_RUN, side_effect=fake):
         return gemini.PROVIDER.complete(_request())
 
@@ -575,3 +584,42 @@ def test_123_write_file_anywhere_else_still_fails_closed(path_for):
     with pytest.raises(ProviderError) as exc:
         _complete_with_write(path_for)
     assert "agy ran write_file, which llm_light forbids" in str(exc.value)
+
+
+# --- #122 / #149: a custom agent with no tools ------------------------------------
+# agy's search_web could not be denied by any permission kind, so a Gemini turn
+# could put repo code into web-search queries. A custom agent with
+# excludeDefaultComponents and an empty tool list has no tools at all, and drops
+# agy's own prompt: probed with agy 1.4.12, a prompt asking for a web search ran
+# search_web 3 times at 34,648 input tokens without it, and no tool in 5 of 5
+# runs at 1,249 input tokens with it.
+
+def _frontmatter(text):
+    head = text.split("---")[1]
+    return {k.strip(): v.strip() for k, v in
+            (line.split(":", 1) for line in head.strip().splitlines())}
+
+
+@pytest.mark.parametrize("method", ["complete", "summarize"])
+def test_122_the_run_installs_a_no_tools_agent_and_selects_it(method):
+    seen = {}
+    fake = _capture_env_run(seen, stdout=_stdout("x"))
+    with patch(_WHICH, return_value=_AGY), patch(_RUN, side_effect=fake):
+        if method == "complete":
+            gemini.PROVIDER.complete(_request())
+        else:
+            gemini.PROVIDER.summarize("Summarize: X")
+    front = _frontmatter(seen["agent"])
+    assert front["name"] == "llm-light"
+    assert front["excludeDefaultComponents"] == "true"
+    assert front["tools"] == "[]"
+    argv = seen["argv"]
+    assert argv[argv.index("--agent") + 1] == "llm-light"
+
+
+def test_122_the_working_directory_stays_empty():
+    seen = {}
+    fake = _capture_cwd_run(seen, stdout=_stdout("x"))
+    with patch(_WHICH, return_value=_AGY), patch(_RUN, side_effect=fake):
+        gemini.PROVIDER.complete(_request())
+    assert seen["listing"] == []
