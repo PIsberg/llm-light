@@ -27,6 +27,7 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+import llm_light
 import llm_light.state as state
 from llm_light import config, llm, main
 
@@ -67,12 +68,24 @@ def _run_heartbeat(idle_seconds, last_turn_ago=0.0):
     start = 1_000_000.0
     clock = _FakeClock(start, start + idle_seconds)
     warms = []
+
+    def fake_warm(quiet=False):
+        warms.append(clock.now)
+
+    # Once any wrapped call has run, main.heartbeat is llm_light's wrapper,
+    # whose _sync_bindings() copies the package-level stop_event,
+    # last_interaction and warm_cache into state, main and llm. Patch both
+    # layers, or the heartbeat waits on the real stop event forever.
     saved = (state.stop_event, state.last_interaction)
     try:
         state.stop_event = clock
         state.last_interaction = start - last_turn_ago
         with patch("time.time", clock.time), \
-             patch("llm_light.main.warm_cache", side_effect=lambda quiet=False: warms.append(clock.now)):
+             patch.object(llm_light, "stop_event", clock), \
+             patch.object(llm_light, "last_interaction", start - last_turn_ago), \
+             patch.object(llm_light, "warm_cache", fake_warm), \
+             patch.object(main, "warm_cache", fake_warm), \
+             patch.object(llm, "warm_cache", llm.warm_cache):
             main.heartbeat()
     finally:
         state.stop_event, state.last_interaction = saved
@@ -117,8 +130,10 @@ class TestWarmModel(unittest.TestCase):
     def _warmed_models(self):
         resp = MagicMock()
         resp.usage = _usage()
+        # llm_light.warm_cache wraps the real function; llm.warm_cache may still
+        # be a mock another test's patch left behind through _sync_bindings().
         with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create:
-            llm.warm_cache(quiet=True)
+            llm_light.warm_cache(quiet=True)
         return [c.kwargs["model"] for c in create.call_args_list]
 
     def test_no_warm_before_the_model_is_known(self):
