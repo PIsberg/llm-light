@@ -518,3 +518,55 @@ def test_118_no_model_without_a_usable_user_setting(content, _no_real_agy_settin
         path.write_text(content, encoding="utf-8")
     _, run, _ = _complete()
     assert json.loads(run.call_args[0][1][-2]) == _SETTINGS
+
+
+# --- #123: agy's plan artifact ----------------------------------------------------
+# In plan mode agy writes a plan with a write_file step (4 of 5 web-search probes,
+# agy 1.4.12). Real shape: tool_info.parameters.Path =
+# <HOME>\.gemini\antigravity-cli\brain\<conversation id>\plan.md. It is allowed
+# only inside the run's own temporary home; anything else still fails closed.
+
+def _write_step(path):
+    step = _tool_step("write_file")
+    if path is not None:
+        step["step_update"]["tool_info"]["parameters"] = {"Path": path}
+    return step
+
+
+def _complete_with_write(path_for):
+    """Run complete() with a write_file step whose Path is path_for(home, cwd)."""
+    import os
+
+    def fake(provider, argv, stdin_text, *a, **kw):
+        home, cwd = kw["env"]["HOME"], kw["cwd"]
+        path = path_for(home, cwd)
+        return _ndjson({"event": "init"}, {"event": "step_update", "step_update": {
+            "step_type": "tool", "tool_name": "search_web", "state": "DONE"}},
+            _write_step(path), _result("a fine answer"))
+    with patch(_WHICH, return_value=_AGY), patch(_RUN, side_effect=fake):
+        return gemini.PROVIDER.complete(_request())
+
+
+def _brain(home, *rest):
+    import os
+    return os.path.join(home, ".gemini", "antigravity-cli", "brain", "c1", *rest)
+
+
+def test_123_plan_artifact_in_the_runs_own_brain_dir_is_allowed():
+    reply, _u, _p = _complete_with_write(lambda home, cwd: _brain(home, "plan.md"))
+    assert reply == "a fine answer"
+
+
+@pytest.mark.parametrize("path_for", [
+    lambda home, cwd: None,                                            # no Path parameter
+    lambda home, cwd: "",                                              # empty Path
+    lambda home, cwd: __import__("os").path.join(cwd, "PLAN.md"),      # the working directory
+    lambda home, cwd: __import__("os").path.join(home, "PLAN.md"),     # the home, outside brain
+    lambda home, cwd: _brain(home, "..", "..", "..", "..", "x.md"),    # escapes brain with ..
+    lambda home, cwd: _brain(str(Path.home()), "plan.md"),             # the user's real brain dir
+    lambda home, cwd: "plan.md",                                       # relative
+], ids=["missing", "empty", "cwd", "home", "dotdot", "real-home", "relative"])
+def test_123_write_file_anywhere_else_still_fails_closed(path_for):
+    with pytest.raises(ProviderError) as exc:
+        _complete_with_write(path_for)
+    assert "agy ran write_file, which llm_light forbids" in str(exc.value)

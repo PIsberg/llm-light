@@ -18,6 +18,8 @@ SETTINGS = json.dumps({
 })
 # agy's own settings file; only its `model` is read (#118).
 _USER_SETTINGS = (".gemini", "antigravity-cli", "settings.json")
+# Where agy keeps per-conversation state, its plan artifacts included (#123).
+_BRAIN = (".gemini", "antigravity-cli", "brain")
 
 
 def _argv_tail(settings: str) -> list:
@@ -76,11 +78,33 @@ def _stdin_line(text: str) -> str:
     return json.dumps({"event": "user", "message": {"role": "user", "content": content}}) + "\n"
 
 
-def _check_tools(stdout: str, result: dict) -> None:
+def _is_plan_artifact(step: dict, home) -> bool:
+    """A write_file step whose Path is inside this run's own agy brain directory.
+
+    In plan mode agy saves a plan there (<home>/.gemini/antigravity-cli/brain/<id>/plan.md,
+    agy 1.4.12, #123). home is the run's temporary home, removed afterwards.
+    """
+    if step.get("tool_name") != "write_file" or not home:
+        return False
+    info = step.get("tool_info")
+    params = info.get("parameters") if isinstance(info, dict) else None
+    path = params.get("Path") if isinstance(params, dict) else None
+    if not isinstance(path, str) or not os.path.isabs(path):
+        return False
+    brain = os.path.normcase(os.path.realpath(os.path.join(home, *_BRAIN)))
+    target = os.path.normcase(os.path.realpath(path))
+    try:
+        return os.path.commonpath([brain, target]) == brain and target != brain
+    except ValueError:  # different drives on Windows
+        return False
+
+
+def _check_tools(stdout: str, result: dict, home=None) -> None:
     """Fail closed: a finished tool call passes only if it is read-only, or agy denied it.
 
-    A tool outside the allowlist and the `_FORBIDDEN` kinds raises. A forbidden tool passes only
-    while the DONE steps of its kind do not outnumber the `denied_actions` records of that kind.
+    A tool outside the allowlist and the `_FORBIDDEN` kinds raises, except agy's plan artifact
+    in the run's own home (`_is_plan_artifact`). A forbidden tool passes only while the DONE
+    steps of its kind do not outnumber the `denied_actions` records of that kind.
     """
     denied = result.get("denied_actions")
     denials: dict = {}
@@ -94,7 +118,7 @@ def _check_tools(stdout: str, result: dict) -> None:
                 or step.get("state") != "DONE"):
             continue
         tool = step.get("tool_name")
-        if tool in _ALLOWED_TOOLS:
+        if tool in _ALLOWED_TOOLS or _is_plan_artifact(step, home):
             continue
         kind = _FORBIDDEN.get(tool)
         if kind:
@@ -103,8 +127,11 @@ def _check_tools(stdout: str, result: dict) -> None:
             raise ProviderError(f"agy ran {tool}, which llm_light forbids")
 
 
-def _result_reply(stdout: str) -> str:
-    """The response of the last `result` event; ProviderError if it is missing or failed."""
+def _result_reply(stdout: str, home=None) -> str:
+    """The response of the last `result` event; ProviderError if it is missing or failed.
+
+    home is the run's temporary home, where agy may write its plan artifact.
+    """
     result = None
     for event in json_events(stdout):
         if event.get("event") == "result" and isinstance(event.get("result"), dict):
@@ -114,7 +141,7 @@ def _result_reply(stdout: str) -> str:
     if result.get("status") != "SUCCESS":
         raise ProviderError(f"agy failed: {result.get('error') or result.get('status')}. "
                             f"If you are not signed in, run agy once and sign in.")
-    _check_tools(stdout, result)
+    _check_tools(stdout, result, home)
     reply = result.get("response")
     if not isinstance(reply, str) or not reply.strip():
         denied = result.get("denied_actions")
@@ -150,7 +177,7 @@ class GeminiProvider(Provider):
         with empty_temp_dir() as cwd, empty_temp_dir() as home:
             out = run_cli(self.name, argv, _stdin_line(stdin_text), cwd=cwd,
                           env=_isolated_env(home))
-        return _result_reply(out)
+            return _result_reply(out, home)
 
     def complete(self, request: dict):
         from llm_light.ui import _Spinner
