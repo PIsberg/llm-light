@@ -22,6 +22,20 @@ budget_asked = False
 # None until then; /clear resets it.
 session_model = None
 provider = None
+# What may happen without asking (llm_light.permissions): "default",
+# "acceptEdits", "plan" or "bypassPermissions". bypass_allowed: started with
+# --dangerously-skip-permissions (or its allow- variant), so /permissions and
+# shift+tab may switch to bypass.
+permission_mode = "default"
+bypass_allowed = False
+# /model or --model: the model every question runs on, instead of routing's
+# pick. None = route. Survives /clear, unlike session_model.
+pinned_model = None
+# Output of `!command` runs, sent with the next question and then dropped.
+pending_context = []
+# This run's full replies, newest last, for /copy (history keeps them
+# without their code blocks, and compression rewrites it).
+replies = []
 # "Sonnet 5.5, and don't ask again" at the top-tier prompt: later questions
 # routed to Opus run on Sonnet without asking.
 top_tier_declined = False

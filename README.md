@@ -210,6 +210,19 @@ Run the script from the root of your project — it will immediately build the s
 
 The prompt appears in about half a second: the index builds in the background, and the toolbar under the prompt says `indexing…` until it is ready, then shows the session's tokens, cache hit rate and cost. Replies stream in as rendered markdown (tables, lists, syntax-highlighted code), with a spinner and elapsed time while Claude thinks or runs a tool, and one line per file it reads, searches or edits. In the reply each proposed edit is a single `✎ edit to path` line; the change itself is shown as a diff, with a menu underneath to approve them (arrow keys and Enter, or press `1`/`2`/`3`; Esc says no). Keys typed before the menu appears are ignored, so a stray Enter cannot answer it. "Yes, and don't ask again" stops that one question for the rest of the session (applying edits and committing the agent's edits are remembered separately); `-y` approves both from the start.
 
+#### Permission modes
+
+What llm_light may do without asking is set by a permission mode, named after Claude Code's. `shift+tab` at the prompt cycles through them, `/permissions <mode>` sets one, and the toolbar shows any mode other than the default.
+
+| Mode | Start with | Edits | Shell commands |
+|---|---|---|---|
+| `default` | (nothing) | Asks before applying edits and before committing the agent's edits | Only `--allow-command` prefixes, one simple command at a time |
+| `acceptEdits` | `-y` | Applied and committed without asking | As in `default` |
+| `plan` | `--permission-mode plan` | None: the model investigates and proposes a plan; any SEARCH/REPLACE blocks it writes are shown, not applied | None |
+| `bypassPermissions` | `--dangerously-skip-permissions` (alias `--yolo`) | Applied and committed without asking | Any command, chaining included, with no allowlist; a failing affected-test run keeps the edit instead of asking to revert it |
+
+Bypass asks nothing, so use it only in a sandbox, a container or a repository you can restore: the agent can run any command your user can. As in Claude Code, `shift+tab` and `/permissions` offer it only when llm_light was started with `--dangerously-skip-permissions` or `--allow-dangerously-skip-permissions` (the latter starts in another mode). Spending questions are not permissions: the top-tier model prompt and the `/budget` cap still ask in every mode. In plan and bypass modes a one-line note goes before each question, so the model knows; default and `acceptEdits` requests are unchanged.
+
 `python3 llm_light.py --continue` (or `-c`) picks up this project's previous conversation where you left it, as `claude --continue` does. The conversation is saved after every turn to `~/.llm_light_sessions/` (one file per project, outside the repo so a cloned repo cannot supply one), along with the session's model. Cost counters start from zero. Retrieval runs fresh for each new question, but earlier answers may describe code that has changed since. `/clear` deletes the saved conversation. `--continue` works only for the interactive loop: a one-shot question sends no history, so combining the two is an error.
 
 Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session keeps the first question's model (`LLM_LIGHT_ROUTE_ONCE=0` routes every question). A question that routes to Opus asks first: Opus 5.5, Fable 5.1 or Sonnet 5.5, each with its estimated cost for the turn. Esc, or running without a terminal, picks Sonnet 5.5.
@@ -219,16 +232,28 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/help` | Commands and keys |
 | `/clear` | Start a new conversation and delete the one saved for `--continue`; the next question also picks the model again, which the session then keeps (`LLM_LIGHT_ROUTE_ONCE=0` picks it per question) |
 | `/compact` | Replace the conversation so far with a summary, so later turns send fewer tokens |
+| `/copy [n]` | Copy the latest reply, or the n-th latest, to the clipboard, code blocks included. Uses `clip` on Windows, `pbcopy` on macOS and `wl-copy`, `xclip` or `xsel` on Linux; without one (over SSH, say) it sends an OSC 52 escape, which many terminals copy locally |
 | `/cost` | Token usage and cost for this session, and lifetime savings |
+| `/diff` | The uncommitted changes under the current directory, one diff per file, and the untracked files |
+| `/export [file]` | Save the conversation as plain text; without a name, to `llm_light-conversation-<date>-<time>.txt` in the project (a `.txt`, so the skeleton does not pick it up) |
+| `/model [name]` | Show the model; `opus`, `sonnet`, `haiku`, `fable` or a full model id pins every question to it, `auto` returns to routing. Claude only: Gemini and Codex pick their own |
+| `/permissions [mode]` | Show the permission mode, or set one (see above) |
 | `/run <cmd>` | Run a shell command and ask Claude about its output |
+| `/budget <$>` | Cap the session's spend; at the cap, questions go to the cheapest model. `/budget off` removes it |
+| `/status` | Version, project, provider and access, model, permission mode, what the shell may run, index state and where the conversation is saved |
 | `/undo` | Undo the last `Claude:` commit. Keeps uncommitted work; refuses if the last commit is yours or its files have local edits |
 | `/why` | How the last query was routed and what was retrieved |
-| `exit` / `quit` | Quit; prints a one-line session summary |
+| `/exit`, `exit`, `quit` | Quit; prints a one-line session summary |
+| `!<cmd>` | Run a command yourself, from the project root; its output is shown and sent with your next message. No allowlist applies, since you typed it |
+| `@<path>` | Attach a project file to the message (`tab` completes the path). Up to 50,000 characters per file; a file outside the project, a directory or a binary file is not attached, and a line says why. Routing and retrieval still see only what you typed |
 | Typing `/` | Menu of commands with descriptions |
+| `shift+tab` | Cycle the permission mode |
 | `alt+enter` | New line in the prompt (`enter` sends) |
 | `ctrl+c` | Cancel the running turn; at the prompt, quit |
 
-One-shot runs write only the answer to stdout, as plain text; progress and tool lines go to stderr, so `llm_light.py "question" > answer.md` holds just the answer.
+One-shot runs write only the answer to stdout, as plain text; progress and tool lines go to stderr, so `llm_light.py "question" > answer.md` holds just the answer. `-p` (`--print`) asks for one-shot mode explicitly, as in `claude -p`; `@path` mentions work there too.
+
+Other flags: `--model <name>` pins the model from the start (as `/model` does), `--permission-mode <mode>` starts in a permission mode, and `--version` prints the version.
 
 The script runs three concurrent threads to keep your workflow seamless:
 

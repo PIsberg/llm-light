@@ -11,12 +11,14 @@ This diagram shows the main components and their relationships within LLM Light.
 
 | Component | Responsibility |
 |-----------|----------------|
-| `main.py` | Entry point, orchestrates the chat loop and handles user commands |
+| `main.py` | Entry point: parses the flags, runs the prompt loop and dispatches the slash commands, `!command` and `@file` mentions |
+| `permissions.py` | The permission mode (`default`, `acceptEdits`, `plan`, `bypassPermissions`) held in `state.permission_mode`: whether edits apply unasked, whether the shell is off, allowlisted or open, and the note put before the question in plan and bypass modes |
+| `commands.py` | The session commands modelled on Claude Code's: `/copy` (clipboard or OSC 52), `/model`, `/export`, `/status`, `/diff`, `!command` output queued for the next question, `@file` attachment and completion, and the version |
 | `llm.py` | Turn loop, routing and response processing. It reaches an agent only through `providers.active()` |
 | `providers/` | One module per agent behind the shared `Provider` interface (`base.py`): `claude.py` (the `anthropic` client, the API-key and OAuth transports, the tool loop, login), `gemini.py` and `codex.py` (CLI subprocesses), `runner.py` (`run_cli`, `kill_process_tree`, `new_session`, `TIMEOUT_SECS`; every CLI child, the `shell` tool's included, starts in its own process group on POSIX so `kill_process_tree` can kill the group) and `__init__.py` (`NAMES`, `DEFAULT`, `get`, `select`, `active`) |
 | `retrieval.py` | RAG engine, performs similarity search and chunk selection |
 | `callgraph.py` | In-memory call graph over the chunk store (`name(` matched against chunk symbols), used by `fetch_chunk` and the opt-in retrieval expansion |
-| `tools.py` | API-mode tools: `read_file`, `fetch_chunk`, `grep`, `list_files`, and `shell` (allowlisted commands only) |
+| `tools.py` | API-mode tools: `read_file`, `fetch_chunk`, `grep`, `list_files`, and `shell` (allowlisted commands only; any command in bypass mode, none in plan mode) |
 | `cli_shell_guard.py` | `PreToolUse` hook for the OAuth CLI agent: blocks a Bash or PowerShell command that chains, pipes, redirects or substitutes (issue #70); holds the refused characters `tools.py` uses too |
 | `affected_tests.py` | After an auto-commit, runs the test files that mention the edited modules, if a pytest command is allowed |
 | `editor.py` | Code editor, parses and applies SEARCH/REPLACE blocks |
@@ -171,6 +173,19 @@ In OAuth mode, `AGENT_SYSTEM_PROMPT` replaces `SYSTEM_PROMPT` when `ALLOWED_COMM
 `ALLOWED_COMMANDS` holds shell command prefixes, each becoming `Bash(<prefix>:*)`, or `PowerShell(<prefix>:*)` for a `powershell:` or `pwsh:` entry. They come from `--allow-command` or `LLM_LIGHT_ALLOW_COMMANDS` (`;`-separated). The CLI runs with `--permission-mode acceptEdits`, `--setting-sources user` and `--strict-mcp-config`, so the target repo's `.claude/settings*.json` (allow rules, hooks) and `.mcp.json` never apply. A shell stays disallowed unless an entry names it: Bash for untagged or `bash:` entries, PowerShell for `powershell:` or `pwsh:`. The CLI matches an allow rule against a command's first statement only, so `echo a && touch b` ran under `Bash(echo:*)` (issue #70, claude 2.1.314). With an allowlist, the `--settings` file therefore also installs a `PreToolUse` hook for `Bash|PowerShell` that runs `cli_shell_guard.py` with `python -I` and blocks (exit 2) any command containing a character from the `shell` tool's refused set below, chosen by the hook's `tool_name`. The guard is stdlib-only and fails closed: input it cannot read also exits 2. Refused commands are listed after the turn.
 
 In API mode the same prefixes gate the `shell` tool in `tools.py`. A command must start with an allowed prefix on a word boundary, and any of `; & | < > `` ` `` $` or a newline is refused before whitespace is collapsed. A PowerShell command also may not contain `( ) { } @`: PowerShell evaluates an argument written as `(New-Item x)` or `@(...)`, which runs a second command with none of the other characters. `cli_shell_guard.forbidden_chars(tool)` holds both sets, and any tool name other than `Bash` gets the PowerShell one. It runs from the project root with a 120 s timeout (`LLM_LIGHT_RUN_TIMEOUT`); on timeout the whole process tree is killed (`taskkill /T` on Windows, the process group on POSIX). The tool is always in `TOOLS`, even with no allowlist, so the cached prompt prefix does not change between sessions.
+
+## Permission modes
+
+`permissions.py` holds the mode in `state.permission_mode`; `--permission-mode`, `-y`, `--dangerously-skip-permissions` (alias `--yolo`), `/permissions` and `shift+tab` set it. `bypassPermissions` is offered only when `state.bypass_allowed` is set, which only the startup flags do.
+
+| Mode | SEARCH/REPLACE edits | Agent commits | API `shell` tool | OAuth CLI agent |
+|---|---|---|---|---|
+| `default` | asked | asked | allowlist | `--permission-mode acceptEdits`, allowlist rules, guard hook |
+| `acceptEdits` | applied | made | allowlist | as `default` |
+| `plan` | shown, not applied | none | refuses every command | `--permission-mode plan`, Bash, PowerShell, Edit, Write and NotebookEdit disallowed |
+| `bypassPermissions` | applied | made | any command via the shell, unchecked | `--permission-mode bypassPermissions`, no disallowed tools, no allow rules, no guard hook; `AGENT_SYSTEM_PROMPT` plus a line saying any command may run |
+
+The `shell` tool's description (in the cached `TOOLS`) still names the allowlist in bypass mode, and `SYSTEM_PROMPT` says nothing of plan mode. Rather than change the cached prefix, `permissions.question_note()` puts a one-line note before the question in the uncached last turn: always in plan mode, and in bypass mode when the model has the API `shell` tool. In `default` and `acceptEdits` it is empty, so those requests are byte-for-byte what they were before the modes existed.
 
 ## Test mode
 

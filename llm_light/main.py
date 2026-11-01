@@ -20,8 +20,8 @@ from pathlib import Path
 from watchdog.observers import Observer
 
 import llm_light.state as state
-from llm_light import providers, session
-from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, USD_BUDGET
+from llm_light import commands, permissions, providers, session
+from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, TOP_TIER, USD_BUDGET
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
 from llm_light.ui import (
     _ANSI_BOLD, _ANSI_RESET, _ANSI_CYAN, _ANSI_DIM, _ANSI_GREEN, _ANSI_RED, _T_SYS, _T_ERR,
@@ -37,16 +37,25 @@ _COMMANDS = [
     ("/help",       "show commands and keys"),
     ("/clear",      "start a new conversation"),
     ("/compact",    "summarise the conversation so far, to send fewer tokens"),
+    ("/copy [n]",   "copy the latest reply (or the n-th latest) to the clipboard"),
     ("/cost",       "token usage and cost for this session"),
+    ("/diff",       "show the uncommitted changes"),
+    ("/export [file]", "save the conversation to a text file"),
+    ("/model [name]", "show the model, pin one (opus, sonnet, haiku, fable) or auto"),
+    ("/permissions [mode]", "show or set the permission mode"),
     ("/run <cmd>",  "run a shell command and ask Claude about its output"),
     ("/budget <$>", "cap session spend; routing drops to the cheapest model at the cap"),
+    ("/status",     "version, provider, model, permissions, shell and index"),
     ("/undo",       "revert the last commit Claude made"),
     ("/why",        "explain the last query's routing and retrieval"),
-    ("exit",        "quit"),
+    ("/exit",       "quit (also exit, quit)"),
 ]
 _KEYS = [
     ("enter",       "send"),
     ("alt+enter",   "new line"),
+    ("shift+tab",   "cycle the permission mode"),
+    ("!<cmd>",      "run a command; its output goes with your next message"),
+    ("@<path>",     "attach a project file to your message (tab completes)"),
     ("ctrl+c",      "cancel the running turn; at the prompt, quit"),
     ("↑ / ↓" if _UNICODE else "up / down", "previous prompts"),
 ]
@@ -61,10 +70,16 @@ try:
     _PROMPTTK_AVAILABLE = True
 
     class _SlashCompleter(_Completer):
-        """The "/" menu: command names with what they do, while typing one."""
+        """The "/" menu: command names with what they do, while typing one;
+        and project paths after an "@"."""
 
         def get_completions(self, document, complete_event):
             text = document.text_before_cursor
+            word = document.get_word_before_cursor(WORD=True)
+            if word.startswith("@"):
+                for path in commands.mention_completions(word):
+                    yield _Completion(path, start_position=-len(word))
+                return
             if not text.startswith("/") or " " in text:
                 return
             for cmd, desc in _COMMANDS:
@@ -76,6 +91,31 @@ except ImportError:
 
 
 _SEP = "  ·  "
+
+# The toolbar's permission-mode marker, after Claude Code's; none in default.
+_MODE_MARKS = {
+    permissions.ACCEPT_EDITS: ("⏵⏵ accept edits on" if _UNICODE else ">> accept edits on", "ansigreen"),
+    permissions.PLAN: ("⏸ plan mode on" if _UNICODE else "|| plan mode on", "ansicyan"),
+    permissions.BYPASS: ("⚠ bypass permissions on" if _UNICODE else "! bypass permissions on", "ansired"),
+}
+
+
+def _permissions_command(arg: str) -> str:
+    """Handle `/permissions [mode]`; returns the text to show."""
+    if arg:
+        try:
+            mode = permissions.set_mode(arg)
+        except ValueError as e:
+            return str(e)
+        return f"Permission mode: {mode}, {permissions.DESCRIPTIONS[mode]}."
+    current = permissions.mode()
+    lines = [f"Permission mode: {current}. shift+tab cycles; /permissions <mode> sets one."]
+    for mode in permissions.MODES:
+        mark = "*" if mode == current else " "
+        note = "" if mode != permissions.BYPASS or state.bypass_allowed else \
+            "  (start with --dangerously-skip-permissions to allow)"
+        lines.append(f"    {mark} {mode:<18}{permissions.DESCRIPTIONS[mode]}{note}")
+    return "\n".join(lines)
 
 
 def _status_text(columns: int | None = None) -> str:
@@ -106,11 +146,13 @@ def _status_text(columns: int | None = None) -> str:
                   (f"{cost_label} ${cost:.4f}", "")]
     hints = [("/ for commands", ""), ("alt+enter new line", "")]
     notice = current_notice()
+    mark = _MODE_MARKS.get(permissions.mode())
 
     def width(parts):
         return 3 + sum(len(t) for t, _ in parts) + len(_SEP) * (len(parts) - 1)
 
-    parts = status + ([(notice, "ansicyan")] if notice else [])
+    # The mode is never dropped to fit: it says what may happen unasked.
+    parts = status + ([mark] if mark else []) + ([(notice, "ansicyan")] if notice else [])
     while hints and width(parts + hints) > columns:
         hints.pop()
     parts += hints
@@ -227,8 +269,20 @@ def _index_ready_for_query() -> bool:
     return True
 
 
+def _bypass_warning() -> str:
+    return (f"{_ANSI_RED}{'⚠' if _UNICODE else '!'}  Permissions bypassed: edits apply and the "
+            f"shell runs any command, without asking.{_ANSI_RESET}")
+
+
 def start_chat(auto_apply=False, resume=False):
     print_startup_header(*(providers.active().header() or (MODEL, access_label(API_KEY_SOURCE))))
+    # -y is the acceptEdits mode; from here the mode decides, so shift+tab
+    # can switch back to asking.
+    if auto_apply and permissions.mode() == permissions.DEFAULT:
+        permissions.set_mode(permissions.ACCEPT_EDITS)
+    auto_apply = False
+    if permissions.bypass():
+        print(f"  {_bypass_warning()}")
     if resume:
         print(f"  {_T_SYS}  {session.restore()}")
     _setup_signal_handlers()
@@ -275,6 +329,14 @@ def start_chat(auto_apply=False, resume=False):
         def _newline(event):
             event.current_buffer.insert_text("\n")
 
+        from prompt_toolkit.filters import has_completions
+
+        # Not while the completion menu is open, where it steps back a choice.
+        @bindings.add("s-tab", filter=~has_completions)
+        def _cycle_mode(event):
+            permissions.cycle()
+            event.app.invalidate()  # redraw the toolbar's mode marker
+
         CACHE_DIR.mkdir(exist_ok=True)
         _session = _PromptSession(
             history=_FileHistory(str(CACHE_DIR / "history.txt")),
@@ -307,6 +369,9 @@ def start_chat(auto_apply=False, resume=False):
             ratio = (saved / total_in * 100) if total_in > 0 else 0.0
             cost_label = "Cost" if ECONOMY_MODE == "USD" else "API equiv."
             stat = f"  {_ANSI_DIM}◆  {os.path.basename(os.getcwd())}  ·  {total_in:,} tok  ({ratio:.1f}% cached)  ·  {cost_label} ${cost:.4f}{_ANSI_RESET}"
+            mark = _MODE_MARKS.get(permissions.mode())
+            if mark:
+                stat += f"  {_ANSI_DIM}·  {mark[0]}{_ANSI_RESET}"
             print(f"\n{stat}")
             return input("> ").strip()
 
@@ -320,12 +385,39 @@ def start_chat(auto_apply=False, resume=False):
             if not query:
                 continue
 
-            if query.lower() in ("exit", "quit"):
+            if query.lower() in ("exit", "quit", "/exit", "/quit"):
                 break
+            if query.startswith("!"):
+                print(f"  {_T_SYS}  {commands.run_bang(query[1:])}")
+                continue
+            name, _, arg = query.partition(" ")
+            arg = arg.strip()
+            if name == "/copy":
+                print(f"  {_T_SYS}  {commands.copy_reply(arg)}")
+                continue
+            if name == "/model":
+                print(f"  {_T_SYS}  {commands.model_command(arg)}")
+                continue
+            if name == "/permissions":
+                print(f"  {_T_SYS}  {_permissions_command(arg)}")
+                continue
+            if name == "/export":
+                print(f"  {_T_SYS}  {commands.export_conversation(arg)}")
+                continue
+            if query == "/status":
+                print()
+                for line in commands.status_lines():
+                    print(f"  {line}")
+                continue
+            if query == "/diff":
+                print(f"  {_T_SYS}  {commands.diff_command()}")
+                continue
             if query == "/clear":
                 state.conversation_history.clear()
                 state.cli_session_id = None
                 state.session_model = None
+                state.pending_context.clear()
+                state.replies.clear()
                 session.clear()
                 print(f"  {_T_SYS}  Conversation cleared.")
                 continue
@@ -404,13 +496,21 @@ def start_chat(auto_apply=False, resume=False):
                            ("stop", "Skip this question")]) == "stop":
                     continue
             use_index = _index_ready_for_query()
+            # Queued !command output and @file contents go after the question.
+            mentioned, attached, problems = commands.expand_mentions(query)
+            for problem in problems:
+                print(f"  {_T_SYS}  Not attached: {problem}")
+            if attached:
+                print(f"  {_T_SYS}  Attached {', '.join(attached)}")
+            context = "\n\n".join(c for c in (commands.take_pending(), mentioned) if c)
+            extra = {"context": context} if context else {}
             try:
-                chat(query, auto_apply=auto_apply, use_index=use_index)
+                chat(query, auto_apply=auto_apply, use_index=use_index, **extra)
                 session.save()
             except NotLoggedIn:
-                def _retry(query=query, auto_apply=auto_apply, use_index=use_index):
+                def _retry(query=query, auto_apply=auto_apply, use_index=use_index, extra=extra):
                     full_refresh()
-                    chat(query, auto_apply=auto_apply, use_index=use_index)
+                    chat(query, auto_apply=auto_apply, use_index=use_index, **extra)
                 providers.active().offer_login(_retry)
     except KeyboardInterrupt:
         pass
@@ -430,7 +530,27 @@ def main():
     parser = argparse.ArgumentParser(description="LLM Light RAG Chat")
     parser.add_argument("--test-mode", choices=["small", "medium", "large", "extra-large"],
                         help="Run in test mode with a synthetic codebase and mocked API.")
-    parser.add_argument("-y", "--yes", action="store_true", help="Automatically apply changes without asking.")
+    parser.add_argument("-v", "--version", action="version", version=f"llm_light {commands.version()}")
+    parser.add_argument("-y", "--yes", action="store_true",
+                        help="Apply edits without asking: the acceptEdits permission mode.")
+    parser.add_argument("--permission-mode", choices=permissions.MODES,
+                        help="Start in this permission mode: default (ask before edits), acceptEdits "
+                             "(-y), plan (read-only) or bypassPermissions (ask nothing). "
+                             "shift+tab and /permissions change it.")
+    parser.add_argument("--dangerously-skip-permissions", "--yolo", dest="skip_permissions",
+                        action="store_true",
+                        help="Ask nothing: apply every edit and let the agent run any shell command, "
+                             "chained or not, without the --allow-command list. Use it only in a "
+                             "sandbox or a repository you can restore.")
+    parser.add_argument("--allow-dangerously-skip-permissions", dest="allow_skip_permissions",
+                        action="store_true",
+                        help="Offer bypassPermissions in shift+tab and /permissions without starting in it.")
+    parser.add_argument("--model", metavar="NAME",
+                        help="Run every question on this model instead of routing: opus, sonnet, "
+                             "haiku, fable or a full model id. /model changes it.")
+    parser.add_argument("-p", "--print", dest="print_mode", action="store_true",
+                        help="Answer one question and exit; the question comes from the arguments "
+                             "or stdin.")
     parser.add_argument("--allow-command", action="append", default=[], metavar="PREFIX",
                         help="Let the Claude CLI agent (subscription mode) run shell commands starting "
                              "with PREFIX, e.g. \"python -m pytest\". Prefix it with \"powershell: \" to "
@@ -459,8 +579,22 @@ def main():
     # if disabled or if the package isn't installed.
     _start_llmlingua_load()
 
+    state.bypass_allowed = bool(args.skip_permissions or args.allow_skip_permissions
+                                or args.permission_mode == permissions.BYPASS)
+    permissions.set_mode(args.permission_mode
+                         or (permissions.BYPASS if args.skip_permissions
+                             else permissions.ACCEPT_EDITS if args.yes else permissions.DEFAULT))
+    if args.model:
+        pinned = commands.resolve_model(args.model)
+        if pinned is None:
+            parser.error(f"--model {args.model!r}: choose " + ", ".join(commands.MODEL_ALIASES)
+                         + " or a full model id")
+        state.pinned_model = pinned
+
     query_str = " ".join(args.query).strip()
-    interactive = not query_str and sys.stdin.isatty()
+    if args.print_mode and not query_str and sys.stdin.isatty():
+        parser.error("-p needs a question: llm_light -p \"...\", or pipe one on stdin")
+    interactive = not args.print_mode and not query_str and sys.stdin.isatty()
     if args.resume and not interactive:
         # A one-shot turn sends no history, so there is nothing to resume into.
         parser.error("--continue resumes an interactive session; it cannot take a question")
@@ -469,11 +603,21 @@ def main():
     if _config.ALLOWED_COMMANDS and not provider.has(SHELL):
         print(f"  {_T_SYS}  shell access is disabled for {provider.name}: its agent cannot run commands. "
               "--allow-command only lets llm_light run the affected tests.", file=sys.stderr)
+    if state.pinned_model and not provider.has(TOP_TIER):
+        print(f"  {_T_SYS}  --model ignored: {provider.name} picks its own model.", file=sys.stderr)
+        state.pinned_model = None
     if interactive:
         start_chat(auto_apply=args.yes, resume=args.resume)
         return
+    if permissions.bypass():
+        print(f"  {_bypass_warning()}", file=sys.stderr)
+    prompt = query_str or sys.stdin.read().strip()
+    context, attached, problems = commands.expand_mentions(prompt)
+    for problem in problems:
+        print(f"  {_T_SYS}  Not attached: {problem}", file=sys.stderr)
+    extra = {"context": context} if context else {}
     try:
-        one_shot(query_str or sys.stdin.read().strip(), auto_apply=args.yes)
+        one_shot(prompt, auto_apply=args.yes, **extra)
     except KeyboardInterrupt:
         print(f"\n  {_T_ERR}  Interrupted.", file=sys.stderr)
         raise SystemExit(130)

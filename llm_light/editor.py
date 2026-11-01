@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from llm_light.ui import _T_EDIT, _T_ERR, _ANSI_CYAN, _ANSI_GREEN, _ANSI_RED, _ANSI_BOLD, _ANSI_DIM, _ANSI_RESET, show_diff, ToolExecutionManager, choose
 import llm_light.state as state
 from llm_light.linter import _lint_content
-from llm_light import git_manager
+from llm_light import git_manager, permissions
 
 _ANY_BLOCK = re.compile(r"```[a-zA-Z0-9_+-]*(?::([^\n`]+))?[ \t]*\n(.*?)```", re.DOTALL)
 
@@ -253,7 +253,7 @@ def apply_edits(edits, check_only=False, explanation="", auto_apply=False):
     for r in applicable:
         show_diff(r["path"], r["_new"], old_content=r["_old"])  # the panel is titled with the path
 
-    if auto_apply:
+    if auto_apply or permissions.auto_edits():
         auto = True
     elif not sys.stdin.isatty():
         auto = True

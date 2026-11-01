@@ -333,21 +333,31 @@ def _refuse_chars(command, forbidden):
 
 def _shell(root, tool_input):
     """Run an allowlisted command. Returns (output, is_error); a non-zero exit
-    is reported as an error result so the model sees the run failed."""
+    is reported as an error result so the model sees the run failed.
+
+    Plan mode refuses every command. Bypass mode (--dangerously-skip-permissions)
+    runs any command through the shell as written, chaining included."""
     import subprocess
+    from llm_light import permissions
     raw_command = _str_arg(tool_input, "command")
-    # Check before collapsing whitespace: split() would turn a newline into a
-    # space and let "echo a\necho b" through as one harmless-looking command.
-    # The OAuth CLI agent's PreToolUse hook (cli_shell_guard) applies the
-    # same rule.
-    _refuse_chars(raw_command, SHELL_FORBIDDEN)
-    command = " ".join(raw_command.split())
-    tool = _match_allowed(command)
-    if tool is None:
-        raise _ToolError(
-            f"{command!r} is not allowed. The user must start llm_light with "
-            "--allow-command '<prefix>' to permit it.")
-    _refuse_chars(command, forbidden_chars(tool))
+    if permissions.plan():
+        raise _ToolError("plan mode is on: no command runs. Describe the command "
+                         "in your plan instead.")
+    if permissions.bypass():
+        command, tool = raw_command.strip(), "Bash"
+    else:
+        # Check before collapsing whitespace: split() would turn a newline into a
+        # space and let "echo a\necho b" through as one harmless-looking command.
+        # The OAuth CLI agent's PreToolUse hook (cli_shell_guard) applies the
+        # same rule.
+        _refuse_chars(raw_command, SHELL_FORBIDDEN)
+        command = " ".join(raw_command.split())
+        tool = _match_allowed(command)
+        if tool is None:
+            raise _ToolError(
+                f"{command!r} is not allowed. The user must start llm_light with "
+                "--allow-command '<prefix>' to permit it.")
+        _refuse_chars(command, forbidden_chars(tool))
     if tool == "PowerShell":
         argv, use_shell = ["powershell", "-NoProfile", "-NonInteractive", "-Command", command], False
     else:

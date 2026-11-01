@@ -46,6 +46,25 @@ def _fresh_session_model():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_permissions_and_commands():
+    """Permission mode, /model pin, /copy replies and pending !command output
+    are session state: one test's must not leak into the next."""
+    import llm_light.state as state
+
+    def reset():
+        state.permission_mode = "default"
+        state.bypass_allowed = False
+        state.pinned_model = None
+        state.pending_context.clear()
+        state.replies.clear()
+    reset()
+    history = list(state.conversation_history)
+    yield
+    reset()
+    state.conversation_history[:] = history
+
+
+@pytest.fixture(autouse=True)
 def _no_real_llmlingua_loader():
     """A test that runs main() unpatched starts the real LLMLingua loader. It
     keeps loading after the test ends and sets the compressor singleton under

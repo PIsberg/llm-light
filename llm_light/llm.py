@@ -22,8 +22,8 @@ from llm_light.ui import (
     _SYM_RESP, _SYM_TOOL, print_stats, _Spinner, calculate_cost, _print_reply, usage_unavailable, ResponseView, NullView, notify, choose,
 )
 import llm_light.state as state
-from llm_light import providers
-from llm_light.providers.base import NotLoggedIn, AGENT, EFFORT, TOP_TIER, USD_BUDGET, USAGE
+from llm_light import providers, permissions
+from llm_light.providers.base import NotLoggedIn, AGENT, EFFORT, SHELL, TOP_TIER, USD_BUDGET, USAGE
 from llm_light.skeleton import build_skeleton, _refresh_tree_only, _assemble_skeleton, _refresh_single_md
 from llm_light.indexer import index_files
 from llm_light.retrieval import retrieve, record_retrieval
@@ -313,6 +313,10 @@ def _finalize_route(model, effort, max_tokens) -> tuple[str, str, int]:
     over_budget = budget is not None and state.session_cost >= budget
     if over_budget:
         effort, model, max_tokens = "low", MODEL_HAIKU, 2_048
+    elif state.pinned_model:
+        # /model or --model: the user chose, so no top-tier prompt and no
+        # ROUTE_ONCE pin; the routed effort still applies.
+        model = state.pinned_model
     elif model == MODEL_OPUS:
         # The only route that may move a ROUTE_ONCE session to another model.
         model = _top_tier_model(effort, max_tokens)
@@ -580,7 +584,7 @@ def _commit_agent_edits(new_files, explanation, auto_apply=False):
         else:
             print(f"  {_T_EDIT}  {f}  {_ANSI_DIM}(deleted by the agent){_ANSI_RESET}")
 
-    if auto_apply or state.auto_commit_agent_edits:
+    if auto_apply or state.auto_commit_agent_edits or permissions.auto_edits():
         commit = True
     elif not sys.stdin.isatty():
         commit = True
@@ -678,7 +682,36 @@ def _is_followup_clarification(query: str) -> bool:
     return False
 
 
-def chat(query, auto_apply=False, use_index=True):
+def _question_text(query, context):
+    """The question block: the plan/bypass note (none in default mode), the
+    question, then anything attached (@file contents, !command output)."""
+    api_shell = not _agent_oauth() and providers.active().has(SHELL)
+    note = permissions.question_note(api_shell=api_shell)
+    return f"Question:\n{note}{query}" + (f"\n\n{context}" if context else "")
+
+
+def _extra(context):
+    """`context` as a keyword only when there is some, so a turn without
+    attachments calls exactly as it did before they existed."""
+    return {"context": context} if context else {}
+
+
+def _plan_split(edits):
+    """In plan mode, (edits proposed, []): nothing is applied. Else ([], edits)."""
+    return (edits, []) if edits and permissions.plan() else ([], edits)
+
+
+def _report_plan(planned, file=None):
+    if planned:
+        n = len(planned)
+        print(f"  {_T_EDIT}  Plan mode: {n} proposed change{'s' if n != 1 else ''} not applied. "
+              "shift+tab or /permissions leaves plan mode.", file=file)
+
+
+def chat(query, auto_apply=False, use_index=True, context=""):
+    """One interactive turn. `context` (attached files, !command output) goes
+    after the question; routing and retrieval see the typed question only, so
+    an attached file cannot push a short question to the top tier."""
     routed_model, effort, max_tok = _finalize_route(*route_query(query))
     token_budget = _RETRIEVAL_BUDGET[effort]
 
@@ -743,7 +776,7 @@ def chat(query, auto_apply=False, use_index=True):
         })
     import re
     from llm_light.editor import _ANY_BLOCK
-    current_blocks.append({"type": "text", "text": f"Question:\n{query}"})
+    current_blocks.append({"type": "text", "text": _question_text(query, context)})
     messages = trimmed + [{"role": "user", "content": current_blocks}]
 
     system = _build_system_blocks(skeleton)
@@ -766,7 +799,7 @@ def chat(query, auto_apply=False, use_index=True):
         for attempt in range(3):
             reply, usage, was_streamed = providers.active().complete(create_kwargs)
 
-            edits = parse_edit_blocks(reply)
+            planned, edits = _plan_split(parse_edit_blocks(reply))
 
             if edits:
                 lint_errs = apply_edits(edits, check_only=True)
@@ -788,7 +821,8 @@ def chat(query, auto_apply=False, use_index=True):
                                 b.pop("cache_control", None)
                     continue
 
-            state.conversation_history.append({"role": "user", "content": query})
+            state.conversation_history.append(
+                {"role": "user", "content": query + (f"\n\n{context}" if context else "")})
 
             if edits:
                 labels = ", ".join(e["path"] for e in edits)
@@ -797,6 +831,8 @@ def chat(query, auto_apply=False, use_index=True):
             else:
                 clean_reply = reply
             state.conversation_history.append({"role": "assistant", "content": clean_reply})
+            from llm_light.commands import record_reply
+            record_reply(reply)
 
             has_usage = _record_usage(usage, routed_model)
             with state.lock:
@@ -810,6 +846,7 @@ def chat(query, auto_apply=False, use_index=True):
                 print(f"\n{_ANSI_CYAN}{_ANSI_BOLD}{_SYM_RESP}{_ANSI_RESET} ", end="", flush=True)
                 _print_reply(explanation)
                 sys.stdout.flush()
+            _report_plan(planned)
             if edits:
                 apply_edits(edits, explanation=explanation, auto_apply=auto_apply)
             elif _agent_oauth():
@@ -846,7 +883,7 @@ def chat(query, auto_apply=False, use_index=True):
 _ONE_SHOT_INDEX_WAIT_SECS = 20
 
 
-def one_shot(prompt, auto_apply=False):
+def one_shot(prompt, auto_apply=False, context=""):
     print(f"{_T_SYS} Building context...", file=sys.stderr)
     _update_skeleton()
 
@@ -855,7 +892,7 @@ def one_shot(prompt, auto_apply=False):
         # dense="skip": one-shot exits before a background pass could finish;
         # dense vectors already cached are still used.
         index_files(dense="skip")
-        _one_shot_turn(prompt, auto_apply, use_index=True)
+        _one_shot_turn(prompt, auto_apply, use_index=True, **_extra(context))
         return
 
     # The CLI agent can Read/Grep the repo itself, so a cold build (minutes
@@ -880,7 +917,7 @@ def one_shot(prompt, auto_apply=False):
     elif index_error:
         print(f"  {_T_ERR}  Indexing failed ({index_error[0]}); continuing without retrieval", file=sys.stderr)
     try:
-        _one_shot_turn(prompt, auto_apply, use_index=use_index)
+        _one_shot_turn(prompt, auto_apply, use_index=use_index, **_extra(context))
     finally:
         if index_thread.is_alive():
             print(f"  {_T_RAG}  {_ANSI_DIM}finishing the index so the next run can use it…{_ANSI_RESET}",
@@ -888,7 +925,7 @@ def one_shot(prompt, auto_apply=False):
             index_thread.join()
 
 
-def _one_shot_turn(prompt, auto_apply, use_index):
+def _one_shot_turn(prompt, auto_apply, use_index, context=""):
     routed_model, effort, max_tok = _finalize_route(*route_query(prompt))
     if use_index:
         retrieved_ctx, hits = retrieve(prompt, token_budget=_RETRIEVAL_BUDGET[effort], effort=effort)
@@ -915,7 +952,7 @@ def _one_shot_turn(prompt, auto_apply, use_index):
         model=routed_model,
         max_tokens=max_tok,
         system=_build_system_blocks(skeleton),
-        messages=[{"role": "user", "content": f"{ctx_prefix}Question:\n{prompt}"}],
+        messages=[{"role": "user", "content": ctx_prefix + _question_text(prompt, context)}],
         extra_headers=_EXTENDED_CACHE_HEADERS,
     )
     _apply_effort(create_kwargs, effort)
@@ -927,7 +964,7 @@ def _one_shot_turn(prompt, auto_apply, use_index):
         for attempt in range(3):
             reply, usage, was_streamed = providers.active().complete(create_kwargs)
 
-            edits = parse_edit_blocks(reply)
+            planned, edits = _plan_split(parse_edit_blocks(reply))
 
             if edits:
                 lint_errs = apply_edits(edits, check_only=True)
@@ -953,6 +990,7 @@ def _one_shot_turn(prompt, auto_apply, use_index):
                 print(f"\n{_ANSI_CYAN}{_ANSI_BOLD}{_SYM_RESP}{_ANSI_RESET} ", end="", flush=True)
                 print(explanation)
                 sys.stdout.flush()
+            _report_plan(planned, file=sys.stderr)
             if edits:
                 apply_edits(edits, explanation=explanation, auto_apply=auto_apply)
             elif _agent_oauth():

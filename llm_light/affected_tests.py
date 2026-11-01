@@ -106,7 +106,11 @@ def check_after_edit(written_files, root=None):
         print(f"  {_T_ERR}  Affected tests failed.")
         import sys
         from llm_light.ui import choose
-        from llm_light import git_manager
+        from llm_light import git_manager, permissions
+        if permissions.bypass():
+            # Asks nothing in bypass; the edit stays and /undo reverts it.
+            print(f"  {_T_SYS}  Kept the edit; /undo reverts it.")
+            return False
         if sys.stdin.isatty() and git_manager.is_git_repo() and choose(
                 "Revert the last commit?",
                 [("no", "No, keep the edit"), ("yes", "Yes, undo it")]) == "yes":
