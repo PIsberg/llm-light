@@ -17,6 +17,11 @@ _ARGV_TAIL = [
 ]
 
 
+# An unreadable reply most likely means a codex release changed its JSON events.
+_PARSE_REMEDY = ("Update codex (npm install -g @openai/codex) and run it on its own to see "
+                 "what it prints.")
+
+
 def _agent_reply(stdout: str) -> str:
     """The text of the last agent_message event in codex's JSONL output."""
     reply = None
@@ -27,7 +32,8 @@ def _agent_reply(stdout: str) -> str:
         if isinstance(item, dict) and item.get("type") == "agent_message":
             reply = item.get("text")
     if not isinstance(reply, str) or not reply.strip():
-        raise ProviderError("codex output could not be parsed: no agent_message in the output")
+        raise ProviderError("codex output could not be parsed: no agent_message in the output. "
+                            + _PARSE_REMEDY)
     return reply.strip()
 
 

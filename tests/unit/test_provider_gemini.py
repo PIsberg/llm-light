@@ -153,12 +153,14 @@ def test_fr011_no_result_event_raises_provider_error():
     with pytest.raises(ProviderError) as exc:
         _complete(out)
     assert "output could not be parsed" in str(exc.value)
+    assert str(exc.value).endswith("Update agy (agy update) and run it on its own to see what it prints.")  # #113: every message names a remedy
 
 
 def test_fr011_empty_stdout_raises_provider_error():
     with pytest.raises(ProviderError) as exc:
         _complete("   \n")
     assert "output could not be parsed" in str(exc.value)
+    assert str(exc.value).endswith("Update agy (agy update) and run it on its own to see what it prints.")  # #113: every message names a remedy
 
 
 @pytest.mark.parametrize("response", [None, "", "   \n"])
@@ -170,6 +172,7 @@ def test_fr011_u2_success_with_missing_or_blank_response_raises(response):
     with pytest.raises(ProviderError) as exc:
         _complete(out)
     assert "output could not be parsed" in str(exc.value)
+    assert str(exc.value).endswith("Update agy (agy update) and run it on its own to see what it prints.")  # #113: every message names a remedy
 
 
 def test_fr011_run_cli_error_passes_through_unchanged():
@@ -390,6 +393,7 @@ def test_t027_done_forbidden_tool_without_denial_raises_even_with_a_response(too
     with pytest.raises(ProviderError) as exc:
         _complete(out)
     assert f"agy ran {tool}, which llm_light forbids" in str(exc.value)
+    assert str(exc.value).endswith("Ask again; if it keeps happening, choose another --provider.")
 
 
 @pytest.mark.parametrize("tool,kind", _FORBIDDEN)
@@ -421,6 +425,7 @@ def test_t027_done_tool_outside_the_allowlist_raises_even_with_a_response(tool):
     with pytest.raises(ProviderError) as exc:
         _complete(out)
     assert f"agy ran {tool}, which llm_light forbids" in str(exc.value)
+    assert str(exc.value).endswith("Ask again; if it keeps happening, choose another --provider.")
 
 
 def test_t027_two_done_commands_with_one_command_denial_raises():
