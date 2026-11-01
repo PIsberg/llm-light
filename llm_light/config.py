@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -27,9 +28,42 @@ def env_get(name: str, default: str | None = None) -> str | None:
 
 
 def _migrate_path(new: Path, legacy: Path) -> Path:
-    """Keep the pre-rename file or folder until the new one exists, so an
-    existing stats file or saved sessions keep their history."""
-    return legacy if not new.exists() and legacy.exists() else new
+    """Copy the pre-rename file or folder to its new name once, so an existing
+    stats file, saved sessions or automation token keep working (#120).
+
+    It copies rather than moves, so a downgrade still finds the old one, and
+    never touches an existing new path. One notice goes to stderr. If the copy
+    fails, or the call runs off the main thread (background threads never
+    print), the legacy path is used as it is.
+    """
+    if new.exists() or not legacy.exists():
+        return new
+    import threading
+    if threading.current_thread() is not threading.main_thread():
+        return legacy
+    # Copy under a temporary name and rename, so a failed copy never leaves a
+    # partial new path that would win over the legacy one next time.
+    staging = new.with_name(new.name + ".migrating")
+    try:
+        if staging.is_dir():
+            shutil.rmtree(staging)
+        if legacy.is_dir():
+            shutil.copytree(legacy, staging)
+        else:
+            shutil.copy2(legacy, staging)
+        os.replace(staging, new)
+    except OSError:
+        if staging.is_dir():
+            shutil.rmtree(staging, ignore_errors=True)
+        elif staging.exists():
+            try:
+                staging.unlink()
+            except OSError:
+                pass
+        return legacy
+    print(f"llm_light: copied {legacy} to {new}; the old one is kept, "
+          f"delete it once you no longer run claude_light.", file=sys.stderr)
+    return new
 
 
 try:
