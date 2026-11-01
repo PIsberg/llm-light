@@ -626,6 +626,7 @@ Builds the stdin text `CodexProvider.complete()` sends (SYSTEM_PROMPT, two retri
 ```bash
 python tests/benchmarks/benchmark_cli_providers.py --runs 5 --baseline
 python tests/benchmarks/benchmark_cli_providers.py --runs 5
+python tests/benchmarks/benchmark_cli_providers.py --runs 5 --effort low   # codex's model_reasoning_effort
 ```
 
 Live: it needs `codex login` and spends the quota codex is signed in with.
@@ -643,6 +644,19 @@ The same question ("find every way run_cli can leave an orphaned process or hang
 
 What each switch removes, from `codex debug prompt-input` (characters, with the user's config): agent instructions 17,814 (replaced by `codex.INSTRUCTIONS`, 238), skills list 6,177, permissions text 9,061, collaboration mode 1,056, environment block 494; the feature switches removed 1,237 characters of tool schemas. Answer quality is not scored: one trimmed answer to the question above was read by hand (six concrete failure paths, each with a fix), and an edit request through the trimmed path still produced SEARCH/REPLACE blocks that `parse_edit_blocks()` applied. Codex reports `cached_input_tokens` on its own; llm_light's turn stats show the same counts for every codex turn (#148).
 
+
+### Codex at the routed effort (#150, 2026-11-02, codex-cli 0.166.0, not shipped)
+
+`--effort` runs codex with `-c model_reasoning_effort=<effort>`; without it codex reasons at its model default, `medium` for every model `codex debug models` lists. Each question at codex's default and at the effort llm_light routes it to, 5 runs each:
+
+| Question (routed effort) | Effort | Input, mean | Output, mean | Reasoning, mean |
+|---|---|---|---|---|
+| "What does empty_temp_dir do?" (low) | default (medium) | 9,705 | 52 | 0 |
+| same | low | 9,705 | 56 | 0 |
+| run_cli failure paths, step by step (high) | default (medium) | 9,727 | 595 | 0 |
+| same | high | 9,727 | 1,870 | 1,232 |
+
+Routing the effort to codex is not shipped. On the low-routed question, where it was meant to save, codex already spends no reasoning tokens at its default, so there is nothing to save; on the high-routed question it triples the output. Whether the high-effort answers are better is not scored. The `--effort` option and `codex._argv_tail(..., effort)` stay so this can be re-measured on a later codex.
 
 ### agy (Gemini), 2026-11-02, agy 1.4.12, Windows
 
