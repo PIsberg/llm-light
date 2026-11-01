@@ -63,12 +63,12 @@ Local equivalent: `python -m build && twine check dist/*`.
 Uploads the package with trusted publishing: PyPI checks the workflow's OIDC token against a publisher registered on pypi.org, so no API token is stored in the repository. The upload carries PEP 740 attestations, the action's default. It never runs on a push or a PR, so CI does not exercise it before a release; the manual TestPyPI run is the dry run.
 
 1. **build**: on a release, `tests/linting/check_release_tag.py` first fails the run unless the release tag is `v` plus the `pyproject.toml` version. Then `python -m build` and `twine check --strict dist/*`, and the `dist` artifact is uploaded.
-2. **testpypi** runs only when the workflow is started by hand (`workflow_dispatch`). It uploads to https://test.pypi.org/project/llm-light/ under the `testpypi` environment.
-3. **pypi** runs only on a published release. It uploads to https://pypi.org/project/llm-light/ under the `pypi` environment.
+2. **testpypi** runs only when the workflow is started by hand (`workflow_dispatch`). It uploads to https://test.pypi.org/project/llm-light-cli/ under the `testpypi` environment.
+3. **pypi** runs only on a published release. It uploads to https://pypi.org/project/llm-light-cli/ under the `pypi` environment.
 
 PyPI and TestPyPI accept a version once, even after it is deleted. A second dry run of the same version fails with `File already exists`; bump the version before another one.
 
-One-time setup, done by the maintainer and not by the YAML: register a trusted publisher on pypi.org and on test.pypi.org (owner `PIsberg`, repository `llm-light`, workflow `publish.yml`, environment `pypi` or `testpypi`), and create the two environments under the repository's Settings, Environments. A required reviewer on `pypi` makes every release wait for approval.
+One-time setup, done by the maintainer and not by the YAML: register a trusted publisher on pypi.org and on test.pypi.org (project `llm-light-cli`, owner `PIsberg`, repository `llm-light`, workflow `publish.yml`, environment `pypi` or `testpypi`), and create the two environments under the repository's Settings, Environments. A required reviewer on `pypi` makes every release wait for approval.
 
 To release:
 
@@ -76,8 +76,8 @@ To release:
 2. After it merges, run **Publish to PyPI** by hand on `main`. In a clean venv, fetch only the wheel from TestPyPI and take its dependencies from PyPI, then run the tool:
 
    ```bash
-   pip download --no-deps --index-url https://test.pypi.org/simple/ -d testpypi-dist llm-light==<version>
-   pip install testpypi-dist/llm_light-<version>-py3-none-any.whl
+   pip download --no-deps --index-url https://test.pypi.org/simple/ -d testpypi-dist llm-light-cli==<version>
+   pip install testpypi-dist/llm_light_cli-<version>-py3-none-any.whl
    llm-light --version
    ```
 

@@ -6,7 +6,7 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ## [0.1.0]
 
-The first release on PyPI: `pipx install llm-light` or `uv tool install llm-light`. It needs Python 3.12 or newer, and the first install downloads PyTorch (about 1.5 GB) through `sentence-transformers`.
+The first release on PyPI, as `llm-light-cli`: `pipx install llm-light-cli` or `uv tool install llm-light-cli`. The command is still `llm-light`. It needs Python 3.12 or newer, and the first install downloads PyTorch (about 1.5 GB) through `sentence-transformers`.
 
 ### What it does
 
@@ -17,7 +17,7 @@ The first release on PyPI: `pipx install llm-light` or `uv tool install llm-ligh
 - **Routing**: each question goes to Haiku, Sonnet or a top tier (asked first), and the first turn's model is kept for the session. `--model` pins a model, and `/budget` caps spend.
 - **Editing**: edits are lint-checked, shown as a diff and auto-committed as `Claude: [summary]`. `/undo` reverts the last such commit. Permission modes are `default`, `acceptEdits` (`-y`), `plan` and `bypassPermissions` (`--dangerously-skip-permissions`).
 - **Shell**: the agent runs only commands that start with an `--allow-command` prefix. Commands that chain, pipe, redirect or substitute are refused.
-- **Optional prompt compression** with LLMLingua: `pipx install "llm-light[llmlingua]"`.
+- **Optional prompt compression** with LLMLingua: `pipx install "llm-light-cli[llmlingua]"`.
 
 ### Known limits
 
