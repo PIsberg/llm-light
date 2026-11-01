@@ -635,15 +635,16 @@ def full_refresh(quiet=False):
                 warm_cache(quiet=True)
 
 # Both run on the file watcher's thread: quiet, so nothing prints into a
-# streaming reply or over the prompt.
+# streaming reply or over the prompt. Neither warms the cache: the next turn
+# writes the new skeleton's entry anyway, so a warm here only adds a read, and
+# each further change before that turn (a new file, an editor's rename on
+# save) was another full 1-hour write (benchmark_cache_warming.py --changes).
 def refresh_skeleton_only():
     _apply_skeleton(_refresh_tree_only())
-    warm_cache(quiet=True)
 
 def refresh_md_file(path_str: str):
     if _refresh_single_md(path_str):
         _apply_skeleton(_assemble_skeleton())
-        warm_cache(quiet=True)
         notify(f"{path_str} changed; system prompt rebuilt")
 
 
