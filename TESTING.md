@@ -42,9 +42,11 @@ CI runs the unit, integration and utilities suites, plus the two benchmark regre
 
 If you add a test that needs one of these changed, set it inside the test, not in the module.
 
-Two autouse fixtures in the same file run around every test:
+Four autouse fixtures in the same file run around every test:
 
 - `_fresh_session_model` clears `state.session_model`, so one test's route does not pin the next test's model.
+- `_restore_synced_bindings` puts back every binding `llm_light._sync_bindings()` writes (the table is `llm_light._SYNC_TARGETS`). `patch("llm_light.warm_cache")` restores only the package attribute; a wrapped call made under the patch copies the mock into `llm.warm_cache` and `main.warm_cache`, where it used to outlive the test (#139). Inside one test the copy still happens, so a test that fakes a package global and then calls a module function directly patches both layers.
+- `_fresh_permissions_and_commands` resets the permission mode, the `/model` pin, the `/copy` replies and pending `!command` output, and restores the conversation history.
 - `_no_real_llmlingua_loader` fails a test that starts the real LLMLingua loader thread. `main()` starts one, and it keeps loading after the test ends, then sets the compressor singleton under a later test (#74). A test that calls `main()` patches `llm_light.main._start_llmlingua_load`, as `TestMainRouting.setUp` does.
 
 ## Where a new test goes

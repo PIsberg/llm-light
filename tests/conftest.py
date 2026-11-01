@@ -49,6 +49,30 @@ def _fresh_session_model():
 
 
 @pytest.fixture(autouse=True)
+def _restore_synced_bindings():
+    """Put back every binding llm_light._sync_bindings() writes (#139).
+
+    patch("llm_light.warm_cache") restores only the package attribute. A
+    wrapped call made under the patch copies the mock into llm.warm_cache and
+    main.warm_cache, and a later test calling those hit the mock and sent
+    nothing. The package globals are snapshotted too, for tests that assign
+    them by hand.
+    """
+    import llm_light
+    missing = object()  # a binding the first sync has not created yet
+    saved = [(module, name, getattr(module, name, missing))
+             for module, names in llm_light._SYNC_TARGETS for name in names]
+    saved += [(llm_light, name, getattr(llm_light, name))
+              for name in {n for _, names in llm_light._SYNC_TARGETS for n in names}]
+    yield
+    for module, name, value in saved:
+        if value is not missing:
+            setattr(module, name, value)
+        elif hasattr(module, name):
+            delattr(module, name)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_permissions_and_commands():
     """Permission mode, /model pin, /copy replies and pending !command output
     are session state: one test's must not leak into the next."""

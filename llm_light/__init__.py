@@ -178,33 +178,28 @@ _MODULE_ATTR_MAP = {
 }
 
 
-def _sync_bindings():
-    state.chunk_store = chunk_store
-    state.conversation_history = conversation_history
-    state.session_tokens = session_tokens
-    state.session_cost = session_cost
-    state.last_interaction = last_interaction
-    state.EMBED_MODEL = EMBED_MODEL
-    state.TOP_K = TOP_K
-    state.embedder = embedder
-    state._skeleton_tree = _skeleton_tree
-    state._skeleton_md_hashes = _skeleton_md_hashes
-    state._skeleton_md_parts = _skeleton_md_parts
-    state._file_hashes = _file_hashes
-    state.skeleton_context = skeleton_context
-    state.stop_event = stop_event
-    indexer._file_timers = _file_timers
+# Every (module, name) _sync_bindings() copies this package's global of the
+# same name into. tests/conftest.py snapshots and restores the same table
+# around each test: a patch of a package global restores only the package
+# attribute, and the copy a wrapped call made would otherwise outlive it (#139).
+_SYNC_TARGETS = (
+    (state, ("chunk_store", "conversation_history", "session_tokens", "session_cost",
+             "last_interaction", "EMBED_MODEL", "TOP_K", "embedder", "_skeleton_tree",
+             "_skeleton_md_hashes", "_skeleton_md_parts", "_file_hashes", "skeleton_context",
+             "stop_event")),
+    (indexer, ("_file_timers",)),
+    (main, ("full_refresh", "chat", "one_shot", "warm_cache", "heartbeat",
+            "print_session_summary", "_run_command")),
+    (llm, ("warm_cache", "_update_skeleton")),
+    (retrieval, ("_strip_comments",)),
+)
 
-    main.full_refresh = full_refresh
-    main.chat = chat
-    main.one_shot = one_shot
-    main.warm_cache = warm_cache
-    main.heartbeat = heartbeat
-    main.print_session_summary = print_session_summary
-    main._run_command = _run_command
-    llm.warm_cache = warm_cache
-    llm._update_skeleton = _update_skeleton
-    retrieval._strip_comments = _strip_comments
+
+def _sync_bindings():
+    package = globals()
+    for module, names in _SYNC_TARGETS:
+        for name in names:
+            setattr(module, name, package[name])
 
 
 def _wrap(callable_):
