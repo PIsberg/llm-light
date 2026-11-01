@@ -7,6 +7,11 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | Variable | Purpose |
 |---|---|
 | `--provider {claude,gemini,codex}` | Command-line flag, default `claude`. Selects the agent (`llm_light/providers/__init__.py: NAMES`, `DEFAULT`) |
+| `--permission-mode {default,acceptEdits,plan,bypassPermissions}` | Command-line flag, default `default` (`-y` means `acceptEdits`). Held in `state.permission_mode`; see [architecture/components.md](architecture/components.md#permission-modes) |
+| `--dangerously-skip-permissions`, `--yolo` | Command-line flag: start in `bypassPermissions` and allow it for the session. `--allow-dangerously-skip-permissions` allows it without starting in it (`state.bypass_allowed`) |
+| `--model NAME` | Command-line flag: pin every question to `opus`, `sonnet`, `haiku`, `fable` or a model id in `MODEL_PRICES` (`state.pinned_model`, as `/model` sets). The budget cap still drops to Haiku. Claude only |
+| `-p`, `--print` / `-v`, `--version` | Command-line flags: one-shot mode, as `claude -p`; print the version from `pyproject.toml` |
+| `commands.py: MENTION_MAX_CHARS` | Most characters attached per `@file` mention (default 50 000); the rest is cut with a note |
 | `providers/runner.py: TIMEOUT_SECS` | Seconds an agy (Gemini) or Codex run may take before its process tree is killed (default 600) |
 | `TARGET_RETRIEVED_TOKENS` | Token budget for retrieved context per query (default 6 000) |
 | `MIN_SCORE` | Absolute cosine similarity floor to include a chunk (default 0.35; 0.45 dropped most natural-language questions) |
@@ -34,7 +39,7 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `LLMLINGUA_MIN_TOKENS` | Skip compression below this size, since overhead exceeds savings (default 800). Override with `LLM_LIGHT_LLMLINGUA_MIN_TOKENS`; the retrieval budgets (1 500–9 000) are all above it |
 | `LLMLINGUA_FORCE_TOKENS` | Tokens preserved verbatim (default `["\n", "```", "::", "//"]` so chunk structure survives) |
 | `AGENT_SYSTEM_PROMPT` | Replaces `SYSTEM_PROMPT` in OAuth mode when `ALLOWED_COMMANDS` is non-empty. See [architecture/components.md](architecture/components.md#agent-mode-and-allowed-commands) |
-| `ALLOWED_COMMANDS` | Shell command prefixes the OAuth agent may run. From `--allow-command` or `LLM_LIGHT_ALLOW_COMMANDS`. See [architecture/components.md](architecture/components.md#agent-mode-and-allowed-commands) |
+| `ALLOWED_COMMANDS` | Shell command prefixes the OAuth agent may run. From `--allow-command` or `LLM_LIGHT_ALLOW_COMMANDS`. Ignored in bypass mode (any command runs) and plan mode (none runs). See [architecture/components.md](architecture/components.md#agent-mode-and-allowed-commands) |
 | `CALL_GRAPH` | Call-graph retrieval expansion: adds callers or callees of the best hit within the token budget (default off; skipped at low effort). Off because it sent 20-28% more tokens for no extra right-file hits, see [BENCHMARKS.md](BENCHMARKS.md). Enable with `LLM_LIGHT_CALLGRAPH=1` |
 | `CALL_GRAPH_MAX` | Most related chunks added per query by the call-graph expansion (default 3) |
 | `ROUTE_ONCE` | Keep the model the session's first question routes to for every later turn; effort is still routed per turn, `/budget` still drops to Haiku at the cap, and `/clear` routes the model again. Default on. In `benchmark_session_cache.py` a session opening on Sonnet cost 71% more than per-turn routing, and one opening on Haiku cost 91% less because every later question, hard ones included, ran on Haiku. `LLM_LIGHT_ROUTE_ONCE=0` routes the model per turn |

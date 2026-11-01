@@ -146,6 +146,16 @@ class TestCliSettingsInstallTheGuard(unittest.TestCase):
         self.assertNotIn("hooks", self._settings_for([]))
         self.assertNotIn("hooks", self._settings_for(["echo"], tools_on=False))
 
+    def test_no_guard_when_permissions_are_bypassed(self):
+        print("\n  ▶ TestCliSettingsInstallTheGuard.test_no_guard_when_permissions_are_bypassed")
+        # --dangerously-skip-permissions lets any command run, chained or not;
+        # a guard refusing `a && b` would contradict the mode the user chose.
+        import llm_light.state as state
+        from llm_light import permissions
+        state.bypass_allowed = True
+        permissions.set_mode(permissions.BYPASS)
+        self.assertNotIn("hooks", self._settings_for(["echo"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -194,7 +194,11 @@ def _make_cli_subprocess_call(
             os.path.expanduser("~").replace("\\", "/") + "/.claude/CLAUDE.md"
         )
         settings = {"claudeMdExcludes": [real_user_md]}
-        if tools and config.ALLOWED_COMMANDS:
+        from llm_light import permissions
+        # Bypass runs any command, chained or not, so no guard; plan mode
+        # disallows both shells, so the guard would never fire.
+        if tools and config.ALLOWED_COMMANDS and permissions.mode() in (
+                permissions.DEFAULT, permissions.ACCEPT_EDITS):
             # An allow rule covers only a command's first statement, so
             # `echo a && touch b` ran under Bash(echo:*) (issue #70). The
             # guard blocks chaining for both shells before the rule is read.
@@ -273,11 +277,22 @@ def _make_cli_subprocess_call(
         # unapproved one is denied (the model gets an error), never left
         # waiting on a prompt. config.ALLOWED_COMMANDS is the user's opt-in
         # list, e.g. the test command, so the agent can check its own edits.
-        if tools:
+        # Plan mode (read-only) runs the CLI in its own plan mode with every
+        # writing tool and both shells disallowed. Bypass (--dangerously-skip-
+        # permissions) runs it with bypassPermissions: any edit, any command.
+        allow_rules = False
+        if tools and permissions.plan():
+            permission_mode = "plan"
+            disallowed = "PowerShell,Bash,Edit,Write,NotebookEdit"
+        elif tools and permissions.bypass():
+            permission_mode = "bypassPermissions"
+            disallowed = ""
+        elif tools:
             permission_mode = "acceptEdits"
             # A shell stays off unless the user allowlisted a command for it.
             shells = {config.command_rule(c)[0] for c in config.ALLOWED_COMMANDS}
             disallowed = ",".join(t for t in ("PowerShell", "Bash") if t not in shells)
+            allow_rules = bool(config.ALLOWED_COMMANDS)
         else:
             # A hidden call over text that may quote repo content (the
             # history summary): no tools at all. --tools "" alone is not
@@ -304,7 +319,7 @@ def _make_cli_subprocess_call(
         ]
         if not tools:
             command += ["--tools", ""]
-        elif config.ALLOWED_COMMANDS:
+        elif allow_rules:
             rules = [config.command_rule(c) for c in config.ALLOWED_COMMANDS]
             command += ["--allowedTools", ",".join(f"{tool}({prefix}:*)" for tool, prefix in rules)]
         if model:
@@ -541,7 +556,14 @@ def _make_streaming_api_call(**create_kwargs):
         model = create_kwargs.get("model", MODEL)
 
         system_text, prompt = transcript(create_kwargs)
-        if config.ALLOWED_COMMANDS:
+        from llm_light import permissions
+        if permissions.bypass():
+            # Any command runs, so the agent edits with its own tools and
+            # checks its work, as with an allowlist but without the list.
+            system_text = system_text.replace(SYSTEM_PROMPT, config.AGENT_SYSTEM_PROMPT, 1)
+            system_text += ("\n\nYou may run any shell command with your Bash or PowerShell "
+                            "tool, for example the tests after an edit.")
+        elif config.ALLOWED_COMMANDS and not permissions.plan():
             # The agent may run the tests, so it edits with its own tools and
             # can check the result (SEARCH/REPLACE lands only after the turn).
             system_text = system_text.replace(SYSTEM_PROMPT, config.AGENT_SYSTEM_PROMPT, 1)

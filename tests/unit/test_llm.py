@@ -1053,6 +1053,30 @@ class TestCliCommandPermissions(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "PowerShell(Invoke-Pester:*)")
         self.assertEqual(cmd[cmd.index("--disallowed-tools") + 1], "Bash")
 
+    def test_bypass_mode_runs_the_cli_with_permissions_bypassed(self):
+        print("\n  ▶ TestCliCommandPermissions.test_bypass_mode_runs_the_cli_with_permissions_bypassed")
+        # --dangerously-skip-permissions: both shells on and no allowlist
+        # rules (the chaining guard's absence is in test_cli_shell_guard.py).
+        import llm_light.state as state
+        from llm_light import permissions
+        state.bypass_allowed = True
+        permissions.set_mode(permissions.BYPASS)
+        cmd = self._cmd_for(["python -m pytest"])
+        self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "bypassPermissions")
+        self.assertNotIn("--disallowed-tools", cmd)
+        self.assertNotIn("--allowedTools", cmd)
+
+    def test_plan_mode_runs_the_cli_read_only(self):
+        print("\n  ▶ TestCliCommandPermissions.test_plan_mode_runs_the_cli_read_only")
+        from llm_light import permissions
+        permissions.set_mode(permissions.PLAN)
+        cmd = self._cmd_for(["python -m pytest"])
+        self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "plan")
+        denied = cmd[cmd.index("--disallowed-tools") + 1].split(",")
+        for tool in ("Bash", "PowerShell", "Edit", "Write", "NotebookEdit"):
+            self.assertIn(tool, denied)
+        self.assertNotIn("--allowedTools", cmd)
+
     def test_powershell_stays_off_when_only_bash_is_allowed(self):
         print("\n  ▶ TestCliCommandPermissions.test_powershell_stays_off_when_only_bash_is_allowed")
         cmd = self._cmd_for(["npm test"])
