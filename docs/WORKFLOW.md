@@ -2,7 +2,7 @@
 
 Every workflow lives in `.github/workflows/`. This page lists what each one runs, in order, and the command to run the same step locally. Read the YAML for the exact versions and pinned action SHAs, which change often.
 
-Every job starts with the same `step-security/harden-runner` step in `audit` mode (in `installers.yml`, on the Linux job only), which records outbound calls without blocking them. Permissions are read-only at the workflow level (`read-all` or `contents: read`). Two jobs grant more: `scorecards.yml` asks for `id-token: write` to publish its results, and the `sbom` job in `sbom.yml` asks for `contents: write`, which its release-upload step needs. A job's own `permissions` block replaces the workflow-level one, so a job-level grant must list every permission the job uses.
+Every job starts with the same `step-security/harden-runner` step in `audit` mode (in `installers.yml`, on the Linux job only), which records outbound calls without blocking them. Permissions are read-only at the workflow level (`read-all` or `contents: read`). Four jobs grant more: `scorecards.yml` asks for `id-token: write` to publish its results, the `sbom` job in `sbom.yml` asks for `contents: write`, which its release-upload step needs, and the `testpypi` and `pypi` jobs in `publish.yml` ask for `id-token: write`, which trusted publishing needs. A job's own `permissions` block replaces the workflow-level one, so a job-level grant must list every permission the job uses.
 
 ## At a glance
 
@@ -11,6 +11,7 @@ Every job starts with the same `step-security/harden-runner` step in `audit` mod
 | `test.yml` | Test Suite | push and PR to `main` | Unit, integration and utilities tests; token and retrieval regression checks |
 | `fuzz.yml` | Fuzz Testing | push and PR to `main`, weekly Monday 00:00 UTC | Hypothesis tests of the parsers and router |
 | `build-wheel.yml` | Build Wheel | push and PR to `main`, manual | Build and validate the sdist and wheel |
+| `publish.yml` | Publish to PyPI | release published, manual | Uploads the sdist and wheel to PyPI on a release, or to TestPyPI when run by hand |
 | `sbom.yml` | Generate SBOM | push and PR to `main`, release published, manual | CycloneDX software bill of materials |
 | `codeql.yml` | CodeQL | push and PR to `main`, weekly Monday 00:00 UTC | Static security analysis |
 | `scorecards.yml` | Scorecard supply-chain security | push to `main`, weekly Tuesday 07:20 UTC, branch-protection change | OpenSSF Scorecard |
@@ -56,6 +57,34 @@ Builds the distribution the way a release would, then checks it:
 4. **Upload built distributions** as the `dist` artifact.
 
 Local equivalent: `python -m build && twine check dist/*`.
+
+## `publish.yml`: Publish to PyPI
+
+Uploads the package with trusted publishing: PyPI checks the workflow's OIDC token against a publisher registered on pypi.org, so no API token is stored in the repository. The upload carries PEP 740 attestations, the action's default. It never runs on a push or a PR, so CI does not exercise it before a release; the manual TestPyPI run is the dry run.
+
+1. **build**: on a release, `tests/linting/check_release_tag.py` first fails the run unless the release tag is `v` plus the `pyproject.toml` version. Then `python -m build` and `twine check --strict dist/*`, and the `dist` artifact is uploaded.
+2. **testpypi** runs only when the workflow is started by hand (`workflow_dispatch`). It uploads to https://test.pypi.org/project/llm-light/ under the `testpypi` environment.
+3. **pypi** runs only on a published release. It uploads to https://pypi.org/project/llm-light/ under the `pypi` environment.
+
+PyPI and TestPyPI accept a version once, even after it is deleted. A second dry run of the same version fails with `File already exists`; bump the version before another one.
+
+One-time setup, done by the maintainer and not by the YAML: register a trusted publisher on pypi.org and on test.pypi.org (owner `PIsberg`, repository `llm-light`, workflow `publish.yml`, environment `pypi` or `testpypi`), and create the two environments under the repository's Settings, Environments. A required reviewer on `pypi` makes every release wait for approval.
+
+To release:
+
+1. Set `version` in `pyproject.toml` and move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, in a PR.
+2. After it merges, run **Publish to PyPI** by hand on `main`. In a clean venv, fetch only the wheel from TestPyPI and take its dependencies from PyPI, then run the tool:
+
+   ```bash
+   pip download --no-deps --index-url https://test.pypi.org/simple/ -d testpypi-dist llm-light==<version>
+   pip install testpypi-dist/llm_light-<version>-py3-none-any.whl
+   llm-light --version
+   ```
+
+   Keep TestPyPI away from dependency resolution: with `--extra-index-url`, pip takes the highest version of each dependency from either index, so anyone can shadow `rich` or `numpy` there.
+3. Publish a GitHub release whose tag is `v<version>`, for example `v0.1.0`. That runs the `pypi` job, and `sbom.yml` attaches `sbom.json` to the same release.
+
+Local equivalent of the tag check: `python tests/linting/check_release_tag.py v0.1.0`.
 
 ## `sbom.yml`: Generate SBOM
 

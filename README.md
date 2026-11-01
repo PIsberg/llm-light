@@ -1,10 +1,10 @@
 # LLM Light: Auto-Warmer & Hybrid RAG Chat CLI
 
-> **Renamed from `claude_light`.** The tool now runs Claude, Gemini (via `agy`) and Codex, so the name is `llm_light`. Existing installs keep working: the `claude-light` command and `claude_light.py` still run, `CLAUDE_LIGHT_*` environment variables are still read, and `~/.claude_light_automation_token`, `~/.claude_light_stats.json` and `~/.claude_light_sessions/` are copied to their `~/.llm_light_*` names on first use (the old ones are kept). The per-project index in `.llm_light_cache/` is rebuilt on the first run after the rename. See [docs/CONFIG.md](docs/CONFIG.md).
+> **Renamed from `claude_light`.** The tool now runs Claude, Gemini (via `agy`) and Codex, so the name is `llm_light`. Existing installs keep working: the `claude-light` command and `claude_light.py` still run, `CLAUDE_LIGHT_*` environment variables are still read, and `~/.claude_light_automation_token`, `~/.claude_light_stats.json` and `~/.claude_light_sessions/` are copied to their `~/.llm_light_*` names on first use (the old ones are kept). The per-project index in `.llm_light_cache/` is rebuilt on the first run after the rename. See [docs/CONFIG.md](https://github.com/PIsberg/llm-light/blob/main/docs/CONFIG.md).
 
 `llm_light.py` is an interactive CLI chat tool for querying and editing a codebase using Claude, Gemini or Codex. By combining Anthropic's prompt caching with a highly optimized hybrid RAG (Retrieval-Augmented Generation) pipeline, it drastically reduces API costs while maintaining full context of your project.
 
-**License:** Free for personal and hobby use ([PolyForm Noncommercial](LICENSE)). Commercial use requires a license — contact [Peter Isberg](mailto:isberg.peter+cl@gmail.com).
+**License:** Free for personal and hobby use ([PolyForm Noncommercial](https://github.com/PIsberg/llm-light/blob/main/LICENSE)). Commercial use requires a license — contact [Peter Isberg](mailto:isberg.peter+cl@gmail.com).
 
 ![llm_light](https://github.com/user-attachments/assets/15dcb11d-c68a-4991-a5d8-adb1679e4e3b)
 
@@ -39,7 +39,7 @@ Claude Code is a powerful general-purpose agentic tool and the cost difference r
 
 llm_light makes different trade-offs: pre-indexes the codebase offline, routes simple queries to Haiku, and injects only ~2–3K targeted tokens per query.
 
-> **How to reproduce:** `python tests/benchmarks/benchmark_cost.py --json > cl_results.json`, then `python tests/benchmarks/benchmark_claude_code.py --llm-light-results cl_results.json`. Both make live API calls, and the second needs Claude Code installed. See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) section 4 for the methodology.
+> **How to reproduce:** `python tests/benchmarks/benchmark_cost.py --json > cl_results.json`, then `python tests/benchmarks/benchmark_claude_code.py --llm-light-results cl_results.json`. Both make live API calls, and the second needs Claude Code installed. See [`docs/BENCHMARKS.md`](https://github.com/PIsberg/llm-light/blob/main/docs/BENCHMARKS.md) section 4 for the methodology.
 
 ---
 
@@ -56,7 +56,7 @@ This tool is aggressively designed to prevent you from paying full price for tok
 *   **Compressed Skeleton Tree:** The directory tree sent in the cached system prompt is compacted in two ways: single-child directory chains are collapsed (`main/java/com/example/` on one line), and sibling files sharing an extension are brace-grouped (`{OrderService,UserService,PaymentService}.java`). This saves 30–50 % of skeleton tokens on typical Java/Go/Python projects.
 *   **Retrieved-Chunk Deduplication:** When multiple methods from the same file rank highly, the shared preamble (package, imports, class header) is emitted only once, with all retrieved methods listed underneath. This saves 5–20 % of retrieved-context tokens on class-heavy queries.
 
-For a deeper dive into the implementation, see [docs/architecture/](docs/architecture/ARCHITECTURE.md).
+For a deeper dive into the implementation, see [docs/architecture/](https://github.com/PIsberg/llm-light/blob/main/docs/architecture/ARCHITECTURE.md).
 
 ## 🚀 Getting Started
 
@@ -66,14 +66,14 @@ For a deeper dive into the implementation, see [docs/architecture/](docs/archite
 
 ### Install as a tool (recommended)
 
-If you have [`pipx`](https://pipx.pypa.io/) or [`uv`](https://docs.astral.sh/uv/) installed, the fastest path is to install `llm_light` as a globally-available CLI in its own isolated environment:
+If you have [`pipx`](https://pipx.pypa.io/) or [`uv`](https://docs.astral.sh/uv/) installed, the fastest path is to install `llm-light` from [PyPI](https://pypi.org/project/llm-light/) as a globally-available CLI in its own isolated environment:
 
 ```bash
 # pipx
-pipx install git+https://github.com/PIsberg/llm-light.git
+pipx install llm-light
 
 # uv
-uv tool install git+https://github.com/PIsberg/llm-light.git
+uv tool install llm-light
 ```
 
 Then run from any project root:
@@ -86,12 +86,12 @@ llm-light "what does OrderService do?"   # one-shot
 Optional extras:
 
 ```bash
-pipx install "git+https://github.com/PIsberg/llm-light.git#egg=llm-light[llmlingua]"
+pipx install "llm-light[llmlingua]"
 ```
 
 LLMLingua compresses retrieved context only when it is at least `LLM_LIGHT_LLMLINGUA_MIN_TOKENS` tokens long (default `800`). The retrieval budgets are 1 500 to 9 000 tokens, so a full retrieval always qualifies; lower the value only if small retrievals should be compressed too. The first compression loads a model (about 280 MB) on CPU, which takes around 10 seconds.
 
-A PyPI release (so the `git+...` URL becomes plain `pipx install llm-light`) is planned — the existing methods below remain fully supported in the meantime.
+To run the unreleased `main` instead of the latest release, install from GitHub: `pipx install git+https://github.com/PIsberg/llm-light.git`. Releases are listed in [CHANGELOG.md](https://github.com/PIsberg/llm-light/blob/main/CHANGELOG.md). The methods below run from a source checkout.
 
 ### Quick Start
 
@@ -140,7 +140,7 @@ bash installers/install.sh
 export ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
-The script finds a Python 3.12+ interpreter and installs everything in [requirements.txt](requirements.txt) via `pip`.
+The script finds a Python 3.12+ interpreter and installs everything in [requirements.txt](https://github.com/PIsberg/llm-light/blob/main/requirements.txt) via `pip`.
 
 ### Windows (PowerShell)
 
@@ -153,7 +153,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass;
 
 ### Manual installation
 
-Python 3.12 or newer. Install everything in [requirements.txt](requirements.txt):
+Python 3.12 or newer. Install everything in [requirements.txt](https://github.com/PIsberg/llm-light/blob/main/requirements.txt):
 
 ```bash
 pip install -r requirements.txt
