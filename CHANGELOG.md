@@ -6,7 +6,7 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ### Added
 
-- **Send the model traffic through a proxy, such as the llm-fw firewall.** `--proxy URL` and `--proxy-ca PATH` (or `LLM_LIGHT_PROXY` and `LLM_LIGHT_PROXY_CA`) route the Anthropic client and the `claude`, `codex` and `agy` CLIs through an HTTPS proxy and trust its CA on top of the public roots; `--llm-fw` uses a local llm-fw's defaults. Embedding-model downloads, git and agent commands keep their own connection. `--proxy` wins over an `HTTPS_PROXY` already in the environment, which `llm-fw setup` sets.
+- **Send the model traffic through a proxy, such as the llm-fw firewall.** `--proxy URL` and `--proxy-ca PATH` (or `LLM_LIGHT_PROXY` and `LLM_LIGHT_PROXY_CA`) route the Anthropic client and the `claude`, `codex` and `agy` CLIs through an HTTPS proxy and trust its CA on top of the public roots; `--llm-fw` uses a local llm-fw's defaults. Embedding-model downloads, git and agent commands keep their own connection. `--proxy` wins over an `HTTPS_PROXY` already in the environment, which `llm-fw setup` sets. Without `--proxy-ca` the Anthropic client keeps its default trust, the OS store. `certifi` is now a declared dependency (it was already installed through `requests`).
 
 ### Changed
 

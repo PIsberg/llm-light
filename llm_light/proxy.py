@@ -78,10 +78,15 @@ def ca_cert() -> str | None:
     return _ca
 
 
-def ssl_context() -> ssl.SSLContext:
-    """Verify servers against certifi's roots plus the proxy's CA."""
-    import certifi
-    return ssl.create_default_context(cafile=_bundle or certifi.where())
+def ssl_context() -> ssl.SSLContext | None:
+    """Verify servers against certifi's roots plus the proxy's CA.
+
+    None without a CA: the client then keeps its own default trust, which for
+    anthropic 2.x is the OS store, where `llm-fw setup` installs its CA.
+    """
+    if not _bundle:
+        return None
+    return ssl.create_default_context(cafile=_bundle)
 
 
 def child_env(env: dict | None) -> dict | None:

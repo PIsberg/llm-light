@@ -105,6 +105,13 @@ def test_ssl_context_trusts_the_proxy_ca_and_the_public_roots():
 
 # --- child_env() ------------------------------------------------------------------
 
+def test_without_a_ca_the_client_keeps_its_own_default_trust():
+    # anthropic 2.x trusts the OS store by default, where `llm-fw setup`
+    # installs its CA: --proxy alone must not narrow that to certifi.
+    proxy.configure("http://127.0.0.1:8080")
+    assert proxy.ssl_context() is None
+
+
 def test_child_env_is_untouched_without_a_proxy():
     assert proxy.child_env(None) is None
     env = {"PATH": "/bin"}

@@ -39,12 +39,13 @@ def _new_client():
     import anthropic
     if not proxy.active():
         return anthropic.Anthropic(api_key=API_KEY)
-    import httpx
+    import httpx2  # the SDK's HTTP client since anthropic 2.0
     # Our own transport, not proxy=: the SDK mounts the environment's
     # HTTPS_PROXY on https://, which beats the all:// mount proxy= gets, so an
     # HTTPS_PROXY in the environment would win over --proxy. With a transport
-    # given, httpx reads no proxy from the environment.
-    transport = httpx.HTTPTransport(proxy=proxy.url(), verify=proxy.ssl_context())
+    # given, httpx2 reads no proxy from the environment.
+    # verify=True (no --proxy-ca) keeps the SDK's default trust, the OS store.
+    transport = httpx2.HTTPTransport(proxy=proxy.url(), verify=proxy.ssl_context() or True)
     http_client = anthropic.DefaultHttpxClient(transport=transport)
     return anthropic.Anthropic(api_key=API_KEY, http_client=http_client)
 
