@@ -15,6 +15,9 @@ A lever ships only when its measurement shows a gain.
 - [x] **4. Tighten escalation.** Measured offline with `benchmark_router.py`: no query on the repo set lands in the band that `ROUTER_ESCALATE_MARGIN` can change, at any margin tried. Nothing changed. See Results.
 - [ ] **5. Route large file reads to a cheaper model (Spotify-style).** Only after measuring how many tokens go to agent or tool reads. Targets: API mode `tools.py` `read_file`; subscription mode needs a settings-file hook. Files needed for a SEARCH/REPLACE edit must stay exact.
   - Status: not changed. The read-token count needs live API runs in API mode, which this offline pass did not make.
+- [x] **6. Trim the CLI providers' own prompts.** Gemini and Codex have no cache llm_light controls, so whatever their CLI adds in front of llm_light's prompt is paid on every question.
+  - Codex: shipped. Its agent instructions are replaced by a no-tools note (`-c model_instructions_file`) and its skills, permissions, collaboration-mode and environment sections and twelve unused tool features are switched off with `-c` keys. Measured live with `benchmark_cli_providers.py`. See Results.
+  - Gemini (agy): not measured yet. agy's stream-json output has not been checked for a usage figure.
 
 ## How to measure
 
@@ -41,6 +44,7 @@ A lever ships only when its measurement shows a gain.
 | 1. heartbeat warms once per TTL | shipped | not measured live | -73% to -96% of prefix cost over an idle hour, -91% to -95% over 8 idle hours, modelled | n/a | `benchmark_cache_warming.py`, prefix 16,807 tokens. The heartbeat warmed on every 30 s tick once idle passed 240 s (112 warms per idle hour, 111 counted by `test_cache_warming.py` before the fix); now it warms once 55 minutes after the last turn or warm. See docs/BENCHMARKS.md. |
 | 1. warm only the model turns read | shipped | not measured live | -95% opening on Haiku, -33% opening on Opus, -2% on Sonnet, per session start, modelled | n/a | Same benchmark, no idle. No warm before the model is known: the startup warm wrote Sonnet's 1-hour entry ($0.067) that a Haiku or Opus session never reads. A `--model` pin is now warmed instead of Sonnet. First-question latency on unpinned sessions is the cost. |
 | 1. no warm on a skeleton change | shipped | not measured live | -50% of prefix cost with 3 changes between questions, -1% with 1, modelled | n/a | `benchmark_cache_warming.py --changes`. The file watcher warmed after every added, deleted or renamed file and every `.md` change; the next turn writes the new entry anyway, so each warm was an extra 1-hour write (or a read when the skeleton text did not change). See docs/BENCHMARKS.md. |
+| 6. codex prompt trim | shipped | 21,766 to 9,190 mean input per question (-58%), measured live | codex quota, not priced | extra model rounds 1 of 5 to 0 of 5 | `benchmark_cli_providers.py`, codex-cli 0.166.0, 5 runs each of one repo question; output 926 to 621. A one-line prompt: 13,197 to 6,654 input. See docs/BENCHMARKS.md, section 2e. |
 | lint retry keeps its cache breakpoints | shipped | not measured | not measured | n/a | A retry after a syntax error stripped every breakpoint, so it paid full input for the history and retrieved chunks the failed attempt had just written. Pinned by `test_cache_warming.py`; how often retries happen is not measured. |
 
 ## Decisions

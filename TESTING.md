@@ -19,7 +19,7 @@ The CI unit step runs two files first, `test_editor.py` and `test_config.py`, be
 
 | Directory | What is in it | Run by |
 |---|---|---|
-| `tests/unit/` | One file per module (`test_retrieval.py` for `retrieval.py`, and so on), plus `test_benchmark_budget.py` for the benchmark helpers | CI `test.yml`, and `pytest` |
+| `tests/unit/` | One file per module (`test_retrieval.py` for `retrieval.py`, and so on), plus `test_benchmark_budget.py` and `test_benchmark_cli_providers.py` for the benchmark helpers | CI `test.yml`, and `pytest` |
 | `tests/integration/` | Import and wiring checks across modules, the git manager, the API tool loop, and the benchmark scripts | CI `test.yml`, and `pytest` |
 | `tests/utilities/` | Mock and download-progress helpers | CI `test.yml`, and `pytest` |
 | `tests/linting/` | Scripts, not pytest tests: `check_regression.py` (the regression gate CI calls) and two syntax-check scripts | `test.yml` runs `check_regression.py`; the syntax scripts are run by hand |

@@ -16,6 +16,35 @@ _ARGV_TAIL = [
     "--disable", "shell_tool", "--disable", "unified_exec", "--disable", "apps", "-",
 ]
 
+# codex's base instructions, written to a file and named by -c model_instructions_file.
+# llm_light's own instructions travel in the message, so codex's ~18,000 characters of
+# agent instructions only cost tokens. Without "no tools", codex took extra hidden model
+# rounds on 4 of 8 runs of one question, each re-sending the whole prompt (docs/BENCHMARKS.md).
+INSTRUCTIONS = ("You are a code assistant. You have no tools in this session: do not call "
+                "any tool, run any command or read any file. Everything you can use is in "
+                "the user's message, which begins with the instructions to follow. Answer "
+                "in a single reply.\n")
+# Sections of codex's own prompt an answer engine does not use, and the tool schemas of
+# features it never calls. Each goes in as `-c`: codex ignores an unknown config key, but
+# exits 1 on `--disable <unknown feature>`, so a renamed feature cannot break every call.
+_TRIM_CONFIG = (
+    "skills.include_instructions=false",
+    "include_permissions_instructions=false",
+    "include_collaboration_mode_instructions=false",
+    "include_environment_context=false",
+) + tuple(f"features.{name}=false" for name in (
+    "multi_agent", "image_generation", "browser_use", "computer_use", "goals", "plugins",
+    "skill_search", "tool_suggest", "view_image", "sleep_tool", "in_app_browser",
+    "workspace_dependencies",
+))
+
+
+def _argv_tail(instructions_path: str) -> list:
+    """_ARGV_TAIL with the token-trim `-c` flags inserted before the stdin `-`."""
+    config = [f"model_instructions_file={json.dumps(instructions_path)}", *_TRIM_CONFIG]
+    flags = [flag for value in config for flag in ("-c", value)]
+    return _ARGV_TAIL[:-1] + flags + _ARGV_TAIL[-1:]
+
 
 # An unreadable reply most likely means a codex release changed its JSON events.
 _PARSE_REMEDY = ("Update codex (npm install -g @openai/codex) and run it on its own to see "
@@ -64,8 +93,11 @@ class CodexProvider(Provider):
         if not binary:
             raise ProviderError("codex CLI not found. Install it: "
                                 "npm install -g @openai/codex")
-        with empty_temp_dir() as cwd:
-            out = run_cli(self.name, [binary] + _ARGV_TAIL, stdin_text, cwd=cwd)
+        # The instructions file has its own directory: the CLI's cwd stays empty.
+        with empty_temp_dir() as cwd, empty_temp_dir() as config_dir:
+            instructions = os.path.join(config_dir, "instructions.md")
+            Path(instructions).write_text(INSTRUCTIONS, encoding="utf-8")
+            out = run_cli(self.name, [binary] + _argv_tail(instructions), stdin_text, cwd=cwd)
         return _agent_reply(out)
 
     def complete(self, request: dict):

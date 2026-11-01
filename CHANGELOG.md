@@ -4,6 +4,10 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ## [Unreleased]
 
+### Changed
+
+- **Codex sends about half the tokens per question.** llm_light replaces codex's own agent instructions with a short no-tools note and switches off the codex prompt sections and tool features an answer engine never uses. On one repo question (5 runs each, codex-cli 0.166.0) input tokens fell from a mean of 21,766 to 9,190 and output from 926 to 621, and the trimmed runs took no hidden extra model rounds. `tests/benchmarks/benchmark_cli_providers.py` measures it; see `docs/BENCHMARKS.md`, section 2e.
+
 ## [0.1.0]
 
 The first release on PyPI, as `llm-light-cli`: `pipx install llm-light-cli` or `uv tool install llm-light-cli`. The command is still `llm-light`. It needs Python 3.12 or newer, and the first install downloads PyTorch (about 1.5 GB) through `sentence-transformers`.

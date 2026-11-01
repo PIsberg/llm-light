@@ -31,6 +31,46 @@ _EXPECTED_ARGV_TAIL = [
     "--disable", "shell_tool", "--disable", "unified_exec", "--disable", "apps", "-",
 ]
 
+# Token trim (measured with codex-cli 0.166.0, see docs/BENCHMARKS.md): codex's own
+# base instructions, skills list, permissions text, collaboration-mode text and
+# environment block, plus the tool schemas of features an answer engine never uses.
+_TRIM_KEYS = [
+    "skills.include_instructions=false",
+    "include_permissions_instructions=false",
+    "include_collaboration_mode_instructions=false",
+    "include_environment_context=false",
+]
+_TRIM_FEATURES = [
+    "multi_agent", "image_generation", "browser_use", "computer_use", "goals", "plugins",
+    "skill_search", "tool_suggest", "view_image", "sleep_tool", "in_app_browser",
+    "workspace_dependencies",
+]
+
+
+def _config_values(argv):
+    """The values of every `-c` flag in argv, in order."""
+    return [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "-c"]
+
+
+def _without_config(argv):
+    """argv with every `-c <value>` pair removed."""
+    out, skip = [], False
+    for a in argv:
+        if skip:
+            skip = False
+        elif a == "-c":
+            skip = True
+        else:
+            out.append(a)
+    return out
+
+
+def _instructions_path(argv):
+    prefix = "model_instructions_file="
+    values = [v[len(prefix):] for v in _config_values(argv) if v.startswith(prefix)]
+    assert len(values) == 1, f"expected one model_instructions_file, got {values}"
+    return json.loads(values[0])
+
 
 def _event(type_, **kw):
     return json.dumps({"type": type_, **kw})
@@ -137,7 +177,88 @@ def test_us1s2_complete_stdin_is_the_transcript_joined_by_blank_line():
 def test_fr010_argv_is_the_contract_argv():
     _, run, _ = _complete()
     argv = run.call_args[0][1]
-    assert argv == ["/bin/codex"] + _EXPECTED_ARGV_TAIL
+    assert _without_config(argv) == ["/bin/codex"] + _EXPECTED_ARGV_TAIL
+
+
+# --- token trim: codex's own prompt (docs/BENCHMARKS.md, codex prompt trim) ---
+
+def _capture_instructions(seen):
+    import os
+
+    def fake(provider, argv, stdin_text, *a, **kw):
+        path = _instructions_path(argv)
+        seen["path"] = path
+        seen["text"] = open(path, encoding="utf-8").read() if os.path.isfile(path) else None
+        return _jsonl("x")
+    return fake
+
+
+@pytest.mark.parametrize("method", ["complete", "summarize"])
+def test_trim_codex_base_instructions_are_replaced_by_a_no_tools_file(method):
+    import os
+    seen = {}
+    with patch(_WHICH, return_value="/bin/codex"),          patch(_RUN, side_effect=_capture_instructions(seen)):
+        if method == "complete":
+            codex.PROVIDER.complete(_request())
+        else:
+            codex.PROVIDER.summarize("Summarize: X")
+    # The file existed while codex ran, held the no-tools text, and is gone afterwards.
+    assert seen["text"] == codex.INSTRUCTIONS
+    assert "no tools" in codex.INSTRUCTIONS
+    assert os.path.isabs(seen["path"])
+    assert not os.path.exists(seen["path"])
+
+
+def test_trim_instructions_file_is_removed_when_codex_fails():
+    import os
+    seen = {}
+
+    def fake(provider, argv, stdin_text, *a, **kw):
+        seen["path"] = _instructions_path(argv)
+        raise ProviderError("boom")
+    with patch(_WHICH, return_value="/bin/codex"), patch(_RUN, side_effect=fake):
+        with pytest.raises(ProviderError):
+            codex.PROVIDER.complete(_request())
+    assert not os.path.exists(seen["path"])
+
+
+def test_trim_instructions_file_is_not_in_the_cli_working_directory():
+    import os
+    seen = {}
+
+    def fake(provider, argv, stdin_text, *a, **kw):
+        seen["path"] = _instructions_path(argv)
+        seen["cwd"] = kw["cwd"]
+        return _jsonl("x")
+    with patch(_WHICH, return_value="/bin/codex"), patch(_RUN, side_effect=fake):
+        codex.PROVIDER.complete(_request())
+    cwd = os.path.realpath(seen["cwd"])
+    assert os.path.commonpath([cwd, os.path.realpath(seen["path"])]) != cwd
+
+
+def test_trim_codex_boilerplate_sections_are_switched_off():
+    _, run, _ = _complete()
+    values = _config_values(run.call_args[0][1])
+    for key in _TRIM_KEYS:
+        assert key in values
+
+
+def test_trim_unused_codex_features_are_switched_off_with_config_not_disable():
+    # `--disable <unknown>` makes codex exit 1, so a feature a later codex renames
+    # would break every call; `-c features.<unknown>=false` is ignored instead.
+    _, run, _ = _complete()
+    argv = run.call_args[0][1]
+    values = _config_values(argv)
+    for feature in _TRIM_FEATURES:
+        assert f"features.{feature}=false" in values
+    disabled = [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--disable"]
+    assert disabled == ["shell_tool", "unified_exec", "apps"]
+
+
+def test_trim_config_flags_come_before_the_stdin_dash():
+    _, run, _ = _complete()
+    argv = run.call_args[0][1]
+    assert argv.index("-") == len(argv) - 1
 
 
 def test_fr007_argv_has_no_model_flag_and_no_claude_model_id():
@@ -165,7 +286,7 @@ def test_summarize_uses_same_argv_with_summary_prefix_and_no_usage():
     assert text == "the summary"
     assert usage is None
     args, _kw = run.call_args
-    assert args[1] == ["/bin/codex"] + _EXPECTED_ARGV_TAIL
+    assert _without_config(args[1]) == ["/bin/codex"] + _EXPECTED_ARGV_TAIL
     assert args[2] == "You summarize conversations.\n\nSummarize: X"
 
 

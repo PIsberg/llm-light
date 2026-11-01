@@ -37,6 +37,7 @@ comparison, and this document now reflects that.
 | `benchmark_router.py` | Effort tier and model the router picks for each question | No | Free (static model download on first run) |
 | `benchmark_session_cache.py` | Session cost of four routing policies under a prompt-cache model | No | Free (static model download on first run) |
 | `benchmark_cache_warming.py` | What the startup warm and the idle heartbeat spend, run through the real `heartbeat()` and `warm_cache()` | No | Free |
+| `benchmark_cli_providers.py` | Tokens codex reports for one question through the shipped `CodexProvider._run`, trimmed or `--baseline` | `codex login` | Subscription or key usage, about 10k to 46k input tokens per run |
 | `benchmark_cost.py` | Real-world cost savings vs naive baseline | Yes | ~$0.05–$0.50 |
 | `benchmark_claude_code.py` | Claude Code vs `llm_light` vs naive baseline | Yes | Varies with live API/tool runs |
 
@@ -607,6 +608,40 @@ Skeleton changes between the two questions, no idle time, before and after the w
 | pinned Opus | 3 | $0.5456 | $0.2728 | -50% |
 
 A warm on a skeleton change is never cheaper than leaving the write to the next turn: warm then turn is one 1-hour write and a read, the turn alone is the write. Each further change before the turn was another full write, and a change that leaves the skeleton text as it was (an editor saving through a rename) was a read. The trade is the same as for the startup warm: the turn after a change waits for the prefill.
+
+---
+
+## 2e · `benchmark_cli_providers.py` — What Codex Sends Per Question
+
+### Purpose
+
+Codex has no prompt cache that llm_light controls, and the codex CLI adds its own prompt in front of llm_light's: agent instructions, a skills list, permissions text, collaboration-mode and multi-agent text, an environment block and the tool schemas of every enabled feature. This measures what one llm_light question costs in codex's own token counts.
+
+### Methodology
+
+Builds the stdin text `CodexProvider.complete()` sends (SYSTEM_PROMPT, two retrieved files, the question, flattened by `transcript()`), runs it through the shipped `CodexProvider._run`, and reads the `usage` of codex's `turn.completed` event. `run_cli` is wrapped only to read that line, so argv, working directory and the instructions file are what a session uses. `--baseline` swaps in the untrimmed argv (`codex._ARGV_TAIL`). `agent_messages` counts agent messages per run; more than one means codex took extra model rounds, each of which re-sends the whole prompt.
+
+### Running
+
+```bash
+python tests/benchmarks/benchmark_cli_providers.py --runs 5 --baseline
+python tests/benchmarks/benchmark_cli_providers.py --runs 5
+```
+
+Live: it needs `codex login` and spends the quota codex is signed in with.
+
+### Results (2026-11-01, codex-cli 0.166.0, Windows)
+
+The same question ("find every way run_cli can leave an orphaned process or hang", runner.py and codex.py as context, 10,864 characters), 5 runs each:
+
+| Argv | Input tokens, mean | Range | Output tokens, mean | Runs with extra rounds |
+|---|---|---|---|---|
+| baseline (untrimmed) | 21,766 | 15,341 to 46,295 | 926 | 1 of 5 |
+| trimmed (shipped) | 9,190 | 9,190 to 9,190 | 621 | 0 of 5 |
+
+-58% input and -33% output tokens. A single-round call drops from about 15,700 to 9,190 input tokens, which is the trim itself (about 6,500 tokens of codex's own prompt per round). The rest of the gain is the extra rounds: before the benchmark existed, the same question through the same argv took extra rounds on 4 of 8 runs (mean 26,850 input tokens), so 5 of 13 untrimmed runs took them against 0 of 13 trimmed runs. Codex does not report what the extra round was; the trimmed instructions say there are no tools, which is the same fix agy needed (`gemini._PREAMBLE`). A one-line prompt ("Reply with the single word: ok") drops from 13,197 to 6,654 input tokens.
+
+What each switch removes, from `codex debug prompt-input` (characters, with the user's config): agent instructions 17,814 (replaced by `codex.INSTRUCTIONS`, 238), skills list 6,177, permissions text 9,061, collaboration mode 1,056, environment block 494; the feature switches removed 1,237 characters of tool schemas. Answer quality is not scored: one trimmed answer to the question above was read by hand (six concrete failure paths, each with a fix), and an edit request through the trimmed path still produced SEARCH/REPLACE blocks that `parse_edit_blocks()` applied. Codex reports `cached_input_tokens` on its own; llm_light does not show codex's usage yet.
 
 ---
 
