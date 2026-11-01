@@ -77,6 +77,19 @@ def test_display_hides_the_proxy_password():
     assert shown == "http://llm-fw:***@10.0.0.5:8080"
 
 
+def test_display_hides_a_token_given_as_the_user_name():
+    proxy.configure("http://s3cret@10.0.0.5:8080")
+    shown = proxy.display()
+    assert "s3cret" not in shown
+    assert shown == "http://***@10.0.0.5:8080"
+
+
+def test_bad_url_error_hides_the_token():
+    with pytest.raises(ValueError) as exc:
+        proxy.configure("socks5://s3cret@10.0.0.5:1080")
+    assert "s3cret" not in str(exc.value)
+
+
 # --- trust ----------------------------------------------------------------------
 
 def test_ssl_context_trusts_the_proxy_ca_and_the_public_roots():

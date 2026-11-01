@@ -106,11 +106,14 @@ def child_env(env: dict | None) -> dict | None:
 
 
 def _redact(url: str) -> str:
+    """url with its credentials hidden. A user name is kept only beside a
+    password (llm-fw:TOKEN@host); alone it may be the token (TOKEN@host)."""
     parts = urlsplit(url)
-    if parts.password is None:
+    if "@" not in parts.netloc:
         return url
     host = parts.netloc.rsplit("@", 1)[1]
-    return parts._replace(netloc=f"{parts.username}:***@{host}").geturl()
+    userinfo = f"{parts.username}:***" if parts.password is not None else "***"
+    return parts._replace(netloc=f"{userinfo}@{host}").geturl()
 
 
 def _write_bundle(ca_path: Path) -> str:
