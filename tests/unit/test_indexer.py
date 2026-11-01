@@ -426,16 +426,18 @@ class TestBackgroundNotices(unittest.TestCase):
             self.assertIn(os.path.basename(os.getcwd())[:10], narrow)
             self.assertNotIn("alt+ent", narrow.replace("alt+enter new line", ""))  # never cut mid-hint
 
-    def test_background_cache_warms_are_quiet(self):
-        print("\n  ▶ TestBackgroundNotices.test_background_cache_warms_are_quiet")
+    def test_watcher_refreshes_send_no_warm(self):
+        print("\n  ▶ TestBackgroundNotices.test_watcher_refreshes_send_no_warm")
+        # They used to warm (quietly); the next turn writes the entry instead.
         from llm_light import llm
         with patch.object(llm, "warm_cache") as warm, \
+             patch.object(llm, "notify"), \
              patch.object(llm, "_refresh_tree_only", return_value="tree"), \
              patch.object(llm, "_refresh_single_md", return_value=True), \
              patch.object(llm, "_assemble_skeleton", return_value="sk"):
             llm.refresh_skeleton_only()
             llm.refresh_md_file("README.md")
-        self.assertEqual([c.kwargs.get("quiet") for c in warm.call_args_list], [True, True])
+        warm.assert_not_called()
 
 
 class TestCacheFormat(unittest.TestCase):

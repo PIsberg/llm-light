@@ -571,7 +571,10 @@ Runs the real `warm_cache()` and `heartbeat()` against a fake API client and a f
 ```bash
 python tests/benchmarks/benchmark_cache_warming.py
 python tests/benchmarks/benchmark_cache_warming.py --idle 8
+python tests/benchmarks/benchmark_cache_warming.py --idle 0 --changes 3
 ```
+
+`--changes N` has the file watcher rebuild the skeleton N times between the two questions (a file added, deleted or renamed), each a new prefix in the fake cache.
 
 ### Results (2026-11-01)
 
@@ -592,6 +595,18 @@ Prefix 16,807 tokens. Prefix cost of the whole scenario (warms plus the two ques
 | pinned Opus (`--model opus`) | 8 h | 952 | 9 | $1.9345 | $0.1681 | -91% |
 
 Three causes, all in the old code. The heartbeat measured idle time from the last turn only, so once idle passed 240 s it warmed on every 30 s tick: 112 warms in an idle hour where one read inside the 1-hour TTL is enough (a read resets the timer). The startup warm wrote Sonnet's entry before any question was routed, a $0.067 write that no turn reads when the session opens on Haiku (33 of the 43 repo questions) or Opus. And `warm()` ignored the `--model` pin, so a pinned session kept Sonnet warm while its turns read Opus. No scenario costs more after the change. The one thing lost is latency: a session whose model is not pinned now pays the prefix write on its first question instead of in the background at startup. This is a cost model, not a live run.
+
+Skeleton changes between the two questions, no idle time, before and after the watcher stopped warming (`refresh_skeleton_only()` and `refresh_md_file()` used to call `warm_cache()`), prefix 16,841 tokens:
+
+| Session | Changes | Before | After | Change |
+|---|---|---|---|---|
+| routed, opens on Sonnet | 1 | $0.1364 | $0.1347 | -1% |
+| routed, opens on Opus | 1 | $0.2728 | $0.2695 | -1% |
+| routed, opens on Sonnet | 3 | $0.2711 | $0.1347 | -50% |
+| routed, opens on Opus | 3 | $0.5423 | $0.2695 | -50% |
+| pinned Opus | 3 | $0.5456 | $0.2728 | -50% |
+
+A warm on a skeleton change is never cheaper than leaving the write to the next turn: warm then turn is one 1-hour write and a read, the turn alone is the write. Each further change before the turn was another full write, and a change that leaves the skeleton text as it was (an editor saving through a rename) was a read. The trade is the same as for the startup warm: the turn after a change waits for the prefill.
 
 ---
 

@@ -19,7 +19,7 @@ This sequence diagram illustrates the complete flow from user query to response,
 ### Background Processes
 
 - **Heartbeat Daemon** - Wakes every 30 seconds and warms the cache once `CACHE_TTL_SECS` (55 minutes) have passed since the last turn or warm, so one cache read per idle hour keeps the 1-hour skeleton entry alive
-- **File Watcher** - Re-indexes changed files automatically
+- **File Watcher** - Re-indexes changed files automatically and rebuilds the skeleton when a file is added, deleted or renamed or a `.md` file changes. It sends no cache warm: the next turn writes the new skeleton's entry
 
 ### Interactive Commands
 
@@ -138,7 +138,7 @@ loop On file change
   alt .md file changed
     Main -> Skeleton : _refresh_single_md()
     Skeleton -> Skeleton : Rebuild skeleton
-    Main -> API : warm_cache()
+    note right : no warm: the next turn\nwrites the new entry
   else source file changed
     Main -> Main : reindex_file()
     note right : Re-chunk with tree-sitter\nRe-embed with sentence-transformers

@@ -12,8 +12,10 @@ warm that a turn never reads shows up as extra cost, and an entry the heartbeat
 let expire shows up as a turn that writes again.
 
 Scenario per row: start the session (startup warm), ask one question on the
-opening model at minute 1, stay idle for --idle hours with the heartbeat
-running, then ask a second question on the same model. Rows:
+opening model at minute 1, let the file watcher rebuild the skeleton
+--changes times (a file added, deleted or renamed; each is a new prefix), stay
+idle for --idle hours with the heartbeat running, then ask a second question on
+the same model. Rows:
 
   routed, opens on <model>   ROUTE_ONCE session, first question routes there
   pinned <model>             --model pins it; no routing
@@ -24,6 +26,7 @@ cost model of the warming policy, not a live measurement.
 
     python tests/benchmarks/benchmark_cache_warming.py
     python tests/benchmarks/benchmark_cache_warming.py --idle 8
+    python tests/benchmarks/benchmark_cache_warming.py --idle 0 --changes 3
 
 Not collected by pytest. Run from the repo root. No API key, no network.
 """
@@ -85,11 +88,12 @@ class FakeCache:
 
     def use(self, model, kind):
         p = config.MODEL_PRICES[model]
-        alive = model in self.used and self.clock.now - self.used[model] < TTL
+        key = (model, state.skeleton_context)   # a changed skeleton is a new prefix
+        alive = key in self.used and self.clock.now - self.used[key] < TTL
         rate = p["read"] if alive else p["write_1h"]
         self.cost[kind] += self.prefix * rate / 1e6
         self.calls[kind] += 1
-        self.used[model] = self.clock.now
+        self.used[key] = self.clock.now
 
     def create(self, **kwargs):           # client.messages.create, for warms
         self.use(kwargs["model"], "warm")
@@ -98,19 +102,23 @@ class FakeCache:
             cache_read_input_tokens=0, cache_creation={}))
 
 
-def run(opener, pinned, idle_hours, prefix):
+def run(opener, pinned, idle_hours, prefix, changes=0):
     clock = Clock()
     cache = FakeCache(clock, prefix)
     client = SimpleNamespace(messages=SimpleNamespace(create=cache.create))
-    saved = (state.stop_event, state.last_interaction, state.session_model, state.pinned_model)
+    saved = (state.stop_event, state.last_interaction, state.session_model, state.pinned_model,
+             state.skeleton_context)
+    trees = iter(f"skeleton v{i}" for i in range(1, changes + 1))
     try:
+        state.skeleton_context = "skeleton v0"
         state.stop_event = clock
         state.session_model, state.pinned_model = None, pinned
         with patch("time.time", clock.time), \
              patch.object(claude, "client", client), \
              patch.object(claude, "_accumulate_usage", lambda *a, **k: None), \
              patch.object(claude, "calculate_cost", lambda *a, **k: 0.0), \
-             patch("llm_light.config.ROUTE_ONCE", True):
+             patch("llm_light.config.ROUTE_ONCE", True), \
+             patch.object(llm, "_refresh_tree_only", lambda: next(trees)):
             state.last_interaction = clock.now
             llm.warm_cache(quiet=True)                    # startup, as full_refresh()
             for turn in range(2):
@@ -121,26 +129,32 @@ def run(opener, pinned, idle_hours, prefix):
                 cache.use(model, "turn")
                 state.last_interaction = clock.now
                 if turn == 0:
+                    for _ in range(changes):              # the file watcher, between questions
+                        clock.now += 5
+                        llm.refresh_skeleton_only()
                     clock.end = clock.now + idle_hours * 3600
                     main.heartbeat()
     finally:
-        state.stop_event, state.last_interaction, state.session_model, state.pinned_model = saved
+        (state.stop_event, state.last_interaction, state.session_model, state.pinned_model,
+         state.skeleton_context) = saved
     return cache
 
 
 def main_():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--idle", type=float, default=1.0, help="idle hours between the two questions (default 1)")
+    ap.add_argument("--changes", type=int, default=0,
+                    help="skeleton changes (files added, deleted or renamed) between the questions (default 0)")
     args = ap.parse_args()
     prefix = prefix_tokens()
-    print(f"prefix {prefix:,} tokens; idle {args.idle:g} h between two questions; "
+    print(f"prefix {prefix:,} tokens; idle {args.idle:g} h and {args.changes} skeleton changes between two questions; "
           f"heartbeat every {config.HEARTBEAT_SECS} s, warm after {config.CACHE_TTL_SECS} s")
     print(f"  {'session':28} {'warms':>6} {'warm $':>9} {'turn $':>9} {'total $':>9}")
     rows = [(f"routed, opens on {m.split('-')[1]}", m, None)
             for m in (config.MODEL_HAIKU, config.MODEL_SONNET, config.MODEL_OPUS)]
     rows += [(f"pinned {m.split('-')[1]}", None, m) for m in (config.MODEL_HAIKU, config.MODEL_OPUS)]
     for label, opener, pinned in rows:
-        c = run(opener, pinned, args.idle, prefix)
+        c = run(opener, pinned, args.idle, prefix, args.changes)
         total = c.cost["warm"] + c.cost["turn"]
         print(f"  {label:28} {c.calls['warm']:>6} {c.cost['warm']:>9.4f} {c.cost['turn']:>9.4f} {total:>9.4f}")
 

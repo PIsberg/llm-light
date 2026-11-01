@@ -215,5 +215,41 @@ class TestLintRetryKeepsTheCache(unittest.TestCase):
         self.assertLessEqual(len(_breakpoints(retry)), 3)
 
 
+class TestWatcherSendsNoWarm(unittest.TestCase):
+    """A skeleton change from the file watcher rebuilds the skeleton and sends
+    nothing. A warm there is never cheaper than letting the next turn write the
+    entry: warm-then-turn costs one 1-hour write plus a read, turn alone costs
+    the write. Every further change before that turn (a new file, an editor's
+    rename-on-save, a deleted temp file) was another full 1-hour write."""
+
+    def setUp(self):
+        self._saved = (state.skeleton_context, state.session_model)
+        state.session_model = config.MODEL_SONNET   # a model a warm would target
+
+    def tearDown(self):
+        state.skeleton_context, state.session_model = self._saved
+
+    def _requests(self, refresh):
+        # Through llm_light's wrappers, whose _sync_bindings() puts the real
+        # warm_cache back into llm (see TestWarmModel._warmed_models).
+        resp = MagicMock()
+        resp.usage = _usage()
+        with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create, \
+             patch.object(llm, "_refresh_tree_only", return_value="tree v2"), \
+             patch.object(llm, "_refresh_single_md", return_value=True), \
+             patch.object(llm, "_assemble_skeleton", return_value="skeleton v2"):
+            refresh()
+        return create.call_count
+
+    def test_a_new_or_deleted_file_sends_no_request(self):
+        self.assertEqual(self._requests(llm_light.refresh_skeleton_only), 0)
+        self.assertEqual(state.skeleton_context, "tree v2")
+
+    def test_a_changed_md_file_sends_no_request(self):
+        with patch.object(llm, "notify"):
+            self.assertEqual(self._requests(lambda: llm_light.refresh_md_file("README.md")), 0)
+        self.assertEqual(state.skeleton_context, "skeleton v2")
+
+
 if __name__ == "__main__":
     unittest.main()

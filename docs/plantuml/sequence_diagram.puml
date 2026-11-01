@@ -98,7 +98,7 @@ loop On file change
   alt .md file changed
     Main -> Skeleton : _refresh_single_md()
     Skeleton -> Skeleton : Rebuild skeleton
-    Main -> API : warm_cache()
+    note right : no warm: the next turn\nwrites the new entry
   else source file changed
     Main -> Main : reindex_file()
     note right : Re-chunk with tree-sitter\nRe-embed with sentence-transformers
