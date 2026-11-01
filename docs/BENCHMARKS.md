@@ -168,9 +168,29 @@ Live SWE-bench mode:
 3. Parse the `patch` field to extract gold files (the files modified by the fix).
 4. Chunk all source files with the same tree-sitter pipeline used by
    `llm_light.py` (method-level, with preamble injection).
-5. Embed with the same auto-selected sentence-transformers model.
-6. Query with the issue description text and rank chunks by cosine similarity.
+5. Embed with the model(s) the `--retrieval` mode names (default `auto`: the
+   model chosen by repo size, as before).
+6. Query with the issue description text and rank chunks: by cosine similarity
+   for `auto` and `dense`; for `static` and `hybrid`, through
+   `llm_light.retrieval.hybrid_scores` (see below).
 7. Measure Hit@K, Recall@K, Precision@K, and MRR at K = [5, 10, 15].
+
+Retrieval modes (`--retrieval`, #69):
+
+| Mode | Models | Ranking |
+|---|---|---|
+| `auto` (default, CI) | one, by repo size (MiniLM, mpnet, nomic) | cosine, unfiltered |
+| `dense` | `--dense-model` (default `DENSE_EMBED_MODEL`, mpnet) | cosine, unfiltered |
+| `static` | `FAST_EMBED_MODEL` | z-scores, `HYBRID_MIN_SCORE` floor, `HYBRID_SCORE_GAP` |
+| `hybrid` | `FAST_EMBED_MODEL` + `--dense-model` | fused z-scores, floors and gap, as llm_light's hybrid index |
+
+`static` and `hybrid` apply the shipped floors (a query neither model relates
+to retrieves nothing, recorded as `retrieved_nothing`) and drop chunks more than
+`HYBRID_SCORE_GAP` below the top fused score. They do not apply
+`_hybrid_select_pairs`' token budget and one-chunk-per-file pass, which need the
+chunk texts the embedding cache does not keep, so their curves are top-K like
+the other modes. Each model's vectors are cached separately, so `hybrid` after
+`dense` and `static` on the same repos embeds nothing new.
 
 ### Metrics
 
@@ -219,6 +239,11 @@ python tests/benchmarks/benchmark_retrieval.py --json
 
 # Use pre-cloned repos (avoids re-cloning)
 python tests/benchmarks/benchmark_retrieval.py --repos-dir /path/to/repos
+
+# The hybrid index against its parts (#69): mpnet alone, static alone, fused
+python tests/benchmarks/benchmark_retrieval.py --split dev --retrieval dense
+python tests/benchmarks/benchmark_retrieval.py --split dev --retrieval static
+python tests/benchmarks/benchmark_retrieval.py --split dev --retrieval hybrid
 ```
 
 ### Disk Space
@@ -263,8 +288,10 @@ Results: dev split  23 instances  K=[5,10,15]
   are dropped, which improves precision at the cost of recall.
 - Some SWE-bench instances touch only configuration files or test files that are
   outside the indexed extensions — these count as misses.
-- It reimplements chunking and ranks by cosine similarity alone; it does not
-  import `llm_light.retrieval`. Hybrid fusion, the test-file exclusion, the
+- It reimplements chunking. The default `auto` and `dense` modes rank by
+  cosine similarity alone and do not import `llm_light`; `static` and `hybrid`
+  use `llm_light.retrieval.hybrid_scores` and the configured floors and gap, but
+  not the token budget (see Methodology). The test-file exclusion, the
   working-tree boost and call-graph expansion never run here, so their env vars
   (`LLM_LIGHT_CALLGRAPH`, `LLM_LIGHT_WORKTREE_BOOST`) do not change its
   output. Measure those with `benchmark_models.py` (section 2b).

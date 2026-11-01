@@ -121,6 +121,13 @@ warnings.filterwarnings(
 
 import numpy as np
 
+# The default (auto) mode is standalone. The static, dense and hybrid modes
+# import llm_light for its models, floors and fusion; CI runs this file as a
+# script, so the repo root goes on the path.
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 # ---------------------------------------------------------------------------
 # Optional dependencies -- fail gracefully with clear instructions
 # ---------------------------------------------------------------------------
@@ -566,6 +573,31 @@ def retrieve_top_k(query_emb: np.ndarray, chunk_embs: np.ndarray,
     return [(chunk_ids[i], float(scores[i])) for i in top_idx]
 
 
+def hybrid_rank(fast_scores: np.ndarray, dense_scores, chunk_ids: list, k: int,
+                dense_model: str | None) -> list:
+    """Top-K (chunk_id, fused score) pairs the way llm_light's hybrid index ranks.
+
+    Uses llm_light.retrieval.hybrid_scores, so the per-model floors
+    (HYBRID_MIN_SCORE) and the z-score fusion are the shipped ones: a query
+    neither model relates to retrieves nothing. Chunks more than
+    HYBRID_SCORE_GAP below the top fused score are dropped, as in
+    _hybrid_select_pairs. That function's token budget and file-diversity
+    pass are not applied: they need chunk texts, which the embedding cache
+    does not keep, and the other modes are unbudgeted top-K curves too.
+    dense_scores None means static alone.
+    """
+    from llm_light import config, retrieval
+    dense_min = (config.HYBRID_MIN_SCORE.get(dense_model, config.MIN_SCORE)
+                 if dense_scores is not None else None)
+    fused = retrieval.hybrid_scores(fast_scores, dense_scores, dense_min=dense_min)
+    if fused is None:
+        return []
+    order = np.argsort(-fused)
+    top = float(fused[order[0]])
+    return [(chunk_ids[i], float(fused[i])) for i in order[:k]
+            if fused[i] >= top - config.HYBRID_SCORE_GAP]
+
+
 def chunk_id_to_file(chunk_id: str) -> str:
     """'path/to/file.py::method' -> 'path/to/file.py'. Whole-file IDs pass through."""
     return normalize_repo_path(chunk_id.split("::")[0])
@@ -699,6 +731,15 @@ def main() -> None:
                         help="Directory for caching cloned repos")
     parser.add_argument("--cache-dir", type=Path, default=Path(".benchmark_retrieval_cache"),
                         help="Directory for caching embeddings")
+    parser.add_argument("--retrieval", choices=["auto", "dense", "static", "hybrid"],
+                        default="auto",
+                        help="auto: one model chosen by repo size, as before (default); "
+                             "dense: --dense-model alone; static: the static model alone, "
+                             "with llm_light's floors and score gap; hybrid: static + "
+                             "--dense-model fused as llm_light's hybrid index does (#69)")
+    parser.add_argument("--dense-model", default=None,
+                        help="Dense model for --retrieval dense/hybrid "
+                             "(default: llm_light's DENSE_EMBED_MODEL)")
     parser.add_argument("--json", action="store_true",
                         help="Emit full results as JSON (to --output file or stdout)")
     parser.add_argument("--output", type=Path, default=None,
@@ -706,6 +747,35 @@ def main() -> None:
     args = parser.parse_args()
     if args.output:
         args.json = True
+    run_benchmark(args)
+
+
+def _load_embedder(model_name: str):
+    if model_name == "offline-token-overlap-v2":
+        return TokenOverlapEmbedder()
+    SentenceTransformer = require_sentence_transformers()
+    embedder = SentenceTransformer(model_name, trust_remote_code=True)
+    try:
+        if getattr(embedder, "max_seq_length", 0) > 2048:
+            embedder.max_seq_length = 2048
+    except AttributeError:  # read-only on the static model, which has no length limit
+        pass
+    return embedder
+
+
+def _models_for(mode: str, auto_model: str, dense_model: str) -> list:
+    """The embedding models a retrieval mode needs, static first for hybrid."""
+    from llm_light import config
+    return {"auto": [auto_model], "dense": [dense_model],
+            "static": [config.FAST_EMBED_MODEL],
+            "hybrid": [config.FAST_EMBED_MODEL, dense_model]}[mode]
+
+
+def run_benchmark(args) -> None:
+    dense_model = args.dense_model
+    if dense_model is None and args.retrieval in ("dense", "hybrid"):
+        from llm_light import config
+        dense_model = config.DENSE_EMBED_MODEL
 
     def log_progress(*a, **kw):
         if args.json:
@@ -718,6 +788,8 @@ def main() -> None:
     log_progress(f"\nRAG Retrieval Quality Benchmark")
     log_progress(f"Dataset: {benchmark_label}")
     log_progress(f"K values: {k_values}")
+    log_progress(f"Retrieval: {args.retrieval}"
+                 + (f" (dense model {dense_model})" if args.retrieval in ("dense", "hybrid") else ""))
     log_progress(f"Repos cache: {args.repos_dir}")
     log_progress(f"Embed cache: {args.cache_dir}\n")
 
@@ -743,8 +815,7 @@ def main() -> None:
     lang_config = load_language_config()
 
     results = []
-    embedder = None
-    current_model = None
+    embedders: dict = {}
 
     for idx, instance in enumerate(instances, 1):
         iid    = instance["instance_id"]
@@ -768,46 +839,57 @@ def main() -> None:
                 log_progress(f"  Skipping (clone failed).")
                 continue
 
-        # Count files to select embedding model
+        # Count files to select embedding model(s)
         n_files = count_indexable_files(repo_path)
-        model_name = instance.get("embed_model") or select_embed_model(n_files)
+        auto_model = instance.get("embed_model") or select_embed_model(n_files)
+        models = _models_for(args.retrieval, auto_model, dense_model)
 
-        # Load or create embedder (reuse if same model)
-        if model_name != current_model or embedder is None:
-            log_progress(f"  Loading embedder: {model_name}...", end="", flush=True)
-            if model_name == "offline-token-overlap-v2":
-                embedder = TokenOverlapEmbedder()
+        vectors = {}
+        for model_name in models:
+            if model_name not in embedders:
+                log_progress(f"  Loading embedder: {model_name}...", end="", flush=True)
+                embedders[model_name] = _load_embedder(model_name)
+                log_progress(" done")
+            cached = load_embedding_cache(args.cache_dir, repo, commit, model_name)
+            if cached is not None:
+                log_progress(f"  Embedding cache hit ({model_name}): {len(cached[0])} chunks "
+                             f"({n_files} files)")
             else:
-                SentenceTransformer = require_sentence_transformers()
-                embedder = SentenceTransformer(model_name, trust_remote_code=True)
-                if hasattr(embedder, "max_seq_length") and embedder.max_seq_length > 2048:
-                    embedder.max_seq_length = 2048
-            current_model = model_name
-            log_progress(" done")
-
-        # Load embedding cache or index repo
-        cached = load_embedding_cache(args.cache_dir, repo, commit, model_name)
-        if cached is not None:
-            chunk_ids, chunk_embs = cached
-            log_progress(f"  Embedding cache hit: {len(chunk_ids)} chunks ({n_files} files)")
-        else:
-            log_progress(f"  Indexing {n_files} files...", end="", flush=True)
-            chunk_ids, chunk_embs = index_repo(repo_path, lang_config, model_name, embedder)
-            if len(chunk_ids) == 0:
-                log_progress(" no indexable content, skipping.")
-                continue
-            save_embedding_cache(args.cache_dir, repo, commit, model_name, chunk_ids, chunk_embs)
-            log_progress(f" {len(chunk_ids)} chunks embedded and cached.")
-
-        # Embed problem statement
-        query_prefix = QUERY_PREFIX.get(model_name, "")
-        query_emb = embedder.encode(
-            query_prefix + stmt, normalize_embeddings=True, show_progress_bar=False
-        )
+                log_progress(f"  Indexing {n_files} files with {model_name}...", end="", flush=True)
+                cached = index_repo(repo_path, lang_config, model_name, embedders[model_name])
+                if len(cached[0]) == 0:
+                    log_progress(" no indexable content.")
+                    break
+                save_embedding_cache(args.cache_dir, repo, commit, model_name, *cached)
+                log_progress(f" {len(cached[0])} chunks embedded and cached.")
+            query_emb = embedders[model_name].encode(
+                QUERY_PREFIX.get(model_name, "") + stmt,
+                normalize_embeddings=True, show_progress_bar=False)
+            vectors[model_name] = (cached[0], cached[1] @ query_emb)
+        if len(vectors) != len(models):
+            log_progress("  Skipping (no indexable content).")
+            continue
 
         # Retrieve top-K (use max k to get all needed ranks at once)
         max_k = max(k_values)
-        top_pairs = retrieve_top_k(query_emb, chunk_embs, chunk_ids, max_k)
+        chunk_ids, scores = vectors[models[0]]
+        if args.retrieval in ("auto", "dense"):
+            order = np.argsort(-scores)[:max_k]
+            top_pairs = [(chunk_ids[i], float(scores[i])) for i in order]
+        else:
+            dense_scores = None
+            if args.retrieval == "hybrid":
+                # Same chunker, so the same ids; align by id in case the
+                # caches were written in a different file order.
+                d_ids, d_scores = vectors[models[1]]
+                pos = {cid: i for i, cid in enumerate(d_ids)}
+                keep = [i for i, cid in enumerate(chunk_ids) if cid in pos]
+                chunk_ids = [chunk_ids[i] for i in keep]
+                scores = scores[keep]
+                dense_scores = np.array([d_scores[pos[cid]] for cid in chunk_ids])
+            top_pairs = hybrid_rank(scores, dense_scores, chunk_ids, max_k,
+                                    models[1] if dense_scores is not None else None)
+        model_name = "+".join(models)
 
         # Compute metrics
         metrics = compute_instance_metrics(top_pairs, gold_files, k_values)
@@ -832,6 +914,8 @@ def main() -> None:
             "n_chunks":     len(chunk_ids),
             "n_files":      n_files,
             "embed_model":  model_name,
+            "retrieval":    args.retrieval,
+            "retrieved_nothing": not top_pairs,
             "metrics":      metrics,
         })
 
