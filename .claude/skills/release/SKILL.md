@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # Release llm-light
 
-A release is a **state machine**: each run reads where version `V` stands, does that phase, and stops at the next hand-off. The user re-runs `/release V` after each one. Uploads happen only through `.github/workflows/publish.yml` (trusted publishing); every local build is a check, never an upload. The workflow, the one-time setup and the manual steps this automates are in [docs/WORKFLOW.md](../../../docs/WORKFLOW.md#publishyml-publish-to-pypi).
+A release is a **state machine**: each run reads where version `V` stands, does that phase, and stops at the next hand-off. The user re-runs `/release V` after each one. The PyPI project is `llm-light-cli` (`pyproject.toml`'s `name`), and it installs the `llm-light` command. Uploads happen only through `.github/workflows/publish.yml` (trusted publishing); every local build is a check, never an upload. The workflow, the one-time setup and the manual steps this automates are in [docs/WORKFLOW.md](../../../docs/WORKFLOW.md#publishyml-publish-to-pypi).
 
 ## Irreversible steps
 
@@ -23,8 +23,8 @@ Work in the session scratchpad (`$S` below) for venvs, builds and notes, and run
    git fetch -q origin --tags
    git show origin/main:pyproject.toml > "$S/main-pyproject.toml"
    python scripts/release.py current --pyproject "$S/main-pyproject.toml"           # M
-   curl -s -o /dev/null -w '%{http_code}\n' https://test.pypi.org/pypi/llm-light/V/json  # T
-   curl -s -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/llm-light/V/json       # P
+   curl -s -o /dev/null -w '%{http_code}\n' https://test.pypi.org/pypi/llm-light-cli/V/json  # T
+   curl -s -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/llm-light-cli/V/json       # P
    git ls-remote --tags origin refs/tags/vV                                          # tag
    ```
 3. Pick the first row that matches:
@@ -59,8 +59,8 @@ Done when every check on the PR is green. Hand over: merge it with a merge commi
 3. Smoke-test the uploaded wheel in a fresh venv. Take only the wheel from TestPyPI; dependencies resolve from PyPI alone, because anyone can upload a higher-versioned `rich` or `numpy` to TestPyPI:
    ```bash
    py -3.12 -m venv "$S/venv-test-V"     # python3.12 on Linux and macOS
-   "$S/venv-test-V/Scripts/python" -m pip download --no-deps --index-url https://test.pypi.org/simple/ -d "$S/testpypi-V" llm-light==V
-   "$S/venv-test-V/Scripts/python" -m pip install "$S"/testpypi-V/llm_light-V-py3-none-any.whl
+   "$S/venv-test-V/Scripts/python" -m pip download --no-deps --index-url https://test.pypi.org/simple/ -d "$S/testpypi-V" llm-light-cli==V
+   "$S/venv-test-V/Scripts/python" -m pip install "$S"/testpypi-V/llm_light_cli-V-py3-none-any.whl
    ```
    A fresh upload can take a minute to appear on the simple index; retry the download. The install pulls PyTorch (about 1.5 GB): run it in the background.
 4. From a directory outside the checkout, run `llm-light --version` and `llm-light --help`.
@@ -86,8 +86,8 @@ Done when the run's conclusion is `success`. Continue to phase 5.
 
 ## 5. Verify
 
-1. `curl -s https://pypi.org/pypi/llm-light/V/json` lists a wheel and an sdist under `urls`.
-2. In a fresh venv, `pip install llm-light==V` from PyPI alone. From outside the checkout, `llm-light --version` prints `llm_light V`.
+1. `curl -s https://pypi.org/pypi/llm-light-cli/V/json` lists a wheel and an sdist under `urls`.
+2. In a fresh venv, `pip install llm-light-cli==V` from PyPI alone. From outside the checkout, `llm-light --version` prints `llm_light V`.
 3. `gh release view vV --json assets --jq '.assets[].name'` includes `sbom.json`, which `sbom.yml` attaches.
 
 Done when all three hold. Report the PyPI and release URLs and which of the three checks passed. Any check that could not run is reported as not run, never as passed.
