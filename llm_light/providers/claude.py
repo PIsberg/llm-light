@@ -193,7 +193,11 @@ def _make_cli_subprocess_call(
         real_user_md = (
             os.path.expanduser("~").replace("\\", "/") + "/.claude/CLAUDE.md"
         )
-        settings = {"claudeMdExcludes": [real_user_md]}
+        # The skeleton in --system-prompt already carries the project's
+        # CLAUDE.md and AGENTS.md in full; loaded again as memory they cost
+        # each call 3,204 input tokens here (claude 2.1.316, this repo).
+        from llm_light.skeleton import full_md_paths
+        settings = {"claudeMdExcludes": [real_user_md] + full_md_paths()}
         from llm_light import permissions
         # Bypass runs any command, chained or not, so no guard; plan mode
         # disallows both shells, so the guard would never fire.

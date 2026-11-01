@@ -33,7 +33,7 @@ This diagram shows the main components and their relationships within LLM Light.
 `llm_light` supports two distinct authentication paths:
 
 *   **API Key Mode**: Standard developer access. Authenticates via the `x-api-key` header. Billing is usage-based (USD).
-*   **OAuth/Pro Mode**: Accesses your Claude Pro subscription via the official CLI session. Authenticates via the `Authorization: Bearer` header. Billing is flat-rate (Tokens shown, USD hidden).
+*   **OAuth/Pro Mode**: Accesses your Claude Pro subscription via the official CLI session. Authenticates via the `Authorization: Bearer` header. Billing is flat-rate (Tokens shown, USD hidden). The CLI's settings (`claudeMdExcludes`) exclude your personal `~/.claude/CLAUDE.md` and the instruction files the skeleton already carries in full (`skeleton.full_md_paths()`: every non-empty `CLAUDE.md` and `AGENTS.md` in the tree), so the agent does not read the project's `CLAUDE.md` twice.
 
 ### Providers
 

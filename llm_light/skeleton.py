@@ -161,6 +161,26 @@ def _render_md_file(path: Path) -> str:
         return ""
 
 
+def full_md_paths() -> list[str]:
+    """Absolute paths, with forward slashes, of the instruction files
+    (CLAUDE.md, AGENTS.md) the skeleton carries in full.
+
+    The Claude CLI agent loads a project's CLAUDE.md as memory on its own, so
+    with the skeleton in its system prompt it read these twice; its settings
+    exclude them (claudeMdExcludes). Empty files render as nothing and are
+    left to the CLI.
+    """
+    root = Path.cwd()
+    # dict.copy() is atomic under the GIL, so a watcher-thread refresh cannot
+    # change the dict mid-iteration; state.lock is not reentrant, so not here.
+    parts = state._skeleton_md_parts.copy().items()
+    return sorted(
+        Path(os.path.abspath(root / name)).as_posix()
+        for name, text in parts
+        if text and Path(name).name.lower() in _FULL_MD_NAMES
+    )
+
+
 def _looks_structured_md(text: str) -> bool:
     return any(marker in text for marker in ("\n# ", "\n##", "\n###", "\n- ", "\n* ", "\n1. "))
 

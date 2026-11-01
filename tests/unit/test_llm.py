@@ -912,6 +912,53 @@ class TestCliSubprocessStreaming(unittest.TestCase):
         real = (_os.path.expanduser("~").replace("\\", "/") + "/.claude/CLAUDE.md")
         self.assertIn(real, seen.get("claudeMdExcludes", []))
 
+    def _cli_md_excludes(self, md_parts):
+        """claudeMdExcludes the CLI is given while the skeleton holds md_parts."""
+        import json as _json
+        import pathlib as _pl
+        import llm_light.state as _state
+        seen = {}
+
+        def fake_popen(cmd, **kwargs):
+            idx = cmd.index("--settings")
+            with open(cmd[idx + 1], encoding="utf-8") as fh:
+                seen.update(_json.load(fh))
+            return _fake_popen(['{"type":"result","subtype":"success","result":"","usage":{}}'])
+
+        with patch.object(_state, "_skeleton_md_parts", md_parts), \
+             patch("llm_light.llm.subprocess.Popen", side_effect=fake_popen), \
+             patch("shutil.which", return_value="/fake/bin/claude"), \
+             patch("sys.stdout", io.StringIO()):
+            _claude_mod._make_cli_subprocess_call("hi")
+        return seen.get("claudeMdExcludes", [])
+
+    def test_instruction_files_in_the_skeleton_are_not_loaded_again(self):
+        print("\n  ▶ TestCliSubprocessStreaming.test_instruction_files_in_the_skeleton_are_not_loaded_again")
+        import pathlib as _pl
+        # The skeleton (in --system-prompt) already carries CLAUDE.md and
+        # AGENTS.md in full; the CLI also loads the project's CLAUDE.md as
+        # memory, so each turn sent it twice. Measured live with claude
+        # 2.1.316 and --system-prompt: 11,235 input tokens with it loaded,
+        # 8,031 with it excluded.
+        root = _pl.Path.cwd()
+        excludes = self._cli_md_excludes({
+            "CLAUDE.md": "<!-- CLAUDE.md -->\nrules",
+            str(_pl.Path("sub") / "AGENTS.md"): "<!-- sub/AGENTS.md -->\nmore rules",
+            "README.md": "<!-- README.md -->\nexcerpt",
+        })
+        self.assertIn((root / "CLAUDE.md").as_posix(), excludes)
+        self.assertIn((root / "sub" / "AGENTS.md").as_posix(), excludes)
+        self.assertNotIn((root / "README.md").as_posix(), excludes)
+
+    def test_instruction_files_the_skeleton_lacks_still_load(self):
+        print("\n  ▶ TestCliSubprocessStreaming.test_instruction_files_the_skeleton_lacks_still_load")
+        import pathlib as _pl
+        # Before the skeleton is built, or for an empty CLAUDE.md the
+        # skeleton renders as nothing, the CLI's own copy is the only one.
+        root = _pl.Path.cwd()
+        self.assertNotIn((root / "CLAUDE.md").as_posix(), self._cli_md_excludes({}))
+        self.assertNotIn((root / "CLAUDE.md").as_posix(), self._cli_md_excludes({"CLAUDE.md": ""}))
+
     def test_cli_runs_in_its_own_session_on_posix(self):
         print("\n  ▶ TestCliSubprocessStreaming.test_cli_runs_in_its_own_session_on_posix")
         # #115: kill_process_tree kills the CLI's process group on POSIX, so
