@@ -23,7 +23,7 @@ from llm_light.ui import (
 )
 import llm_light.state as state
 from llm_light import providers
-from llm_light.providers.base import NotLoggedIn, AGENT, EFFORT, TOP_TIER
+from llm_light.providers.base import NotLoggedIn, AGENT, EFFORT, TOP_TIER, USD_BUDGET, USAGE
 from llm_light.skeleton import build_skeleton, _refresh_tree_only, _assemble_skeleton, _refresh_single_md
 from llm_light.indexer import index_files
 from llm_light.retrieval import retrieve, record_retrieval
@@ -395,6 +395,10 @@ def _accumulate_compression_stats(info: dict, model=None) -> None:
     block is new on nearly every query (unique top-K chunks), so its first
     trip through the API is a cache write. The input rate would overstate
     savings; the read rate would understate them.
+
+    A provider without dollar pricing (no USD_BUDGET or USAGE capability,
+    Gemini and Codex) keeps the token counts but adds no dollars:
+    model_prices() would fall back to Claude's rates for its models.
     """
     if not info or info.get("skipped"):
         return
@@ -402,7 +406,9 @@ def _accumulate_compression_stats(info: dict, model=None) -> None:
     delta = max(0, info["tokens_before"] - info["tokens_after"])
     if delta == 0:
         return
-    dollars = (delta / 1_000_000.0) * model_prices(model)["write"]
+    provider = providers.active()
+    priced = provider.has(USD_BUDGET) and provider.has(USAGE)
+    dollars = (delta / 1_000_000.0) * model_prices(model)["write"] if priced else 0.0
     with state.lock:
         state.global_stats["total_tokens_pre_compress"]    += info["tokens_before"]
         state.global_stats["total_tokens_post_compress"]   += info["tokens_after"]
