@@ -116,12 +116,14 @@ def test_fr011_output_without_agent_message_raises_provider_error():
         _complete(out)
     assert "codex" in str(exc.value)
     assert "output could not be parsed" in str(exc.value)
+    assert str(exc.value).endswith("Update codex (npm install -g @openai/codex) and run it on its own to see what it prints.")  # #113: every message names a remedy
 
 
 def test_fr011_empty_stdout_raises_provider_error():
     with pytest.raises(ProviderError) as exc:
         _complete("")
     assert "output could not be parsed" in str(exc.value)
+    assert str(exc.value).endswith("Update codex (npm install -g @openai/codex) and run it on its own to see what it prints.")  # #113: every message names a remedy
 
 
 def test_us1s2_complete_stdin_is_the_transcript_joined_by_blank_line():

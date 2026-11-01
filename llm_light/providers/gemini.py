@@ -18,6 +18,8 @@ SETTINGS = json.dumps({
 })
 # agy's own settings file; only its `model` is read (#118).
 _USER_SETTINGS = (".gemini", "antigravity-cli", "settings.json")
+# An unreadable reply most likely means an agy release changed its stream-json events.
+_PARSE_REMEDY = "Update agy (agy update) and run it on its own to see what it prints."
 # Where agy keeps per-conversation state, its plan artifacts included (#123).
 _BRAIN = (".gemini", "antigravity-cli", "brain")
 
@@ -124,7 +126,8 @@ def _check_tools(stdout: str, result: dict, home=None) -> None:
         if kind:
             done[kind] = done.get(kind, 0) + 1
         if not kind or done[kind] > denials.get(kind, 0):
-            raise ProviderError(f"agy ran {tool}, which llm_light forbids")
+            raise ProviderError(f"agy ran {tool}, which llm_light forbids. Ask again; if it "
+                                "keeps happening, choose another --provider.")
 
 
 def _result_reply(stdout: str, home=None) -> str:
@@ -137,7 +140,8 @@ def _result_reply(stdout: str, home=None) -> str:
         if event.get("event") == "result" and isinstance(event.get("result"), dict):
             result = event["result"]
     if result is None:
-        raise ProviderError("agy output could not be parsed: no result event in the output")
+        raise ProviderError("agy output could not be parsed: no result event in the output. "
+                            + _PARSE_REMEDY)
     if result.get("status") != "SUCCESS":
         raise ProviderError(f"agy failed: {result.get('error') or result.get('status')}. "
                             f"If you are not signed in, run agy once and sign in.")
@@ -149,7 +153,7 @@ def _result_reply(stdout: str, home=None) -> str:
             name = denied[0].get("display_name") or denied[0].get("action")
             raise ProviderError(f"agy tried {name} and returned nothing: llm_light denies "
                                 f"agy's tools, so the request cannot be answered.")
-        raise ProviderError("agy output could not be parsed: empty response")
+        raise ProviderError("agy output could not be parsed: empty response. " + _PARSE_REMEDY)
     return reply.strip()
 
 

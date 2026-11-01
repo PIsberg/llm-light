@@ -148,10 +148,11 @@ default provider's name uses `providers.DEFAULT`.
 |---|---|
 | tool missing (exit 1; Gemini's also from `_run`) | `agy not found. Install the Antigravity CLI: https://antigravity.google` / `codex CLI not found. Install it: npm install -g @openai/codex` |
 | not logged in | Gemini: no startup check; the run's `ProviderError` (a non-`SUCCESS` result) names `result.error` and the remedy `run agy once and sign in` / Codex (exit 1): `codex is not logged in. Run: codex login` |
-| binary gone mid-session (`FileNotFoundError` in `run_cli`) | `<p> CLI not found` |
+| binary gone mid-session (`FileNotFoundError` in `run_cli`) | `<bin> CLI not found. Install it and log in, or choose another --provider.` |
 | non-zero exit | `<p> failed (exit <n>): <last non-empty stderr line>. Run <bin> on its own to see the full error.`, where `<bin>` is the binary that ran, `Path(argv[0]).stem` (Gemini: `Run agy on its own ...`) |
-| timeout | `<p> timed out after <s> s` |
-| unparseable or empty output | `<p> output could not be parsed: <reason>` |
+| timeout | `<p> timed out after <s> s. Run <bin> on its own to see why.` |
+| unparseable or empty output | `<p> output could not be parsed: <reason>. ` then the remedy (#113): Gemini `Update agy (agy update) and run it on its own to see what it prints.` / Codex `Update codex (npm install -g @openai/codex) and run it on its own to see what it prints.` |
+| Gemini ran a forbidden tool | `agy ran <tool>, which llm_light forbids. Ask again; if it keeps happening, choose another --provider.` |
 | route line | `◆  <p>  ·  CLI default model  ·  effort unavailable for <p>`, plus `  ·  top tier unavailable for <p>` when routed to the top tier |
 | `/budget <x>` | `Budget unavailable for <p>: it has no dollar pricing. No cap set.` |
 | turn stats, `/cost`, exit footer, status bar | `tokens, cost and caching unavailable for <p>` |
