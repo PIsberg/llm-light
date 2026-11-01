@@ -37,7 +37,7 @@ comparison, and this document now reflects that.
 | `benchmark_router.py` | Effort tier and model the router picks for each question | No | Free (static model download on first run) |
 | `benchmark_session_cache.py` | Session cost of four routing policies under a prompt-cache model | No | Free (static model download on first run) |
 | `benchmark_cache_warming.py` | What the startup warm and the idle heartbeat spend, run through the real `heartbeat()` and `warm_cache()` | No | Free |
-| `benchmark_cli_providers.py` | Tokens codex reports for one question through the shipped `CodexProvider._run`, trimmed or `--baseline` | `codex login` | Subscription or key usage, about 10k to 46k input tokens per run |
+| `benchmark_cli_providers.py` | Tokens codex (or agy, `--provider gemini`) reports for one question through the shipped provider's `_run`, as shipped or `--baseline` | `codex login`, or a signed-in agy | Subscription or key usage, about 4k to 46k input tokens per run |
 | `benchmark_cost.py` | Real-world cost savings vs naive baseline | Yes | ~$0.05–$0.50 |
 | `benchmark_claude_code.py` | Claude Code vs `llm_light` vs naive baseline | Yes | Varies with live API/tool runs |
 
@@ -611,7 +611,7 @@ A warm on a skeleton change is never cheaper than leaving the write to the next 
 
 ---
 
-## 2e · `benchmark_cli_providers.py` — What Codex Sends Per Question
+## 2e · `benchmark_cli_providers.py` — What Codex and agy Send Per Question
 
 ### Purpose
 
@@ -642,6 +642,25 @@ The same question ("find every way run_cli can leave an orphaned process or hang
 -58% input and -33% output tokens. A single-round call drops from about 15,700 to 9,190 input tokens, which is the trim itself (about 6,500 tokens of codex's own prompt per round). The rest of the gain is the extra rounds: before the benchmark existed, the same question through the same argv took extra rounds on 4 of 8 runs (mean 26,850 input tokens), so 5 of 13 untrimmed runs took them against 0 of 13 trimmed runs. Codex does not report what the extra round was; the trimmed instructions say there are no tools, which is the same fix agy needed (`gemini._PREAMBLE`). A one-line prompt ("Reply with the single word: ok") drops from 13,197 to 6,654 input tokens.
 
 What each switch removes, from `codex debug prompt-input` (characters, with the user's config): agent instructions 17,814 (replaced by `codex.INSTRUCTIONS`, 238), skills list 6,177, permissions text 9,061, collaboration mode 1,056, environment block 494; the feature switches removed 1,237 characters of tool schemas. Answer quality is not scored: one trimmed answer to the question above was read by hand (six concrete failure paths, each with a fix), and an edit request through the trimmed path still produced SEARCH/REPLACE blocks that `parse_edit_blocks()` applied. Codex reports `cached_input_tokens` on its own; llm_light's turn stats show the same counts for every codex turn (#148).
+
+
+### agy (Gemini), 2026-11-02, agy 1.4.12, Windows
+
+`--provider gemini` runs the same prompt through the shipped `GeminiProvider._run` and reads the `usage` on agy's `result` event (`input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens`). `--baseline` runs agy's default agent (no `llm-light` agent file, no `--agent`), which is what llm_light sent before #149. `tool_steps` counts finished tool calls, and `error` is 1 when the shipped path refused the run.
+
+```bash
+python tests/benchmarks/benchmark_cli_providers.py --provider gemini --runs 5 [--baseline]
+python tests/benchmarks/benchmark_cli_providers.py --provider gemini --runs 5 --question "What does empty_temp_dir do?" [--baseline]
+```
+
+| Question | Agent | Input tokens, mean | Output tokens, mean | Thinking, mean | Tool steps |
+|---|---|---|---|---|---|
+| "What does empty_temp_dir do?" (routes low) | default (baseline) | 11,078 | 698 | 518 | 0 of 5 runs |
+| same | `llm-light`, no tools (shipped) | 4,072 | 615 | 441 | 0 of 5 runs |
+| run_cli failure paths, step by step (routes high) | default (baseline) | 11,094 | 12,537 | 9,699 | 0 of 5 runs |
+| same | `llm-light`, no tools (shipped) | 4,600 | 16,239 | 12,542 | 0 of 5 runs |
+
+The shipped agent sends about 6,500 fewer input tokens per question: agy's own agent prompt and tool schemas. One easy-question run read 2,542 tokens from agy's cache, which is why its mean is below 4,580. On the hard question the output rose 30%, all of it thinking; output varies a lot from run to run (8,932 to 16,929 on the baseline), so five runs put that rise near the edge of noise, and it is followed up in #158. The change ships for #122: on a prompt that asks for a web search, the default agent ran `search_web` 3 times at 34,648 input tokens and the `llm-light` agent ran no tool in 5 of 5 runs at 1,249. Three edit requests through the shipped path each returned a SEARCH/REPLACE block that `parse_edit_blocks()` read.
 
 ---
 
