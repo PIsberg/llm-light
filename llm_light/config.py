@@ -144,13 +144,6 @@ RELATIVE_SCORE_FLOOR    = 0.60    # drop chunks below this fraction of the top c
 # similarities are averaged. Measured with tests/benchmarks/benchmark_models.py.
 # LLM_LIGHT_HYBRID=0 restores the single dense model chosen by auto_tune().
 HYBRID_RETRIEVAL   = env_get("HYBRID", "1") != "0"
-# After retrieval, add the best chunk's direct callers and callees (see
-# callgraph.py) while the token budget has room. Off by default: in
-# benchmark_models.py --callgraph it sent 20-28% more tokens at medium to max
-# for no extra right-file hits. fetch_chunk still returns callers and callees on
-# request. LLM_LIGHT_CALLGRAPH=1 turns it on.
-CALL_GRAPH         = env_get("CALLGRAPH", "0") == "1"
-CALL_GRAPH_MAX     = 3     # most related chunks added per query
 # Keep the model the first turn routes to for the whole session (effort is
 # still routed per turn); /clear re-routes. On by default, the developer's
 # choice: in benchmark_session_cache.py a session that opens on Sonnet cost

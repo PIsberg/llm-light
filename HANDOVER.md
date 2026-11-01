@@ -19,7 +19,7 @@ History: the first sessions had no shell tool, and llm_light auto-committed thei
 | # | Feature | Status | Where |
 |---|---|---|---|
 | 1 | `fetch_chunk(id)` tool: up to 5 method bodies by `path::symbol` or bare name, with callers and callees | Shipped | `llm_light/tools.py` |
-| 2 | Call-graph retrieval expansion | Built, **off by default**: no recall gain, 20-28% more tokens. `LLM_LIGHT_CALLGRAPH=1` turns it on | `llm_light/callgraph.py`, `retrieval.py::_related_pairs` |
+| 2 | Call-graph retrieval expansion | **Removed** (#86): no recall gain, 20-28% more tokens, and a 2 to 2 split on live answer quality. The graph stays for `fetch_chunk` | `llm_light/callgraph.py` |
 | 3 | Working-tree boost for modified, staged or untracked files. Hybrid path only | Shipped, tuned to 1.0 | `retrieval.py` (`_modified_paths`, `_boost_modified_chunks`) |
 | 4 | Cache-aware routing | Effort: fixed top-level effort plus an effort message per turn. Model: the first question's model is kept by default, the developer's choice (`ROUTE_ONCE`; +71% opening on Sonnet, -91% opening on Haiku; `LLM_LIGHT_ROUTE_ONCE=0` routes per turn). Pinning to the strongest model cost 48-67% more and was rejected | `llm.py::_apply_effort`, `_finalize_route`, `warm_cache` |
 | 5 | Run only the affected tests after an edit | Shipped | `llm_light/affected_tests.py`, hook in `editor.apply_edits` |
@@ -31,7 +31,7 @@ History: the first sessions had no shell tool, and llm_light auto-committed thei
 
 All offline, with `tests/benchmarks/benchmark_models.py` on this repo's 43 questions. Tables are in `docs/BENCHMARKS.md` section 2b; result lines are in `TOKEN-SAVINGS.md`.
 
-- **Call graph (`--callgraph`):** right-file hits unchanged at every budget. Mean tokens: medium 1,802 to 2,169, high 2,829 to 3,503, max 3,586 to 4,603. Hence off by default.
+- **Call graph (`--callgraph`, since removed with the expansion, #86):** right-file hits unchanged at every budget. Mean tokens: medium 1,802 to 2,169, high 2,829 to 3,503, max 3,586 to 4,603. Hence off by default.
 - **Worktree boost (`--worktree`):** with the answering file modified, identifier hits go from 19/25 to 25/25 at 1.0. With an unrelated file modified, nothing is lost up to 1.0, and 1.5 drops paraphrase from 11/12 to 9/12. Hence 1.0.
 - **`fetch_chunk` and `shell` schemas:** about 320 more tokens per request (estimated from characters), in the cached prefix. Whether `fetch_chunk` saves reads or turns needs live API runs (#85).
 

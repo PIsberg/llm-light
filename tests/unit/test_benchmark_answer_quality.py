@@ -84,17 +84,16 @@ def _route(q):
 
 
 def test_models_experiment_pairs_haiku_with_sonnet_on_sonnet_routed_questions(bench):
-    pairs = bench.pairs("models", _QUESTIONS, [], _route)
+    pairs = bench.pairs("models", _QUESTIONS, _route)
     assert [p["question"]["question"] for p in pairs] == ["q-sonnet-medium", "q-sonnet-high"]
     medium = pairs[0]
     assert medium["x"]["model"] == config.MODEL_HAIKU and medium["y"]["model"] == config.MODEL_SONNET
     # Same retrieval on both sides: only the model differs.
     assert medium["x"]["budget"] == medium["y"]["budget"] == config._RETRIEVAL_BUDGET["medium"]
-    assert medium["x"]["callgraph"] is medium["y"]["callgraph"] is False
 
 
 def test_budget_experiment_compares_medium_and_high_budget_on_high_routed_questions(bench):
-    pairs = bench.pairs("budget", _QUESTIONS, [], _route)
+    pairs = bench.pairs("budget", _QUESTIONS, _route)
     assert [p["question"]["question"] for p in pairs] == ["q-sonnet-high"]
     x, y = pairs[0]["x"], pairs[0]["y"]
     assert (x["budget"], y["budget"]) == (config._RETRIEVAL_BUDGET["medium"],
@@ -103,17 +102,6 @@ def test_budget_experiment_compares_medium_and_high_budget_on_high_routed_questi
     # only the number of chunks selected differs.
     assert x["effort"] == y["effort"] == "high"
     assert x["model"] == y["model"] == config.MODEL_SONNET
-
-
-def test_callgraph_experiment_runs_usage_questions_at_least_at_medium(bench):
-    usage = [{"question": "q-haiku-low", "file": "a.py", "kind": "usage", "callers": ["x::f"]}]
-    pairs = bench.pairs("callgraph", _QUESTIONS, usage, _route)
-    assert len(pairs) == 1
-    x, y = pairs[0]["x"], pairs[0]["y"]
-    # Expansion is skipped at low effort, so a low route would compare two
-    # identical contexts.
-    assert x["effort"] == y["effort"] == "medium"
-    assert (x["callgraph"], y["callgraph"]) == (False, True)
 
 
 # --- the live call ----------------------------------------------------------

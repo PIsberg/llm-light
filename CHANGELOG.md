@@ -17,6 +17,7 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ### Removed
 
+- **Call-graph retrieval expansion (`LLM_LIGHT_CALLGRAPH`) is gone (#86).** It was off by default. It never sent an answering file retrieval had missed, it added 20-28% more tokens, and in a live answer-quality run (`benchmark_answer_quality.py`) it won 2 and lost 2 of 8 how-is-X-used questions for 92% more context. `fetch_chunk` still lists a function's callers and callees on request.
 - **The `claude_light` names are gone (#119).** The `claude-light` command, `claude_light.py`, the `CLAUDE_LIGHT_*` environment variables and the `~/.claude_light_*` home files are no longer read or copied; 0.1.0 kept them for one release. Run `llm-light`, rename the variables to `LLM_LIGHT_*` and the files to `~/.llm_light_*`. Startup prints one line for each old setting or file it still finds, so a renamed-away `CLAUDE_LIGHT_PROXY` does not silently stop routing traffic through the proxy.
 
 ## [0.1.0]

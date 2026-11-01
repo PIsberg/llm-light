@@ -125,8 +125,6 @@ def main():
     ap.add_argument("--cache-dir", type=Path, default=ROOT / ".llm_light_cache" / "bench")
     ap.add_argument("--sweep", action="store_true", help="also sweep HYBRID_SCORE_GAP and the floors")
     ap.add_argument("--budgets", action="store_true", help="also report recall and tokens per effort budget")
-    ap.add_argument("--callgraph", action="store_true",
-                    help="also report each effort budget with and without call-graph expansion")
     ap.add_argument("--worktree", action="store_true",
                     help="also report the working-tree boost with the right file, or an unrelated "
                          "file, marked as modified")
@@ -190,24 +188,6 @@ def main():
             report(r)
             print(f"{'':34} tokens sent median {np.median(r['tokens_sent']):.0f}"
                   f"  mean {np.mean(r['tokens_sent']):.0f}")
-
-    if args.callgraph:
-        m = config.DENSE_EMBED_MODEL
-        print(f"\nCall-graph expansion, static + {m} (tokens include the added callers/callees):")
-        for effort, budget in config._RETRIEVAL_BUDGET.items():
-            base = hybrid(m, budget=budget)
-
-            def expanded(i, k, base=base, budget=budget, effort=effort):
-                top = base(i, k)
-                with mock.patch.object(config, "CALL_GRAPH", True):
-                    return top + retrieval._related_pairs(top, budget, effort)
-
-            for label, select in (("off", base), ("on", expanded)):
-                r = evaluate(f"{effort} budget {budget}, graph {label}", ids, files, questions,
-                             select, budget=budget)
-                report(r)
-                print(f"{'':34} tokens sent median {np.median(r['tokens_sent']):.0f}"
-                      f"  mean {np.mean(r['tokens_sent']):.0f}")
 
     if args.worktree:
         m = config.DENSE_EMBED_MODEL

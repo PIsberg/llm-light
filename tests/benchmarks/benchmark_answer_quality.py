@@ -12,8 +12,6 @@ Experiments (each pairs a variant x with a variant y on the same question):
   budget     High-routed questions with the medium retrieval budget (x) and the
              high one (y), both rendered at high effort. Can the high budget drop
              to 3,000 tokens? (issue #77)
-  callgraph  How-is-X-used questions (tests/fixtures/usage_questions.json) with
-             call-graph expansion off (x) and on (y). (issue #86)
   toptier    No judge: one question each on Fable 5.1 and Opus 5.5 through the
              real agent path in plan mode (tools on, read-only), twice, to see the
              model answer, use its tools, and read the cache on the second call.
@@ -22,9 +20,10 @@ Experiments (each pairs a variant x with a variant y on the same question):
 How a pair is built and scored:
 
   * Retrieval is llm_light's own: hybrid static + dense scores, test chunks
-    excluded, _hybrid_select_pairs, then retrieval._finish to render (and to add
-    callers and callees when CALL_GRAPH is on). The working-tree boost is left
-    out so a dirty checkout cannot move the results.
+    excluded, _hybrid_select_pairs, then retrieval._finish to render. The
+    working-tree boost is left out so a dirty checkout cannot move the results.
+    (A callgraph experiment answered #86 on 2026-11-02 and went with the
+    expansion it measured; its results are in docs/BENCHMARKS.md section 2f.)
   * The request is built as chat() builds it (the skeleton system blocks, the
     retrieved context, the question block), flattened by transcript(), and sent
     with providers.claude._make_cli_subprocess_call. Tools are off, so the answer
@@ -32,7 +31,7 @@ How a pair is built and scored:
     agent reading files. The CLI path carries no effort, so every answer runs at
     the CLI's default effort.
   * The judge (Opus 5.5 by default, tools off) sees the question, a reference
-    (the answering file's source, or the ground-truth callers), and the two
+    (the answering file's source), and the two
     answers, then scores each 0-2 and names a winner. Each pair is judged twice
     with the answers swapped; a side wins only when both orders agree.
 
@@ -55,7 +54,6 @@ import re
 import sys
 import time
 from pathlib import Path
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -66,9 +64,8 @@ from llm_light.providers import claude  # noqa: E402
 from llm_light.providers.base import transcript  # noqa: E402
 
 REPO_FIXTURE = ROOT / "tests" / "fixtures" / "repo_questions.json"
-USAGE_FIXTURE = ROOT / "tests" / "fixtures" / "usage_questions.json"
 DEFAULT_OUT = ROOT / ".llm_light_cache" / "bench" / "answer_quality.jsonl"
-EXPERIMENTS = ("models", "budget", "callgraph")
+EXPERIMENTS = ("models", "budget")
 JUDGE_MODEL = config.MODEL_OPUS
 REFERENCE_CHARS = 16_000
 TOPTIER_QUESTION = "Which function decides the model and effort level a question gets, and how?"
@@ -136,30 +133,19 @@ def reference_for(q) -> str:
     source = (ROOT / q["file"]).read_text(encoding="utf-8", errors="replace")
     if len(source) > REFERENCE_CHARS:
         source = source[:REFERENCE_CHARS] + "\n... (truncated)"
-    head = ""
-    if q.get("callers"):
-        head = "Every function that calls it (ground truth):\n" + "\n".join(q["callers"]) + "\n\n"
-    return f"{head}Source of {q['file']}:\n{source}"
+    return f"Source of {q['file']}:\n{source}"
 
 
 # --- pairs ------------------------------------------------------------------
 
-def _arm(model, effort, budget, callgraph=False):
-    return {"model": model, "effort": effort, "budget": budget, "callgraph": callgraph}
+def _arm(model, effort, budget):
+    return {"model": model, "effort": effort, "budget": budget}
 
 
-def pairs(experiment, questions, usage_questions, route):
+def pairs(experiment, questions, route):
     """The (question, x, y) pairs for one experiment. route(q) -> (model, effort, max_tokens)."""
     budgets = config._RETRIEVAL_BUDGET
     out = []
-    if experiment == "callgraph":
-        for q in usage_questions:
-            model, effort, _ = route(q["question"])
-            effort = effort if effort != "low" else "medium"
-            out.append({"experiment": experiment, "question": q,
-                        "x": _arm(model, effort, budgets[effort], False),
-                        "y": _arm(model, effort, budgets[effort], True)})
-        return out
     for q in questions:
         if q["kind"] == "unrelated":
             continue
@@ -210,8 +196,7 @@ class Retriever:
         budget = arm["budget"]
         k = max(2, round(state.TOP_K * budget / config.TARGET_RETRIEVED_TOKENS))
         top = retrieval._hybrid_select_pairs(self.ids, fused, budget, k)
-        with mock.patch.object(config, "CALL_GRAPH", arm["callgraph"]):
-            return retrieval._finish(top, budget, arm["effort"])
+        return retrieval._finish(top, arm["effort"])
 
 
 def _request(skeleton, retrieved_ctx, question, model, effort) -> dict:
@@ -287,8 +272,7 @@ def summarize(rows) -> dict:
     return out
 
 
-_LABELS = {"models": ("Haiku", "Sonnet"), "budget": ("medium budget", "high budget"),
-           "callgraph": ("graph off", "graph on")}
+_LABELS = {"models": ("Haiku", "Sonnet"), "budget": ("medium budget", "high budget")}
 
 
 def report(rows) -> None:
@@ -364,14 +348,13 @@ def main(argv=None) -> int:
             return 0
 
     repo = json.loads(REPO_FIXTURE.read_text(encoding="utf-8"))["questions"]
-    usage = json.loads(USAGE_FIXTURE.read_text(encoding="utf-8"))["questions"]
     route = _route_with_static_embedder()
-    retriever = Retriever(repo + usage, args.cache_dir)
+    retriever = Retriever(repo, args.cache_dir)
     wanted = EXPERIMENTS if args.experiment == "all" else (args.experiment,)
     done = {_key(r) for r in load_rows(args.out)}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     for experiment in wanted:
-        todo = pairs(experiment, repo, usage, route)
+        todo = pairs(experiment, repo, route)
         if args.limit:
             todo = todo[:args.limit]
         print(f"{experiment}: {len(todo)} pairs", flush=True)
