@@ -26,11 +26,12 @@ end note
 
 note right of Chunks
   Breakpoint 3: cache_control
-  Stable for same-code questions
+  Read by tool rounds and lint
+  retries within the same turn
 end note
 
-rectangle "Full: $3.00" as FullPrice
-rectangle "Cache Read: $0.30" as CacheRead
+rectangle "Full: $2.00 (Sonnet 5.5)" as FullPrice
+rectangle "Cache Read: $0.10" as CacheRead
 
 FullPrice ..> SystemPrompt
 FullPrice ..> Query

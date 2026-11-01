@@ -765,8 +765,16 @@ class ClaudeProvider(Provider):
         from llm_light import tools as _tools
         with state.lock:
             skeleton = state.skeleton_context
-            # Set after the first turn when ROUTE_ONCE is on: warm what turns read.
-            model = state.session_model or MODEL
+            # The cache is per model, so warm the one the next turn reads: the
+            # --model or /model pin, else the session model ROUTE_ONCE set on
+            # the first turn (or --continue restored).
+            model = state.pinned_model or state.session_model
+        if model is None:
+            # No turn yet, or LLM_LIGHT_ROUTE_ONCE=0: the next turn's model is
+            # unknown. A guess is a 1-hour write that a turn on another model
+            # never reads (most questions route to Haiku, not MODEL), and the
+            # first turn writes its own model's entry anyway.
+            return
         try:
             response = client.messages.create(
                 model=model,

@@ -26,7 +26,7 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `GLOBAL_STATS_FILE` | Path to global savings persistence (`~/.llm_light_stats.json`; override with `LLM_LIGHT_STATS_FILE`) |
 | `SESSION_DIR` | Where `session.py` saves each project's conversation for `--continue`, one file per project named by a hash of its path (`~/.llm_light_sessions`; override with `LLM_LIGHT_SESSION_DIR`). In the home directory so a cloned repo cannot supply a conversation |
 | `HEARTBEAT_SECS` | How often the heartbeat thread wakes (default 30) |
-| `CACHE_TTL_SECS` | Idle seconds before the heartbeat warms the cache (default 240) |
+| `CACHE_TTL_SECS` | Seconds since the last turn or warm before the heartbeat warms the cache again (default 3300, five minutes inside the skeleton's 1-hour TTL) |
 | `MODEL_HAIKU` / `MODEL_SONNET` / `MODEL_OPUS` | Model ID constants used by the router |
 | `MODEL_FABLE` | `claude-fable-5-1`. Never routed to: offered, with Opus 5.5 and Sonnet 5.5, when a question routes to Opus |
 | `SUMMARY_MODEL` | Model used for history compression (set to `MODEL_HAIKU`) |

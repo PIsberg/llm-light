@@ -15,12 +15,12 @@ LLM Light uses Anthropic's ephemeral caching with three strategic breakpoints to
 |------------|----------|---------------|---------|
 | 1 | End of skeleton | Entire session | 90% off skeleton re-reads |
 | 2 | End of history | All but newest turn | 90% off conversation history |
-| 3 | End of chunks | Consecutive same-topic queries | 90% off retrieved context |
+| 3 | End of chunks | Tool rounds and lint retries of the same turn | 90% off retrieved context on each extra round |
 
 ### Effort and model changes
 
 - **Effort.** A top-level `output_config.effort` change invalidates the history cache, and on some models the skeleton cache too. Requests therefore always send `BASE_EFFORT` at the top level, and the routed effort goes in an effort-only system message after the history breakpoint (`_apply_effort()`, see [routing.md](routing.md)). `warm_cache()` (it calls `ClaudeProvider.warm()` in `providers/claude.py`) sends the same top-level effort, or it would warm an entry no turn reads.
-- **Model.** The cache is scoped per model; nothing written on Sonnet is read by Haiku or Opus. `warm_cache()` warms `MODEL` (Sonnet) only, so the first Haiku or Opus turn writes that model's skeleton entry, once per hour. By default the first turn's model is kept for the session (`ROUTE_ONCE`), so a session writes one model's cache only; after that turn, `warm_cache()` warms the session model rather than `MODEL`. `LLM_LIGHT_ROUTE_ONCE=0` routes the model per turn. Keeping a session on its strongest model instead cost more in `tests/benchmarks/benchmark_session_cache.py` than the cache writes it saves.
+- **Model.** The cache is scoped per model; nothing written on Sonnet is read by Haiku or Opus. `warm_cache()` warms the model the next turn reads: the `--model` or `/model` pin, else `state.session_model`. With neither (before the first routed turn, or with `LLM_LIGHT_ROUTE_ONCE=0`) it sends nothing, because a guess is a 1-hour write that a turn on another model never reads; the first turn writes its own entry. By default the first turn's model is kept for the session (`ROUTE_ONCE`), so a session writes one model's cache only. `LLM_LIGHT_ROUTE_ONCE=0` routes the model per turn. Keeping a session on its strongest model instead cost more in `tests/benchmarks/benchmark_session_cache.py` than the cache writes it saves.
 
 ### Pricing (USD per 1M tokens)
 
@@ -65,7 +65,8 @@ end note
 
 note right of Chunks
   Breakpoint 3: cache_control
-  Stable for same-code questions
+  Read by tool rounds and lint
+  retries within the same turn
 end note
 
 rectangle "Full: $2.00 (Sonnet 5.5)" as FullPrice

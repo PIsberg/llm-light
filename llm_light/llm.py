@@ -815,10 +815,9 @@ def chat(query, auto_apply=False, use_index=True, context=""):
                     create_kwargs["messages"].append({"role": "assistant", "content": reply})
                     create_kwargs["messages"].append({"role": "user", "content": [{"type": "text", "text": err_msg}]})
 
-                    for m in create_kwargs["messages"][:-1]:
-                        if isinstance(m["content"], list):
-                            for b in m["content"]:
-                                b.pop("cache_control", None)
+                    # The breakpoints stay: the retry reads the history and the
+                    # retrieved chunks this attempt just wrote, instead of paying
+                    # full input for them again.
                     continue
 
             state.conversation_history.append(
@@ -979,10 +978,9 @@ def _one_shot_turn(prompt, auto_apply, use_index, context=""):
                     create_kwargs["messages"].append({"role": "assistant", "content": reply})
                     create_kwargs["messages"].append({"role": "user", "content": [{"type": "text", "text": err_msg}]})
 
-                    for m in create_kwargs["messages"][:-1]:
-                        if isinstance(m["content"], list):
-                            for b in m["content"]:
-                                b.pop("cache_control", None)
+                    # The breakpoints stay: the retry reads the history and the
+                    # retrieved chunks this attempt just wrote, instead of paying
+                    # full input for them again.
                     continue
 
             explanation = _ANY_BLOCK.sub("", reply).strip() if edits else reply

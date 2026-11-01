@@ -169,7 +169,7 @@ class TestWarmCacheMatchesTurns(unittest.TestCase):
     def test_warms_at_the_top_level_effort_turns_send(self):
         resp = MagicMock()
         resp.usage = _usage()
-        with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create:
+        with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create,              patch.object(state, "session_model", llm.MODEL_SONNET):
             llm.warm_cache(quiet=True)
         kwargs = create.call_args.kwargs
         self.assertEqual(kwargs["output_config"], {"effort": llm.BASE_EFFORT})
@@ -215,8 +215,9 @@ class TestRouteOnce(unittest.TestCase):
         self.assertEqual([r["model"] for r in sent], [llm.MODEL_SONNET, llm.MODEL_HAIKU])
 
     def test_warm_cache_warms_the_session_model_once_set(self):
-        # Before the first turn the model is unknown, so MODEL is warmed; after
-        # it, re-warms and the heartbeat must keep the model the turns read.
+        # Before the first turn the model is unknown, so nothing is warmed (a
+        # guess is a write no turn may read); after it, re-warms and the
+        # heartbeat must keep the model the turns read.
         resp = MagicMock()
         resp.usage = _usage()
         with patch("llm_light.providers.claude.client.messages.create", return_value=resp) as create:
@@ -224,7 +225,7 @@ class TestRouteOnce(unittest.TestCase):
             state.session_model = llm.MODEL_HAIKU
             llm.warm_cache(quiet=True)
         self.assertEqual([c.kwargs["model"] for c in create.call_args_list],
-                         [llm.MODEL, llm.MODEL_HAIKU])
+                         [llm.MODEL_HAIKU])
 
 
 if __name__ == "__main__":
