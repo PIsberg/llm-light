@@ -14,4 +14,4 @@ description: Index of the llm_light reference docs. Find the document for your t
 | [WORKFLOW.md](WORKFLOW.md) | You need to know what a CI workflow runs. |
 | [plantuml/](plantuml/) | The PlantUML sources and rendered diagrams the architecture pages embed. |
 
-Repository-level documents live at the root: [../CLAUDE.md](../CLAUDE.md) (guidance for Claude Code), [../HARNESS.md](../HARNESS.md) (agent entry point), [../TESTING.md](../TESTING.md), [../TOKEN-SAVINGS.md](../TOKEN-SAVINGS.md) (token levers and their measured results), [../README.md](../README.md) (install and usage), and [../CONTRIBUTING.md](../CONTRIBUTING.md) and [../SECURITY.md](../SECURITY.md).
+Repository-level documents live at the root: [../CLAUDE.md](../CLAUDE.md) (guidance for Claude Code), [../HARNESS.md](../HARNESS.md) (agent entry point), [../TESTING.md](../TESTING.md), [../TOKEN-SAVINGS.md](../TOKEN-SAVINGS.md) (token levers and their measured results), [../README.md](../README.md) (install and usage), [../CHANGELOG.md](../CHANGELOG.md) (what each release changed), and [../CONTRIBUTING.md](../CONTRIBUTING.md) and [../SECURITY.md](../SECURITY.md).

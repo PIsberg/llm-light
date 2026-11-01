@@ -7,15 +7,15 @@ name = "llm-light"
 version = "0.1.0"
 description = "Interactive CLI chat tool for querying and editing a codebase with an LLM agent (Claude, Gemini via agy, Codex), using hybrid RAG and prompt caching."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [{ name = "Peter Isberg", email = "isberg.peter+cl@gmail.com" }]
 keywords = ["claude", "anthropic", "gemini", "codex", "rag", "llm", "cli", "code-search", "prompt-caching"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
@@ -57,6 +57,7 @@ claude-light = "llm_light.__main__:main"
 Homepage = "https://github.com/PIsberg/llm-light"
 Repository = "https://github.com/PIsberg/llm-light"
 Issues = "https://github.com/PIsberg/llm-light/issues"
+Changelog = "https://github.com/PIsberg/llm-light/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["llm_light*"]
