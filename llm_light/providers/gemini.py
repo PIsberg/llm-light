@@ -1,7 +1,9 @@
 """Gemini provider: Google's Antigravity CLI (`agy`) as a subprocess."""
 import json
+import os
 import shutil
 import sys
+from pathlib import Path
 
 from llm_light.providers.base import Provider, ProviderError, json_events, transcript
 from llm_light.providers.runner import empty_temp_dir, run_cli
@@ -14,11 +16,44 @@ SETTINGS = json.dumps({
     "permissions": {"allow": [], "deny": ["command", "mcp", "file"]},
     "allowNonWorkspaceAccess": False,
 })
-# The empty attached `-p=` is required: a bare `-p` swallows the next flag as its prompt.
-_ARGV_TAIL = [
-    "--input-format", "stream-json", "--output-format", "stream-json",
-    "--mode", "plan", "--settings", SETTINGS, "-p=",
-]
+# agy's own settings file; only its `model` is read (#118).
+_USER_SETTINGS = (".gemini", "antigravity-cli", "settings.json")
+
+
+def _argv_tail(settings: str) -> list:
+    # The empty attached `-p=` is required: a bare `-p` swallows the next flag as its prompt.
+    return ["--input-format", "stream-json", "--output-format", "stream-json",
+            "--mode", "plan", "--settings", settings, "-p="]
+
+
+def _settings() -> str:
+    """SETTINGS plus the user's chosen agy model, if their settings name one.
+
+    agy runs with an empty home (_isolated_env), so it would otherwise fall
+    back to its default model rather than the one the user picked.
+    """
+    try:
+        user = json.loads(Path.home().joinpath(*_USER_SETTINGS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return SETTINGS
+    model = user.get("model") if isinstance(user, dict) else None
+    if not isinstance(model, str) or not model:
+        return SETTINGS
+    return json.dumps(dict(json.loads(SETTINGS), model=model))
+
+
+def _isolated_env(home: str) -> dict:
+    """Our environment with HOME and USERPROFILE pointing at an empty directory.
+
+    agy then loads none of the user's plugins, hooks, rules or MCP servers
+    (all under ~/.gemini) and keeps its conversations and logs out of the
+    user's history. Sign-in still works: agy keeps no credential file there
+    (probed with agy 1.4.12 on Windows, #118).
+    """
+    env = dict(os.environ)
+    env["HOME"] = home
+    env["USERPROFILE"] = home
+    return env
 
 
 # Without it agy calls run_command (3 of 3 real runs), is denied, and returns an empty response.
@@ -111,8 +146,10 @@ class GeminiProvider(Provider):
         binary = shutil.which(BINARY)
         if not binary:
             raise ProviderError(_MISSING)
-        with empty_temp_dir() as cwd:
-            out = run_cli(self.name, [binary] + _ARGV_TAIL, _stdin_line(stdin_text), cwd=cwd)
+        argv = [binary] + _argv_tail(_settings())
+        with empty_temp_dir() as cwd, empty_temp_dir() as home:
+            out = run_cli(self.name, argv, _stdin_line(stdin_text), cwd=cwd,
+                          env=_isolated_env(home))
         return _result_reply(out)
 
     def complete(self, request: dict):

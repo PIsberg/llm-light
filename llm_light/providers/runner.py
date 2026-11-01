@@ -36,8 +36,10 @@ def empty_temp_dir():
 
 
 def run_cli(provider: str, argv: list, stdin_text: str, timeout: float = TIMEOUT_SECS,
-            cwd=None) -> str:
+            cwd=None, env=None) -> str:
     """Run a provider CLI, feed it stdin_text and return its stdout.
+
+    env replaces the child's environment when given (None inherits ours).
 
     A non-zero exit, a timeout or a missing binary raise ProviderError naming
     the provider. KeyboardInterrupt stops the whole process tree and is re-raised.
@@ -46,7 +48,7 @@ def run_cli(provider: str, argv: list, stdin_text: str, timeout: float = TIMEOUT
     try:
         proc = subprocess.Popen(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace", cwd=cwd,
+            text=True, encoding="utf-8", errors="replace", cwd=cwd, env=env,
             start_new_session=new_session())
     except FileNotFoundError:
         raise ProviderError(f"{binary} CLI not found. Install it and log in, "

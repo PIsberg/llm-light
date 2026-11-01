@@ -79,7 +79,14 @@ Run with the user's own settings, agy executed the user's globally allowed
 `mcp(lean-ctx/ctx_shell)`; with this override the same call failed with `permission check failed
 for mcp "lean-ctx/ctx_shell": user denied permission`.
 
+If the user's `~/.gemini/antigravity-cli/settings.json` holds a string `model`, it is added to
+`SETTINGS` as `model` and nothing else from that file is read (#118).
+
 cwd: an empty temporary directory, as for every CLI provider.
+
+env: ours, with `HOME` and `USERPROFILE` set to a second empty temporary directory, removed after
+the run (#118). Probed with agy 1.4.12 on Windows: `agy mcp list` and `agy plugin list` report
+nothing there, and a run still answers.
 
 stdin: exactly one NDJSON line, then EOF:
 `{"event":"user","message":{"role":"user","content":<prompt text>}}`, the prompt text being
@@ -100,7 +107,8 @@ provider reports no figures.
 capabilities: none; shell disabled with the existing notice.
 
 Known limit: `search_web` still runs under these settings (three searches in the probe), and no
-permission kind was found that stops it. With the empty cwd and `allowNonWorkspaceAccess` false,
+permission kind was found that stops it (agy 1.4.12 also tried: `execute_url`, `read_url`,
+`search_web`, `web`). With the empty cwd and `allowNonWorkspaceAccess` false,
 what it can send is the prompt llm_light gives it.
 
 ### Codex adapter
