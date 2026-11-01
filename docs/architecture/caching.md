@@ -17,6 +17,10 @@ LLM Light uses Anthropic's ephemeral caching with three strategic breakpoints to
 | 2 | End of history | All but newest turn | 90% off conversation history |
 | 3 | End of chunks | Tool rounds and lint retries of the same turn | 90% off retrieved context on each extra round |
 
+### What the skeleton holds
+
+`skeleton.build_skeleton()` renders the compressed directory tree, then every `.md` file: `CLAUDE.md` and `AGENTS.md` in full, long structured docs compacted to about 1,200 characters. In a git work tree only the `.md` files `git ls-files` lists go in (`skeleton._tracked_md()`, the index included, so a staged file counts); outside one, all of them. An untracked draft is left out because every turn reads the skeleton and every 1-hour cache write pays twice for it: on this repo two local drafts were 699 of 16,448 skeleton tokens. The tree still names the file, so the model can ask to read it. The file watcher applies the same rule (`_refresh_single_md`), and a file staged later comes in at the next full rebuild.
+
 ### Effort and model changes
 
 - **Effort.** A top-level `output_config.effort` change invalidates the history cache, and on some models the skeleton cache too. Requests therefore always send `BASE_EFFORT` at the top level, and the routed effort goes in an effort-only system message after the history breakpoint (`_apply_effort()`, see [routing.md](routing.md)). `warm_cache()` (it calls `ClaudeProvider.warm()` in `providers/claude.py`) sends the same top-level effort, or it would warm an entry no turn reads.

@@ -14,6 +14,29 @@ _SMALL_MD_LIMIT = 1_500
 _cached_paths = None
 _cached_cwd = None
 
+
+def _tracked_md():
+    """The .md files git tracks (index included), as posix paths relative to
+    the cwd; None outside a git work tree, where every .md file goes in.
+
+    Untracked drafts (a local plan or spec) are left out of the prompt: every
+    turn reads the skeleton and every cache write pays twice for it, and an
+    uncommitted file is not project documentation. The tree still lists them.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(["git", "ls-files", "-z", "--", "*.md"], capture_output=True,
+                             timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return {p for p in out.stdout.decode("utf-8", "replace").split("\0") if p}
+
+
+def _in_prompt(path: Path, tracked) -> bool:
+    return tracked is None or path.as_posix() in tracked
+
 def _file_hash(path: Path) -> str:
     """MD5 of file bytes — fast change detection, not cryptographic."""
     return hashlib.md5(path.read_bytes()).hexdigest()
@@ -213,7 +236,7 @@ def _assemble_skeleton() -> str:
 
 def _refresh_single_md(path_str: str) -> bool:
     p = Path(path_str)
-    if not p.exists():
+    if not p.exists() or not _in_prompt(p, _tracked_md()):
         changed = path_str in state._skeleton_md_parts
         state._skeleton_md_hashes.pop(path_str, None)
         state._skeleton_md_parts.pop(path_str, None)
@@ -234,7 +257,8 @@ def build_skeleton() -> str:
     all_paths = _get_cached_paths()
     
     # Separate files by type for skeleton tree and markdown processing
-    md_files = [p for p in all_paths if p.suffix == ".md" and p.is_file()]
+    tracked = _tracked_md()
+    md_files = [p for p in all_paths if p.suffix == ".md" and p.is_file() and _in_prompt(p, tracked)]
 
     state._skeleton_tree = _build_compressed_tree(all_paths)
 

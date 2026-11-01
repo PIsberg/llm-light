@@ -10,6 +10,7 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ### Changed
 
+- **Untracked `.md` files stay out of the prompt.** In a git repository the skeleton now carries only the `.md` files git tracks (staged ones included), so a local plan or draft you have not added is no longer sent, and no longer paid for, on every turn and cache write. The directory tree still lists it. On this repo two local drafts were 699 tokens of a 17,576-token cached prefix, and a modelled 43-question session cost 1.1% less (`benchmark_session_cache.py`). Outside a git repository every `.md` file still goes in (#142).
 - **Codex sends about half the tokens per question.** llm_light replaces codex's own agent instructions with a short no-tools note and switches off the codex prompt sections and tool features an answer engine never uses. On one repo question (5 runs each, codex-cli 0.166.0) input tokens fell from a mean of 21,766 to 9,190 and output from 926 to 621, and the trimmed runs took no hidden extra model rounds. `tests/benchmarks/benchmark_cli_providers.py` measures it; see `docs/BENCHMARKS.md`, section 2e.
 - **Codex turns show their token counts.** The turn line, `/cost`, the exit footer and the status bar show the input, cached and output tokens codex reports, instead of `tokens, cost and caching unavailable for codex`. No dollar figure: codex's prices are not Claude's, so nothing is added to the session cost or the lifetime dollar savings. Gemini still reports none (#148).
 

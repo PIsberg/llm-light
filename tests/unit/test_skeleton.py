@@ -180,6 +180,67 @@ class TestBuildSkeleton(unittest.TestCase):
                 cl._skeleton_md_parts = {}
 
 
+class TestUntrackedMarkdown(unittest.TestCase):
+    """In a git repo, only .md files git tracks go into the prompt (#142).
+
+    A local draft nobody committed (a plan, a scratch spec) is not project
+    documentation, and every turn and cache write paid for it. The tree still
+    lists the file, so the model can read it on request.
+    """
+
+    def setUp(self):
+        import llm_light as cl
+        self._saved = (cl._skeleton_tree, dict(cl._skeleton_md_hashes),
+                       dict(cl._skeleton_md_parts))
+        self._orig = os.getcwd()
+        self._tmp = tempfile.TemporaryDirectory()
+        os.chdir(self._tmp.name)
+        import subprocess
+        subprocess.run(["git", "init", "-q"], check=True)
+        Path(".gitignore").write_text("ignored.md\n", encoding="utf-8")
+        Path("TRACKED.md").write_text("# Tracked doc\ntracked-body", encoding="utf-8")
+        Path("DRAFT.md").write_text("# Draft\ndraft-body", encoding="utf-8")
+        Path("ignored.md").write_text("# Ignored\nignored-body", encoding="utf-8")
+        Path("docs").mkdir()
+        Path("docs/GUIDE.md").write_text("# Guide\nguide-body", encoding="utf-8")
+        subprocess.run(["git", "add", "TRACKED.md", "docs/GUIDE.md", ".gitignore"], check=True)
+
+    def tearDown(self):
+        import llm_light as cl
+        os.chdir(self._orig)
+        self._tmp.cleanup()
+        cl._skeleton_tree, cl._skeleton_md_hashes, cl._skeleton_md_parts = self._saved
+
+    def test_tracked_md_goes_in_and_untracked_md_stays_out(self):
+        result = build_skeleton()
+        self.assertIn("tracked-body", result)
+        self.assertIn("guide-body", result)  # tracked in a subdirectory
+        self.assertNotIn("draft-body", result)
+        self.assertNotIn("ignored-body", result)
+
+    def test_tree_still_lists_the_untracked_file(self):
+        self.assertIn("DRAFT", build_skeleton())
+
+    def test_watcher_refresh_does_not_add_an_untracked_file(self):
+        import llm_light as cl
+        build_skeleton()
+        self.assertFalse(_refresh_single_md("DRAFT.md"))
+        self.assertNotIn("draft-body", _assemble_skeleton())
+        self.assertNotIn("DRAFT.md", cl._skeleton_md_parts)
+
+    def test_watcher_refresh_picks_up_a_tracked_file_edit(self):
+        build_skeleton()
+        Path("TRACKED.md").write_text("# Tracked doc\nedited-body", encoding="utf-8")
+        self.assertTrue(_refresh_single_md("TRACKED.md"))
+        self.assertIn("edited-body", _assemble_skeleton())
+
+    def test_staging_a_draft_brings_it_in_on_the_next_build(self):
+        import subprocess
+        build_skeleton()
+        subprocess.run(["git", "add", "DRAFT.md"], check=True)
+        self.assertIn("draft-body", build_skeleton())
+
+
 # ---------------------------------------------------------------------------
 # _assemble_skeleton / _refresh_single_md
 # ---------------------------------------------------------------------------
