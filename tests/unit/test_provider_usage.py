@@ -155,3 +155,54 @@ def test_sc005_exit_footer_says_unavailable_even_with_zero_tokens(monkeypatch, n
 
 def test_fr008_usage_unavailable_text_matches_the_contract():
     assert ui.usage_unavailable("nofigures") == MESSAGE
+
+
+class LintRetryProvider(NoFiguresProvider):
+    """No usage figures; the first reply has a syntax error, the second does not."""
+    name = "nofigures"
+
+    def __init__(self):
+        self.replies = [
+            "Here:\n```python:fixed.py\ndef broken(:\n    pass\n```\n",
+            "Here:\n```python:fixed.py\ndef fixed():\n    pass\n```\n",
+        ]
+        self.requests = []
+
+    def complete(self, request):
+        self.requests.append(len(request["messages"]))
+        return self.replies.pop(0), None, False
+
+
+@pytest.mark.parametrize("turn", [
+    lambda: llm.chat("Add a function", auto_apply=True),
+    lambda: llm._one_shot_turn("Add a function", True, True),
+], ids=["chat", "one_shot"])
+def test_lint_retry_under_a_provider_without_usage_commits_once(monkeypatch, tmp_path, no_figures, turn):
+    """#112: the lint-retry branch records usage before asking for a fix.
+    Under a provider that reports none it must not crash, add no figures,
+    and still apply and commit the corrected edit exactly once."""
+    from llm_light import editor
+    provider = LintRetryProvider()
+    monkeypatch.setattr(state, "provider", provider, raising=False)
+    monkeypatch.setattr(llm, "_maybe_compress_history", lambda: None)
+    monkeypatch.setattr(llm, "print_stats", MagicMock())
+    monkeypatch.chdir(tmp_path)
+    commit = MagicMock(return_value=False)
+    monkeypatch.setattr(editor.git_manager, "auto_commit", commit)
+    monkeypatch.setattr(editor.git_manager, "is_git_repo", lambda: True)
+    monkeypatch.setattr(editor, "show_diff", lambda *a, **k: None)
+    before = _totals()
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        turn()
+    text = out.getvalue() + err.getvalue()
+    assert "API call failed" not in text
+    assert "Syntax errors" in text
+    assert provider.replies == []
+    assert provider.requests[1] == provider.requests[0] + 2  # reply + correction request
+    assert (tmp_path / "fixed.py").read_text(encoding="utf-8") == "def fixed():\n    pass\n"
+    commit.assert_called_once()
+    assert commit.call_args.args[0] == ["fixed.py"]
+    assert _totals() == before
+    no_figures.assert_not_called()
+    assert MESSAGE in text
