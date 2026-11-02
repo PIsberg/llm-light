@@ -164,3 +164,51 @@ def test_summarize_counts_outcomes_and_mean_tokens_per_side(bench):
     s = bench.summarize(rows)["models"]
     assert (s["x_wins"], s["y_wins"], s["ties"], s["invalid"]) == (0, 1, 1, 0)
     assert s["x_output_tokens"] == 150 and s["y_output_tokens"] == 200
+
+
+# --- tools (#79): the cost of the agent reading files ----------------------------
+
+def test_tools_experiment_pairs_tools_off_with_tools_on_on_sonnet_routed_questions(bench):
+    pairs = bench.pairs("tools", _QUESTIONS, _route)
+    assert [p["question"]["question"] for p in pairs] == ["q-sonnet-medium", "q-sonnet-high"]
+    x, y = pairs[0]["x"], pairs[0]["y"]
+    assert (x["tools"], y["tools"]) == (False, True)
+    assert x["model"] == y["model"] == config.MODEL_SONNET
+    assert x["budget"] == y["budget"]
+
+
+def test_tools_on_runs_read_only_in_plan_mode_and_restores_the_mode(bench):
+    from llm_light import permissions
+    seen = {}
+
+    def fake_cli(prompt, model="", extra_flags=None, render=True, tools=True):
+        seen["tools"] = tools
+        seen["mode"] = permissions.mode()
+        return "answer", None, None
+
+    permissions.set_mode("acceptEdits")
+    with patch.object(claude, "_make_cli_subprocess_call", side_effect=fake_cli):
+        bench.answer("SK", "CTX", "Q?", config.MODEL_SONNET, "medium", tools=True)
+    assert seen == {"tools": True, "mode": "plan"}  # never acceptEdits with the repo as cwd
+    assert permissions.mode() == "acceptEdits"
+
+
+def test_tools_off_is_unchanged(bench):
+    seen = {}
+
+    def fake_cli(prompt, model="", extra_flags=None, render=True, tools=True):
+        seen["tools"] = tools
+        return "answer", None, None
+
+    with patch.object(claude, "_make_cli_subprocess_call", side_effect=fake_cli):
+        bench.answer("SK", "CTX", "Q?", config.MODEL_SONNET, "medium")
+    assert seen["tools"] is False
+
+
+def test_summarize_reports_total_input_including_cache(bench):
+    side = lambda i, r, w: {"output_tokens": 0, "input_tokens": i, "cache_read_input_tokens": r,
+                            "cache_creation_input_tokens": w}
+    rows = [{"experiment": "tools", "outcome": "tie", "x": side(10, 1000, 0),
+             "y": side(20, 5000, 3000)}]
+    s = bench.summarize(rows)["tools"]
+    assert (s["x_total_input_tokens"], s["y_total_input_tokens"]) == (1010, 8020)
