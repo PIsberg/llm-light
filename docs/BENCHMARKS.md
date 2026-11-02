@@ -39,6 +39,7 @@ comparison, and this document now reflects that.
 | `benchmark_cache_warming.py` | What the startup warm and the idle heartbeat spend, run through the real `heartbeat()` and `warm_cache()` | No | Free |
 | `benchmark_answer_quality.py` | Answer quality of two variants on the same question, judged by Opus with swapped orders; Fable/Opus smoke | No (refuses with one); needs the Claude subscription | Subscription quota, about 150 CLI calls for `all` |
 | `benchmark_cli_providers.py` | Tokens codex (or agy, `--provider gemini`) reports for one question through the shipped provider's `_run`, as shipped or `--baseline` | `codex login`, or a signed-in agy | Subscription or key usage, about 4k to 46k input tokens per run |
+| `benchmark_live_api.py` | What only a real key can settle: the SDK on real responses (#71), effort messages and cache reads (#88), Fable and Opus requests (#92), whether `fetch_chunk` pays for itself (#85) | Yes, and `--i-accept-the-bill` | Stops at `--max-usd`, default $1.00 |
 | `benchmark_cost.py` | Real-world cost savings vs naive baseline | Yes | ~$0.05–$0.50 |
 | `benchmark_claude_code.py` | Claude Code vs `llm_light` vs naive baseline | Yes | Varies with live API/tool runs |
 
@@ -743,6 +744,42 @@ Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spen
 
   The agent read files on 4 of 10 questions (3 to 4 model rounds; 135,504 to 193,180 total input tokens, nearly all cache reads); on the other 6 it answered in one round, and having tools available still added about 15,000 input tokens (the tool definitions). Cache writes on the reading questions exceed the non-reading ones by about 2,000 to 6,000 tokens: that is the file content read, about $0.005 to $0.015 per reading question at Sonnet prices. A cheaper-model read shunt (lever 5) could save at most part of that, on the questions where reading won on quality, so it is not built. The CLI path's tools are Claude Code's, not llm_light's API-mode `read_file`; API mode is unmeasured (it needs a key, see #85).
 - Small samples: a difference of one pair is noise. The answers had no tools, so a variant that would have read a file to recover is scored without that chance.
+
+---
+
+## 2g · `benchmark_live_api.py`: What Only an API Key Can Settle
+
+### Purpose
+
+A subscription turn goes through the `claude` CLI, which builds its own request, so no subscription run reaches the request llm_light builds in API-key mode. This script holds the checks that are left. It has not been run against the real API: it was tested through the real SDK against a local stub (`tests/integration/test_benchmark_live_api.py`), because no key was available.
+
+### Running
+
+From the repo root, with a real key. It refuses to start without `--i-accept-the-bill`, in OAuth mode, or on a subscription token (`sk-ant-oat...`), and stops once it has spent `--max-usd` (default $1.00) at `MODEL_PRICES`.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-api...
+B="python tests/benchmarks/benchmark_live_api.py --i-accept-the-bill"
+$B --experiment sdk                       # #71: one create, one stream, on Haiku
+$B --experiment effort                    # #88: the effort-only message
+$B --experiment effort --effort-in-prefix # #88: the shape before it, to compare
+$B --experiment toptier                   # #92: two turns each on Fable 5.1 and Opus 5.5
+$B --experiment fetch-chunk --limit 10    # #85: the same questions with and without the tool
+```
+
+It prints one table per experiment and writes the rows to `.llm_light_cache/bench/live_api.json`. It exits 1 if any turn failed or the cap stopped it, and each experiment stops at its first failed turn.
+
+### Reading the result
+
+- **`sdk`**: a row with tokens for both calls means the API accepted the request body on the installed SDK and the response parsed.
+- **`effort`**: on turn 2, and again on turn 4, `Cache read` should stay near the previous Sonnet turn's whole prompt. Run `--effort-in-prefix` as well: if `Cache read` falls only to the skeleton there, a top-level change spares the skeleton on Sonnet 5.5, the 0.4% case in #88; if it falls to zero, the 7-10% case. Each run adds a unique line to the skeleton, so it starts cold and reads nothing the other run wrote.
+- **`toptier`**: the follow-up turn should read what the tool turn wrote. `USD` is `usage` at `MODEL_PRICES`, to compare with the Console. A zero-data-retention org should see `Claude API error 400` in the `Error` column instead of a table of tokens.
+- **`fetch-chunk`**: `fetch-chunk-summary` in the JSON has mean tokens and tool calls per warm question for each arm, leaving out each arm's first question, which writes the cache. Keep the tool only if tokens or tool calls fall.
+
+### Limits
+
+- The router is pinned to each experiment's model and effort; the rest of the turn is the real `chat()` and transport.
+- `fetch-chunk` uses the static embedder (`dense="skip"`), so retrieval there is the fast path, not hybrid.
 
 ---
 

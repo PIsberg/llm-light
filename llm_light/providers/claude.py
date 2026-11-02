@@ -34,6 +34,21 @@ class ClaudeNotLoggedIn(NotLoggedIn):
     """Raised when the official Claude CLI is not logged in."""
 
 
+def _api_error_text(exc: Exception) -> str | None:
+    """The API's own words for a status error, None for anything else.
+
+    str() of the SDK's error is the repr of the whole response body. Looked up in
+    sys.modules because the SDK is imported lazily: not imported means no API call.
+    """
+    anthropic = sys.modules.get("anthropic")
+    if anthropic is None or not isinstance(exc, anthropic.APIStatusError):
+        return None
+    error = exc.body.get("error") if isinstance(exc.body, dict) else None
+    message = error.get("message") if isinstance(error, dict) else None
+    request = f" (request {exc.request_id})" if exc.request_id else ""
+    return f"Claude API error {exc.status_code}: {message or exc.message}{request}"
+
+
 def _new_client():
     """An Anthropic client; through the --proxy, trusting its CA, when one is set."""
     import anthropic
@@ -772,7 +787,13 @@ class ClaudeProvider(Provider):
             print(f"  {_T_SYS}  Proceeding without auth. Requests will likely fail.")
 
     def complete(self, request: dict):
-        return _make_streaming_api_call(**request)
+        try:
+            return _make_streaming_api_call(**request)
+        except Exception as e:
+            text = _api_error_text(e)
+            if text is None:
+                raise
+            raise base.ProviderError(text) from e
 
     def warm(self, quiet: bool = False) -> None:
         if AUTH_MODE == "OAUTH":

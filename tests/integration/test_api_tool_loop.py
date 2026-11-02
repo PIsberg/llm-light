@@ -157,6 +157,101 @@ class TestApiToolLoopThroughSdk(unittest.TestCase):
             self.assertIn(llm.EFFORT_BETA, headers["anthropic-beta"])
         self.assertEqual(len(_StubMessagesAPI.requests), 2)
 
+    def test_no_request_forces_a_tool_on_any_routed_model(self):
+        # Fable 5.1, Opus 5.5 and Sonnet 5.5 answer 400 to tool_choice any or
+        # tool (#92), so every round on every model must leave it out.
+        print("\n  ▶ TestApiToolLoopThroughSdk.test_no_request_forces_a_tool_on_any_routed_model")
+        import io
+        import anthropic
+        import llm_light.config as config
+        from llm_light import llm
+
+        stub = anthropic.Anthropic(api_key="sk-ant-stub",
+                                   base_url=f"http://127.0.0.1:{self.server.server_port}")
+        for model in config.MODEL_PRICES:
+            _StubMessagesAPI.requests = []
+            kwargs = dict(model=model, max_tokens=2000,
+                          system=llm._build_system_blocks("SKELETON"),
+                          messages=[{"role": "user", "content": [{"type": "text", "text": "Where is retry?"}]}],
+                          extra_headers=llm._EXTENDED_CACHE_HEADERS)
+            llm._apply_effort(kwargs, "medium")
+            with patch.object(config, "AUTH_MODE", "API_KEY"), \
+                 patch.object(_claude_mod, "client", stub), \
+                 patch("sys.stdout", io.StringIO()):
+                _claude_mod._make_streaming_api_call(**kwargs)
+            self.assertEqual(len(_StubMessagesAPI.requests), 2, model)
+            for body in _StubMessagesAPI.requests:
+                self.assertEqual(body["model"], model)
+                self.assertTrue(body["tools"], model)
+                self.assertNotIn("tool_choice", body, model)
+
+
+_RETENTION_MESSAGE = "claude-fable-5-1 requires 30-day data retention."
+
+
+class _StubRefusesWith400(BaseHTTPRequestHandler):
+    """The shape of the 400 a zero-data-retention org gets on Fable 5.1 (#92). The
+    wording is ours: no such org was available, so only the shape is real."""
+    hits = 0
+
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        type(self).hits += 1
+        data = json.dumps({"type": "error", "error": {"type": "invalid_request_error",
+                                                      "message": _RETENTION_MESSAGE},
+                           "request_id": "req_stub_400"}).encode()
+        self.send_response(400)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("request-id", "req_stub_400")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+class TestApiErrorIsReadable(unittest.TestCase):
+
+    def setUp(self):
+        self.project = tempfile.mkdtemp(prefix="cl_project_")
+        self.cwd = os.getcwd()
+        os.chdir(self.project)
+        _StubRefusesWith400.hits = 0
+        self.server = HTTPServer(("127.0.0.1", 0), _StubRefusesWith400)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        os.chdir(self.cwd)
+        shutil.rmtree(self.project, ignore_errors=True)
+
+    def test_a_400_prints_the_apis_own_words_once_and_no_trace(self):
+        print("\n  ▶ TestApiErrorIsReadable.test_a_400_prints_the_apis_own_words_once_and_no_trace")
+        import contextlib
+        import io
+        import anthropic
+        import llm_light.config as config
+        from llm_light import llm
+
+        stub = anthropic.Anthropic(api_key="sk-ant-stub",
+                                   base_url=f"http://127.0.0.1:{self.server.server_port}")
+        out = io.StringIO()
+        with patch.object(config, "AUTH_MODE", "API_KEY"), \
+             patch.object(_claude_mod, "client", stub), \
+             patch.object(llm, "route_query", return_value=(config.MODEL_FABLE, "medium", 2000)), \
+             contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            llm.chat("Where is retry?", use_index=False)  # must not raise
+
+        printed = out.getvalue()
+        self.assertIn(_RETENTION_MESSAGE, printed)
+        self.assertIn("400", printed)
+        self.assertIn("req_stub_400", printed)  # what support asks for
+        self.assertNotIn("Traceback", printed)
+        self.assertNotIn("{'type'", printed)  # not the SDK's dict repr
+        self.assertEqual(_StubRefusesWith400.hits, 1)  # a 400 is not retried
+
 
 if __name__ == "__main__":
     unittest.main()
