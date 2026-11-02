@@ -705,7 +705,7 @@ The shipped agent sends about 6,500 fewer input tokens per question: agy's own a
 
 ### Purpose
 
-The offline benchmarks score whether the right file reaches the context, not whether the answer is right. This one answers the same repo question with two variants and has a judge model pick the better answer, for the open answer-quality questions: Haiku against Sonnet under ROUTE_ONCE (#90), the medium against the high retrieval budget (#77), and call-graph expansion off against on (#86). A `tools` experiment answers Sonnet-routed questions with tools off and with the agent's read-only tools on, to see what the agent's file reads cost (#79). A `toptier` mode sends two plan-mode turns to Fable 5.1 and Opus 5.5 (#92).
+The offline benchmarks score whether the right file reaches the context, not whether the answer is right. This one answers the same repo question with two variants and has a judge model pick the better answer, for the open answer-quality questions: Haiku against Sonnet under ROUTE_ONCE (#90), the medium against the high retrieval budget (#77), and call-graph expansion off against on (#86). A `tools` experiment answers Sonnet-routed questions with tools off and with the agent's read-only tools on, to see what the agent's file reads cost (#79), and a `toolset` experiment compares the `--tools` list with every built-in tool (lever 7). A `toptier` mode sends two plan-mode turns to Fable 5.1 and Opus 5.5 (#92).
 
 ### Methodology
 
@@ -721,7 +721,7 @@ python tests/benchmarks/benchmark_answer_quality.py --experiment all
 python tests/benchmarks/benchmark_answer_quality.py --report
 ```
 
-Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spends subscription quota: about 150 CLI calls for `all`.
+Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spends subscription quota: about 190 CLI calls for `all`.
 
 ### Results (2026-11-02, claude 2.1.316, Windows)
 
@@ -743,7 +743,15 @@ Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spen
   | tools on | 6 (2 ties) | 91,322 | 982 | $0.0495 |
 
   The agent read files on 4 of 10 questions (3 to 4 model rounds; 135,504 to 193,180 total input tokens, nearly all cache reads); on the other 6 it answered in one round, and having tools available still added about 15,000 input tokens (the tool definitions). Cache writes on the reading questions exceed the non-reading ones by about 2,000 to 6,000 tokens: that is the file content read, about $0.005 to $0.015 per reading question at Sonnet prices. A cheaper-model read shunt (lever 5) could save at most part of that, on the questions where reading won on quality, so it is not built. The CLI path's tools are Claude Code's, not llm_light's API-mode `read_file`; API mode is unmeasured (it needs a key, see #85).
-- Small samples: a difference of one pair is noise. The answers had no tools, so a variant that would have read a file to recover is scored without that chance.
+- **Toolset (lever 7), 2026-11-02, claude 2.1.316.** Same 10 Sonnet-routed questions through the real agent path, read-only in plan mode with the repo as the working directory; x sends llm_light's `--tools` list, y the same command with that flag removed, so the CLI offers every built-in tool. The list won 4, every tool won 1, 5 tied. Mean total input in that pass was 77,357 against 67,954, because x happened to read files on 7 questions and y on 5, and x won all three questions where only x read. A scratch rerun separated the two effects, 6 of those questions 3 times per arm with the order alternated and tool calls counted (36 runs, no judge; `--experiment toolset` runs the judged pass only):
+
+  | | Runs that used a tool | Mean tool calls | Mean total input | Mean cache write | Mean output | Sonnet-priced cost per question |
+  |---|---|---|---|---|---|---|
+  | `--tools` list | 13 of 18 | 1.61 | 79,769 | 7,056 | 1,196 | $0.0369 |
+  | every tool | 11 of 18 | 1.39 | 99,052 | 9,543 | 1,148 | $0.0443 |
+
+  Four of the 6 questions read at the same rate in both arms. At equal tool calls the list is 25% to 28% lower (0 calls 33,293 against 44,535, 1 call 67,340 against 89,356, 2 calls 98,443 against 137,006), which is the schema saving repeated per round. The model's reads are noisy between runs, so one pass is too few to read a total from. Plan mode only: `default` and `bypassPermissions` got a live smoke test (a real edit, an allowlisted command, a bypass command), not this comparison.
+- Small samples: a difference of one pair is noise. Where a pair had no tools, a variant that would have read a file to recover is scored without that chance.
 
 ---
 
