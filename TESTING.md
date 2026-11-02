@@ -38,6 +38,7 @@ CI runs the unit, integration and utilities suites, plus the two benchmark regre
 - `ANTHROPIC_API_KEY=sk-ant-test-mock-key`: unit tests never reach the API.
 - `LLM_LIGHT_HYBRID=0`: the suite uses one auto-tuned embedding model. `tests/unit/test_hybrid.py` switches hybrid retrieval back on for its own tests.
 - `LLM_LIGHT_STATS_FILE` points at a temp file, so a test run never writes the real `~/.llm_light_stats.json`.
+- `LLM_LIGHT_COMMANDS_DIR` points at a temp dir, so your own `~/.llm_light/commands/*.md` never become commands in the suite.
 - `LLM_LIGHT_SESSION_DIR` points at a temp dir, so a test never writes a real conversation to `~/.llm_light_sessions`.
 
 If you add a test that needs one of these changed, set it inside the test, not in the module.

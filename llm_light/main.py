@@ -52,6 +52,18 @@ _COMMANDS = [
     ("/why",        "explain the last query's routing and retrieval"),
     ("/exit",       "quit (also exit, quit)"),
 ]
+
+
+def _reserved_names() -> set:
+    return {cmd.split()[0] for cmd, _ in _COMMANDS} | {"/quit"}
+
+
+def _all_commands() -> list:
+    """The built-in commands, then the user's own (~/.llm_light/commands/*.md)."""
+    custom = commands.custom_commands(_reserved_names())
+    return _COMMANDS + [(f"{name} [args]", info["description"]) for name, info in custom.items()]
+
+
 _KEYS = [
     ("enter",       "send"),
     ("alt+enter",   "new line"),
@@ -84,7 +96,7 @@ try:
                 return
             if not text.startswith("/") or " " in text:
                 return
-            for cmd, desc in _COMMANDS:
+            for cmd, desc in _all_commands():
                 name = cmd.split()[0]
                 if name.startswith(text):
                     yield _Completion(name, start_position=-len(text), display_meta=desc)
@@ -210,7 +222,7 @@ def _print_help():
         tbl = Table(box=None, padding=(0, 2), show_header=False)
         tbl.add_column(style="cyan", no_wrap=True)
         tbl.add_column(style="dim")
-        for cmd, desc in _COMMANDS:
+        for cmd, desc in _all_commands():
             tbl.add_row(cmd, desc)
         tbl.add_row("", "")
         for key, desc in _KEYS:
@@ -220,7 +232,7 @@ def _print_help():
         con.print(tbl)
         return
     print()
-    for cmd, desc in _COMMANDS + [("", "")] + _KEYS:
+    for cmd, desc in _all_commands() + [("", "")] + _KEYS:
         print(f"  {cmd:<14}{_ANSI_DIM}{desc}{_ANSI_RESET}")
 
 
@@ -531,7 +543,10 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                     print(f"  {_T_SYS}  Cancelled.\n")
                 continue
 
-            if query.startswith("/") and " " not in query:
+            custom = commands.expand_custom(query, _reserved_names()) if query.startswith("/") else None
+            if custom is not None:
+                query = custom  # the user's own command: its body is the question
+            elif query.startswith("/") and " " not in query:
                 # A mistyped command would otherwise go to Claude as a prompt.
                 print(f"  {_T_ERR}  Unknown command {query}. /help lists them.")
                 continue

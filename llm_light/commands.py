@@ -1,5 +1,5 @@
 """The session commands modelled on Claude Code's: /copy, /model, /export,
-/status, /diff, /rewind, `!command` and `@file` mentions.
+/status, /diff, /rewind, custom /<name> commands, `!command` and `@file` mentions.
 
 Each returns the line to show (or prints its own output for the ones that
 show a diff or a command's output), so main.py's prompt loop only dispatches.
@@ -428,3 +428,69 @@ def rewind(index: int) -> str:
     session.save()
     commits = f", reverted {reverted} commit{'' if reverted == 1 else 's'}" if reverted else ""
     return f"Rewound to before {cp['question'][:60]!r}{commits}.{files_note}"
+
+
+# --- custom slash commands ------------------------------------------------------
+
+_COMMAND_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def _parse_command_file(text: str) -> tuple:
+    """(description, body): an optional `---` frontmatter with `description:`,
+    else the first non-empty line describes it."""
+    description, body = "", text
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        for i, line in enumerate(lines[1:], start=1):
+            if line.strip() == "---":
+                for meta in lines[1:i]:
+                    key, _, value = meta.partition(":")
+                    if key.strip() == "description":
+                        description = value.strip()
+                body = "\n".join(lines[i + 1:])
+                break
+    body = body.strip()
+    if not description:
+        description = next((line.strip() for line in body.splitlines() if line.strip()), "")
+    return description[:80], body
+
+
+def custom_commands(reserved) -> dict:
+    """The user's commands from config.USER_COMMANDS_DIR: {"/name": {"description", "body"}}.
+
+    A name that is not lowercase letters, digits, - or _, or that a built-in
+    command (in `reserved`) already uses, is skipped. A repo's own
+    .llm_light/commands/ is never read: it is prompt text a cloned repo controls.
+    """
+    found = {}
+    try:
+        paths = sorted(Path(config.USER_COMMANDS_DIR).glob("*.md"))
+    except OSError:
+        return found
+    for path in paths:
+        name = "/" + path.stem
+        if not _COMMAND_NAME.match(path.stem) or name in reserved:
+            continue
+        try:
+            description, body = _parse_command_file(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+        if body:
+            found[name] = {"description": description, "body": body}
+    return found
+
+
+def expand_custom(query: str, reserved) -> str | None:
+    """The question a custom command stands for, or None if `query` is not one.
+
+    $ARGUMENTS in the body becomes the text after the command name; without
+    the placeholder, that text goes after the body.
+    """
+    name, _, args = query.partition(" ")
+    command = custom_commands(reserved).get(name)
+    if command is None:
+        return None
+    body, args = command["body"], args.strip()
+    if "$ARGUMENTS" in body:
+        return body.replace("$ARGUMENTS", args)
+    return body + ("\n\n" + args if args else "")
