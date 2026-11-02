@@ -507,3 +507,29 @@ def test_fr010_cli_runs_in_fresh_empty_temp_dir_removed_afterwards(method, fail)
     assert seen["listing"] == []
     assert os.path.realpath(cwd) != os.path.realpath(os.getcwd())
     assert not os.path.exists(cwd)
+
+
+# --- #150: codex's model_reasoning_effort, for the benchmark only ----------------
+# Routing the turn's effort to codex was measured and not shipped: no saving on
+# low-routed questions, about 3x the output on high-routed ones (docs/BENCHMARKS.md).
+
+def _effort_values(argv):
+    return [v for v in _config_values(argv) if v.startswith("model_reasoning_effort=")]
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "max"])
+def test_150_argv_tail_sets_model_reasoning_effort_before_stdin(effort):
+    argv = codex._argv_tail("/tmp/i.md", effort)
+    assert _effort_values(argv) == [f"model_reasoning_effort={effort}"]
+    assert argv[-1] == "-"
+
+
+@pytest.mark.parametrize("effort", [None, "turbo", 3])
+def test_150_no_or_unknown_effort_adds_no_flag(effort):
+    assert _effort_values(codex._argv_tail("/tmp/i.md", effort)) == []
+
+
+def test_150_a_session_turn_runs_at_codex_default_effort():
+    req = dict(_request(), output_config={"effort": "low"})
+    _, run, _ = _complete(request=req)
+    assert _effort_values(run.call_args[0][1]) == []

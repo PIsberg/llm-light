@@ -41,9 +41,23 @@ _TRIM_CONFIG = (
 ))
 
 
-def _argv_tail(instructions_path: str) -> list:
-    """_ARGV_TAIL with the token-trim `-c` flags inserted before the stdin `-`."""
+# llm_light's efforts, one to one with codex's model_reasoning_effort (every model
+# `codex debug models` lists supports low, medium, high and max; codex-cli 0.166.0).
+# Only benchmark_cli_providers.py --effort passes one. Routing the turn's effort
+# to codex was measured and not shipped (#150, docs/BENCHMARKS.md section 2e):
+# no saving on low-routed questions, about 3x the output on high-routed ones.
+_EFFORTS = frozenset({"low", "medium", "high", "max"})
+
+
+def _argv_tail(instructions_path: str, effort=None) -> list:
+    """_ARGV_TAIL with the token-trim `-c` flags inserted before the stdin `-`.
+
+    effort, when it is one of _EFFORTS, sets codex's model_reasoning_effort;
+    otherwise codex reasons at its model default. Sessions pass none (#150).
+    """
     config = [f"model_instructions_file={json.dumps(instructions_path)}", *_TRIM_CONFIG]
+    if effort in _EFFORTS:
+        config.append(f"model_reasoning_effort={effort}")
     flags = [flag for value in config for flag in ("-c", value)]
     return _ARGV_TAIL[:-1] + flags + _ARGV_TAIL[-1:]
 
@@ -123,7 +137,7 @@ class CodexProvider(Provider):
         print(f"\n  {_T_ERR}  codex is not logged in. Run: codex login", file=sys.stderr)
         sys.exit(1)
 
-    def _run(self, stdin_text: str) -> tuple:
+    def _run(self, stdin_text: str, effort=None) -> tuple:
         """(reply, usage) of one codex run; usage is None when codex printed none."""
         binary = shutil.which(BINARY)
         if not binary:
@@ -133,7 +147,7 @@ class CodexProvider(Provider):
         with empty_temp_dir() as cwd, empty_temp_dir() as config_dir:
             instructions = os.path.join(config_dir, "instructions.md")
             Path(instructions).write_text(INSTRUCTIONS, encoding="utf-8")
-            out = run_cli(self.name, [binary] + _argv_tail(instructions), stdin_text, cwd=cwd,
+            out = run_cli(self.name, [binary] + _argv_tail(instructions, effort), stdin_text, cwd=cwd,
                           env=proxy.child_env(None))
         return _agent_reply(out), _usage(out)
 
