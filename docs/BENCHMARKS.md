@@ -295,9 +295,8 @@ Results: dev split  23 instances  K=[5,10,15]
   cosine similarity alone and do not import `llm_light`; `static` and `hybrid`
   use `llm_light.retrieval.hybrid_scores` and the configured floors and gap, but
   not the token budget (see Methodology). The test-file exclusion, the
-  working-tree boost and call-graph expansion never run here, so their env vars
-  (`LLM_LIGHT_CALLGRAPH`, `LLM_LIGHT_WORKTREE_BOOST`) do not change its
-  output. Measure those with `benchmark_models.py` (section 2b).
+  working-tree boost never run here, so `LLM_LIGHT_WORKTREE_BOOST` does not
+  change its output. Measure those with `benchmark_models.py` (section 2b).
 
 ---
 
@@ -329,7 +328,6 @@ that answers the question reach the context the model is given?
 python tests/benchmarks/benchmark_models.py          # all configurations
 python tests/benchmarks/benchmark_models.py --sweep  # also sweep the gap and floors
 python tests/benchmarks/benchmark_models.py --budgets  # recall and tokens sent per effort budget
-python tests/benchmarks/benchmark_models.py --callgraph  # each budget with and without call-graph expansion
 python tests/benchmarks/benchmark_models.py --worktree   # working-tree boost, right file or unrelated file modified
 python tests/benchmarks/benchmark_router.py            # effort and model per question
 python tests/benchmarks/benchmark_router.py --margin 0.30  # replay with another escalation margin
@@ -431,7 +429,7 @@ so the rule with no constant was kept. The benchmark flags are `--test-policy`
 Limits: the rule was measured on this repository only. The directory names
 come from common conventions, not from a survey of other projects.
 
-### Call-graph expansion (2026-10-25, `--callgraph`, off by default)
+### Call-graph expansion (2026-10-25, `--callgraph`, since removed)
 
 Expansion adds up to 3 direct callers or callees of the best hit while the
 budget has room (`_related_pairs`). Same question set, 1,579 chunks, static +
@@ -449,11 +447,12 @@ all-mpnet-base-v2, test-file exclusion on:
 | max (9,000) | on | 22/25 | 11/12 | 6/6 | 3,949 / 4,603 |
 
 No extra right-file hits at any budget, and 20-28% more mean tokens from
-medium up (low skips expansion by design). So `CALL_GRAPH` defaults to off;
-`LLM_LIGHT_CALLGRAPH=1` turns it on. Limit: the metric is whether the
+medium up (low skips expansion by design). So `CALL_GRAPH` defaulted to off. Limit: the metric is whether the
 answering file is sent, not answer quality. A caller's body may help an answer
 even when the file was already found, and nothing offline measures that. The
-model can still pull callers and callees on demand with `fetch_chunk`.
+model can still pull callers and callees on demand with `fetch_chunk`. The
+live answer-quality run in section 2f settled it (2 to 2), and the expansion
+and its `--callgraph` option were removed (#86).
 
 ### Working-tree boost (2026-10-25, `--worktree`, shipped at 1.0)
 
@@ -688,7 +687,7 @@ The offline benchmarks score whether the right file reaches the context, not whe
 
 ### Methodology
 
-- Retrieval is llm_light's own: hybrid static + dense scores, test chunks excluded, `_hybrid_select_pairs`, rendered by `retrieval._finish` (which adds callers and callees when `CALL_GRAPH` is on). The working-tree boost is left out.
+- Retrieval is llm_light's own: hybrid static + dense scores, test chunks excluded, `_hybrid_select_pairs`, rendered by `retrieval._finish` (which, at the time of the run, added callers and callees when `CALL_GRAPH` was on; the expansion was removed after it, #86). The working-tree boost is left out.
 - The request is built as `chat()` builds a first turn, flattened by `transcript()`, and sent through `providers.claude._make_cli_subprocess_call` with **tools off**, so the answer rests on the context alone. The CLI path carries no effort, so every answer runs at the CLI's default effort.
 - The judge (Opus 5.5, tools off) gets the question, a reference (the answering file's source, or the ground-truth callers for #86) and both answers, scores each 0 to 2 and names a winner. Each pair is judged twice with the answers swapped; a side wins only when both orders agree.
 - It refuses to run when an API key is configured, so it never bills one.

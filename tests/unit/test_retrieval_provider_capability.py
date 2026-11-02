@@ -39,22 +39,19 @@ class _NoCapProvider(base.Provider):
 def store(monkeypatch):
     monkeypatch.setattr(state, "chunk_store",
                         {"order.py::place": {"text": _TEXT}})
-    monkeypatch.setattr(retrieval.config if hasattr(retrieval, "config") else
-                        __import__("llm_light.config", fromlist=["x"]),
-                        "CALL_GRAPH", False)
     return [("order.py::place", 0.9)]
 
 
 def test_fr003_low_effort_without_effort_capability_includes_body(monkeypatch, store):
     monkeypatch.setattr(state, "provider", _NoCapProvider())
-    out = retrieval._finish(store, 4000, "low")[0]
+    out = retrieval._finish(store, "low")[0]
     assert "Detailed Code Context" in out
     assert "order_unique_marker" in out
 
 
 def test_fr003_low_effort_under_claude_stays_summary_only(monkeypatch, store):
     monkeypatch.setattr(state, "provider", ClaudeProvider())
-    out = retrieval._finish(store, 4000, "low")[0]
+    out = retrieval._finish(store, "low")[0]
     assert "Detailed Code Context" not in out
     assert "order_unique_marker" not in out
     assert "place" in out

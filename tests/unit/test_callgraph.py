@@ -1,6 +1,6 @@
 """
-Tests for llm_light.callgraph, the fetch_chunk tool, and call-graph expansion
-in retrieval.
+Tests for llm_light.callgraph and the fetch_chunk tool, and that retrieval no
+longer expands with the call graph (#86).
 """
 
 import os
@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import llm_light.state as state
 from llm_light import callgraph
-from llm_light.retrieval import _related_pairs, _finish
+from llm_light import retrieval
+from llm_light.retrieval import _finish
 from llm_light.tools import run_tool
 
 _SEP = "\n    // ...\n"
@@ -151,45 +152,28 @@ class TestFetchChunk(_StoreCase):
         self.assertEqual(out.count("## "), 5)
 
 
-class TestRelatedExpansion(_StoreCase):
-    """Expansion is opt-in (LLM_LIGHT_CALLGRAPH=1), so these turn it on."""
+class TestNoRetrievalExpansion(_StoreCase):
+    """Call-graph expansion was removed (#86): in a live answer-quality run it
+    won 2 and lost 2 of 8 how-is-X-used questions for 92% more context. The
+    call graph stays for fetch_chunk, which lists callers and callees on request."""
 
-    def setUp(self):
-        super().setUp()
-        patcher = patch("llm_light.config.CALL_GRAPH", True)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def test_adds_neighbours_within_budget(self):
-        print("\n  ▶ TestRelatedExpansion.test_adds_neighbours_within_budget")
+    def test_finish_sends_only_the_selected_chunks(self):
         top = [("app/api.py::handle", 0.9)]
-        related = _related_pairs(top, 10_000, "medium")
-        self.assertEqual([c for c, _ in related], ["app/api.py::load_user", "app/api.py::render"])
+        for effort in ("medium", "high", "max"):
+            ctx, pairs = _finish(top, effort)
+            self.assertEqual(pairs, top)
+            self.assertNotIn("def load_user(req)", ctx)  # a callee of handle
 
-    def test_respects_budget(self):
-        print("\n  ▶ TestRelatedExpansion.test_respects_budget")
-        top = [("app/api.py::handle", 0.9)]
-        self.assertEqual(_related_pairs(top, 1, "medium"), [])
+    def test_the_old_switch_does_nothing(self):
+        with patch.dict(os.environ, {"LLM_LIGHT_CALLGRAPH": "1"}):
+            _, pairs = _finish([("app/api.py::handle", 0.9)], "medium")
+        self.assertEqual(len(pairs), 1)
 
-    def test_skipped_at_low_effort_and_when_disabled(self):
-        print("\n  ▶ TestRelatedExpansion.test_skipped_at_low_effort_and_when_disabled")
-        top = [("app/api.py::handle", 0.9)]
-        self.assertEqual(_related_pairs(top, 10_000, "low"), [])
-        with patch("llm_light.config.CALL_GRAPH", False):
-            self.assertEqual(_related_pairs(top, 10_000, "high"), [])
-
-    def test_does_not_repeat_selected_chunks(self):
-        print("\n  ▶ TestRelatedExpansion.test_does_not_repeat_selected_chunks")
-        top = [("app/api.py::handle", 0.9), ("app/api.py::render", 0.8)]
-        related = _related_pairs(top, 10_000, "medium")
-        self.assertEqual([c for c, _ in related], ["app/api.py::load_user"])
-
-    def test_related_bodies_are_rendered(self):
-        print("\n  ▶ TestRelatedExpansion.test_related_bodies_are_rendered")
-        ctx, pairs = _finish([("app/api.py::handle", 0.9)], 10_000, "medium")
-        self.assertIn("def load_user(req)", ctx)
-        self.assertIn("def render(user)", ctx)
-        self.assertEqual(len(pairs), 3)
+    def test_the_expansion_path_is_gone(self):
+        from llm_light import config
+        self.assertFalse(hasattr(retrieval, "_related_pairs"))
+        self.assertFalse(hasattr(config, "CALL_GRAPH"))
+        self.assertFalse(hasattr(config, "CALL_GRAPH_MAX"))
 
 
 if __name__ == "__main__":

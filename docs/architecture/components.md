@@ -17,7 +17,7 @@ This diagram shows the main components and their relationships within LLM Light.
 | `llm.py` | Turn loop, routing and response processing. It reaches an agent only through `providers.active()` |
 | `providers/` | One module per agent behind the shared `Provider` interface (`base.py`): `claude.py` (the `anthropic` client, the API-key and OAuth transports, the tool loop, login), `gemini.py` and `codex.py` (CLI subprocesses), `runner.py` (`run_cli`, `kill_process_tree`, `new_session`, `TIMEOUT_SECS`; every CLI child, the `shell` tool's included, starts in its own process group on POSIX so `kill_process_tree` can kill the group) and `__init__.py` (`NAMES`, `DEFAULT`, `get`, `select`, `active`) |
 | `retrieval.py` | RAG engine, performs similarity search and chunk selection |
-| `callgraph.py` | In-memory call graph over the chunk store (`name(` matched against chunk symbols), used by `fetch_chunk` and the opt-in retrieval expansion |
+| `callgraph.py` | In-memory call graph over the chunk store (`name(` matched against chunk symbols), used by `fetch_chunk` to list callers and callees |
 | `tools.py` | API-mode tools: `read_file`, `fetch_chunk`, `grep`, `list_files`, and `shell` (allowlisted commands only; any command in bypass mode, none in plan mode) |
 | `cli_shell_guard.py` | `PreToolUse` hook for the OAuth CLI agent: blocks a Bash or PowerShell command that chains, pipes, redirects or substitutes (issue #70); holds the refused characters `tools.py` uses too |
 | `affected_tests.py` | After an auto-commit, runs the test files that mention the edited modules, if a pytest command is allowed |

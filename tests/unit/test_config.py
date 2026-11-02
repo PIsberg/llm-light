@@ -104,32 +104,20 @@ class TestGlobalStatsFile(unittest.TestCase):
 
 
 class TestMeasuredRetrievalDefaults(unittest.TestCase):
-    """Both defaults come from tests/benchmarks/benchmark_models.py runs recorded
-    in TOKEN-SAVINGS.md: call-graph expansion sent 20-28% more tokens for no
-    extra right-file hits, and a working-tree boost of 1.5 or more lost
-    answers when an unrelated file was the modified one."""
+    """The default comes from tests/benchmarks/benchmark_models.py runs recorded
+    in TOKEN-SAVINGS.md: a working-tree boost of 1.5 or more lost answers when
+    an unrelated file was the modified one. (Call-graph expansion, the other
+    measured default, was removed in #86.)"""
 
     def test_defaults_without_env_overrides(self):
         print("\n  ▶ TestMeasuredRetrievalDefaults.test_defaults_without_env_overrides")
         import subprocess
-        env = {k: v for k, v in os.environ.items()
-               if k not in ("LLM_LIGHT_CALLGRAPH", "LLM_LIGHT_WORKTREE_BOOST")}
+        env = {k: v for k, v in os.environ.items() if k != "LLM_LIGHT_WORKTREE_BOOST"}
         out = subprocess.run(
-            [sys.executable, "-c",
-             "import llm_light.config as c; print(c.CALL_GRAPH, c.WORKTREE_BOOST)"],
+            [sys.executable, "-c", "import llm_light.config as c; print(c.WORKTREE_BOOST)"],
             env=env, capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
         )
-        self.assertEqual(out.stdout.strip(), "False 1.0", out.stderr)
-
-    def test_call_graph_is_opt_in(self):
-        print("\n  ▶ TestMeasuredRetrievalDefaults.test_call_graph_is_opt_in")
-        import subprocess
-        env = dict(os.environ, LLM_LIGHT_CALLGRAPH="1")
-        out = subprocess.run(
-            [sys.executable, "-c", "import llm_light.config as c; print(c.CALL_GRAPH)"],
-            env=env, capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
-        )
-        self.assertEqual(out.stdout.strip(), "True", out.stderr)
+        self.assertEqual(out.stdout.strip(), "1.0", out.stderr)
 
 
 class TestRouteOnceDefault(unittest.TestCase):
