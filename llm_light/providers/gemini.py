@@ -24,11 +24,36 @@ _PARSE_REMEDY = "Update agy (agy update) and run it on its own to see what it pr
 # Where agy keeps per-conversation state, its plan artifacts included (#123).
 _BRAIN = (".gemini", "antigravity-cli", "brain")
 
+# A custom agent with no tools, selected with --agent. No permission kind stops
+# agy's search_web, so a Gemini turn could put repo code into web-search queries
+# (#122). excludeDefaultComponents drops agy's built-in tools and its own prompt
+# sections; probed with agy 1.4.12 on a prompt that asks for a web search, the
+# default agent ran search_web 3 times at 34,648 input tokens, this one ran no
+# tool in 5 of 5 runs at 1,249 input tokens (#149). Written into the run's own
+# temporary home, which agy reads custom agents from, so the cwd stays empty.
+AGENT_NAME = "llm-light"
+_AGENT_FILE = (".gemini", "config", "agents", f"{AGENT_NAME}.md")
+_AGENT = f"""---
+name: {AGENT_NAME}
+description: Answers questions about code from the text in the message.
+excludeDefaultComponents: true
+tools: []
+---
+You answer questions about a codebase using only the text in the user's message. You have no
+tools. For an edit, write SEARCH/REPLACE blocks from the code shown in the message.
+"""
+
 
 def _argv_tail(settings: str) -> list:
     # The empty attached `-p=` is required: a bare `-p` swallows the next flag as its prompt.
     return ["--input-format", "stream-json", "--output-format", "stream-json",
-            "--mode", "plan", "--settings", settings, "-p="]
+            "--mode", "plan", "--agent", AGENT_NAME, "--settings", settings, "-p="]
+
+
+def _install_agent(home: str) -> None:
+    path = Path(home).joinpath(*_AGENT_FILE)
+    path.parent.mkdir(parents=True)
+    path.write_text(_AGENT, encoding="utf-8")
 
 
 def _settings() -> str:
@@ -71,9 +96,11 @@ _FORBIDDEN = {
     "write_to_file": "file", "replace_file_content": "file",
     "multi_replace_file_content": "file", "sed_file": "file", "notebook_edit": "file",
 }
-# Read-only tools that may finish without a denial (search_web still runs: known limit).
-_ALLOWED_TOOLS = frozenset({"search_web", "read_file", "view_file", "list_dir",
-                            "find_by_name", "grep_search"})
+# Read-only tools that may finish without a denial. The llm-light agent has none of
+# them; they stay allowed because they cannot reach the project (empty cwd,
+# allowNonWorkspaceAccess false). search_web is not here: a search means the
+# agent did not load, and the query may quote repo code, so it fails closed (#122).
+_ALLOWED_TOOLS = frozenset({"read_file", "view_file", "list_dir", "find_by_name", "grep_search"})
 
 
 def _stdin_line(text: str) -> str:
@@ -180,6 +207,7 @@ class GeminiProvider(Provider):
             raise ProviderError(_MISSING)
         argv = [binary] + _argv_tail(_settings())
         with empty_temp_dir() as cwd, empty_temp_dir() as home:
+            _install_agent(home)
             out = run_cli(self.name, argv, _stdin_line(stdin_text), cwd=cwd,
                           env=_isolated_env(home))
             return _result_reply(out, home)

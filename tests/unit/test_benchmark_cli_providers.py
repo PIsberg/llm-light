@@ -95,3 +95,69 @@ def test_summary_keeps_a_fraction_of_agent_messages(bench):
            "reasoning_output_tokens": 0, "agent_messages": 1}
     rows = [one] * 4 + [dict(one, agent_messages=2)]
     assert bench.mean(rows)["agent_messages"] == 1.2
+
+
+# --- agy (#149) -------------------------------------------------------------
+
+from llm_light.providers import gemini  # noqa: E402
+
+
+def _agy_stdout(*tools, input_tokens=1_249, output_tokens=515, response="the answer"):
+    lines = [json.dumps({"event": "init"})]
+    for t in tools:
+        lines.append(json.dumps({"event": "step_update", "step_update": {
+            "step_type": "tool", "tool_name": t, "state": "DONE"}}))
+    lines.append(json.dumps({"event": "result", "result": {
+        "status": "SUCCESS", "response": response, "num_turns": 1,
+        "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens,
+                  "thinking_tokens": 486, "cache_read_tokens": 0}}}))
+    return "\n".join(lines) + "\n"
+
+
+def _run_agy(bench, stdout, baseline=False):
+    import os
+    seen = {}
+
+    def fake(provider, argv, stdin_text, *a, **kw):
+        home = kw["env"]["HOME"]
+        seen["argv"] = argv
+        seen["stdin"] = stdin_text
+        seen["agent"] = os.path.exists(os.path.join(home, *gemini._AGENT_FILE))
+        return stdout
+    with patch("shutil.which", return_value="/bin/agy"), \
+         patch.object(gemini, "run_cli", side_effect=fake):
+        row = bench.run_gemini("the prompt", baseline=baseline)
+    return row, seen
+
+
+def test_agy_run_reports_the_usage_agy_prints_and_its_tool_steps(bench):
+    row, _ = _run_agy(bench, _agy_stdout())
+    assert row == {"input_tokens": 1_249, "output_tokens": 515, "thinking_tokens": 486,
+                   "cache_read_tokens": 0, "tool_steps": 0, "error": 0}
+
+
+def test_agy_run_goes_through_the_shipped_run_path_with_the_agent(bench):
+    _, seen = _run_agy(bench, _agy_stdout())
+    assert seen["agent"] is True
+    assert seen["argv"][seen["argv"].index("--agent") + 1] == gemini.AGENT_NAME
+    assert json.loads(seen["stdin"])["message"]["content"].endswith("the prompt")
+
+
+def test_agy_baseline_runs_agys_default_agent(bench):
+    _, seen = _run_agy(bench, _agy_stdout(), baseline=True)
+    assert seen["agent"] is False
+    assert "--agent" not in seen["argv"]
+
+
+def test_agy_baseline_counts_a_search_the_shipped_path_refuses(bench):
+    # The default agent may run search_web; _run raises on it (fail closed),
+    # but its usage is still what that run cost.
+    row, _ = _run_agy(bench, _agy_stdout("search_web", "search_web", input_tokens=34_648),
+                      baseline=True)
+    assert row["input_tokens"] == 34_648 and row["tool_steps"] == 2 and row["error"] == 1
+
+
+def test_agy_baseline_does_not_leak_into_the_next_run(bench):
+    _run_agy(bench, _agy_stdout(), baseline=True)
+    _, seen = _run_agy(bench, _agy_stdout())
+    assert "--agent" in seen["argv"] and seen["agent"] is True
