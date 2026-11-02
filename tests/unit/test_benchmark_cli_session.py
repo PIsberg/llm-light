@@ -35,7 +35,21 @@ def test_a_failed_turn_is_counted():
 
 def test_verdicts_name_the_arm_that_won():
     rows = [{"judged": True, "outcome": o} for o in ("x", "x", "y", "tie", "invalid")]
-    assert bench.summarize(rows)["judged"] == {"resume_wins": 2, "flat_wins": 1, "ties": 1, "invalid": 1}
+    judged = bench.summarize(rows)["judged"]
+    assert (judged["resume_wins"], judged["flat_wins"], judged["ties"], judged["invalid"]) == (2, 1, 1, 1)
+
+
+def test_scores_follow_the_arm_through_the_swapped_order():
+    # Resume is A in the first verdict and B in the second.
+    rows = [{"judged": True, "outcome": "y", "verdicts": [{"winner": "B", "score_a": 1, "score_b": 2},
+                                                          {"winner": "A", "score_a": 2, "score_b": 0}]}]
+    judged = bench.summarize(rows)["judged"]
+    assert (judged["resume_score"], judged["flat_score"], judged["scored_verdicts"]) == (1, 4, 2)
+
+
+def test_an_unreadable_verdict_adds_no_score():
+    rows = [{"judged": True, "outcome": "invalid", "verdicts": [None, {"winner": "A", "score_a": "?", "score_b": 2}]}]
+    assert bench.summarize(rows)["judged"]["scored_verdicts"] == 0
 
 
 def test_the_long_session_passes_the_history_limit():

@@ -133,11 +133,26 @@ def judge_session(rows: list, judge_model: str) -> list:
         earlier = by_turn.get((turn - 1, "resume"))
         # A follow-up ("what happens to that choice") only makes sense after what it follows.
         question = (f"(After asking: {earlier['question']})\n" if earlier else "") + row["question"]
-        outcome, _ = aq.judge(question, aq.reference_for({"file": row["file"]}), row["reply"],
-                              other["reply"], model=judge_model)
+        outcome, verdicts = aq.judge(question, aq.reference_for({"file": row["file"]}), row["reply"],
+                                     other["reply"], model=judge_model)
         out.append({"judged": True, "session": row["session"], "repeat": row["repeat"], "turn": turn,
-                    "question": row["question"], "outcome": outcome})
+                    "question": row["question"], "outcome": outcome, "verdicts": verdicts,
+                    "resume_tools": row["tools"], "flat_tools": other["tools"]})
     return out
+
+
+def _score_sums(rows: list) -> dict:
+    """Each arm's 0-2 scores added up over both judging orders. A win can rest on a detail
+    the judge prefers at equal scores, so a saving is read against these too."""
+    resume = flat = scored = 0
+    for row in rows:
+        for shown_first, verdict in zip(("resume", "flat"), row.get("verdicts") or ()):
+            if verdict and isinstance(verdict.get("score_a"), int) and isinstance(verdict.get("score_b"), int):
+                a, b = verdict["score_a"], verdict["score_b"]
+                resume += a if shown_first == "resume" else b
+                flat += b if shown_first == "resume" else a
+                scored += 1
+    return {"resume_score": resume, "flat_score": flat, "scored_verdicts": scored}
 
 
 def summarize(rows: list) -> dict:
@@ -157,6 +172,7 @@ def summarize(rows: list) -> dict:
     if verdicts:
         out["judged"] = {name: verdicts.count(key) for name, key in
                          (("resume_wins", "x"), ("flat_wins", "y"), ("ties", "tie"), ("invalid", "invalid"))}
+        out["judged"].update(_score_sums(rows))
     return out
 
 
