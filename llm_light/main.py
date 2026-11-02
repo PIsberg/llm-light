@@ -46,6 +46,7 @@ _COMMANDS = [
     ("/run <cmd>",  "run a shell command and ask Claude about its output"),
     ("/budget <$>", "cap session spend; routing drops to the cheapest model at the cap"),
     ("/status",     "version, provider, model, permissions, shell and index"),
+    ("/resume",     "switch to one of this project's earlier conversations"),
     ("/rewind",     "go back to before an earlier turn: its files and the conversation"),
     ("/undo",       "revert the last commit Claude made"),
     ("/why",        "explain the last query's routing and retrieval"),
@@ -285,7 +286,26 @@ def _bypass_warning() -> str:
             f"shell runs any command, without asking.{_ANSI_RESET}")
 
 
-def start_chat(auto_apply=False, resume=False):
+def _resume_picker() -> None:
+    """Ask which saved conversation to continue (/resume, --resume) and load it."""
+    entries = session.conversations()
+    if not entries:
+        print(f"  {_T_SYS}  No saved conversations for this project.")
+        return
+    picked = choose("Resume which conversation?",
+                    [(str(i), e["label"]) for i, e in enumerate(entries)] + [("cancel", "Cancel")])
+    if picked in (None, "cancel"):
+        print(f"  {_T_SYS}  Cancelled.")
+        return
+    # The turn state of the conversation being left does not carry over.
+    state.checkpoints.clear()
+    state.replies.clear()
+    state.pending_context.clear()
+    state.cli_session_id = None
+    print(f"  {_T_SYS}  {session.resume(entries[int(picked)]['path'])}")
+
+
+def start_chat(auto_apply=False, resume=False, pick=False):
     print_startup_header(*(providers.active().header() or (MODEL, access_label(API_KEY_SOURCE))))
     # -y is the acceptEdits mode; from here the mode decides, so shift+tab
     # can switch back to asking.
@@ -294,7 +314,9 @@ def start_chat(auto_apply=False, resume=False):
     auto_apply = False
     if permissions.bypass():
         print(f"  {_bypass_warning()}")
-    if resume:
+    if pick:
+        _resume_picker()
+    elif resume:
         print(f"  {_T_SYS}  {session.restore()}")
     _setup_signal_handlers()
 
@@ -473,6 +495,9 @@ def start_chat(auto_apply=False, resume=False):
             if query == "/budget" or query.startswith("/budget "):
                 print(f"  {_T_SYS}  {_budget_command(query[7:].strip())}")
                 continue
+            if query == "/resume":
+                _resume_picker()
+                continue
             if query == "/rewind":
                 targets = commands.rewind_targets()
                 if not targets:
@@ -600,6 +625,8 @@ def main():
                              "LLM_LIGHT_ALLOW_COMMANDS=\"a; powershell: b\".")
     parser.add_argument("-c", "--continue", dest="resume", action="store_true",
                         help="Resume this project's previous interactive conversation.")
+    parser.add_argument("--resume", dest="pick", action="store_true",
+                        help="Pick one of this project's earlier conversations to resume.")
     parser.add_argument("--provider", choices=providers.NAMES, default=providers.DEFAULT,
                         help="Which agent answers: " + ", ".join(providers.NAMES) + " (default: %(default)s).")
     parser.add_argument("--proxy", metavar="URL",
@@ -647,9 +674,9 @@ def main():
     if args.print_mode and not query_str and sys.stdin.isatty():
         parser.error("-p needs a question: llm_light -p \"...\", or pipe one on stdin")
     interactive = not args.print_mode and not query_str and sys.stdin.isatty()
-    if args.resume and not interactive:
+    if (args.resume or args.pick) and not interactive:
         # A one-shot turn sends no history, so there is nothing to resume into.
-        parser.error("--continue resumes an interactive session; it cannot take a question")
+        parser.error("--continue and --resume resume an interactive session; they cannot take a question")
     for notice in _config.legacy_notices():
         print(f"  {_T_SYS}  {notice}", file=sys.stderr)
     provider = providers.select(args.provider)
@@ -664,7 +691,7 @@ def main():
         print(f"  {_T_SYS}  --model ignored: {provider.name} picks its own model.", file=sys.stderr)
         state.pinned_model = None
     if interactive:
-        start_chat(auto_apply=args.yes, resume=args.resume)
+        start_chat(auto_apply=args.yes, resume=args.resume, pick=args.pick)
         return
     if permissions.bypass():
         print(f"  {_bypass_warning()}", file=sys.stderr)

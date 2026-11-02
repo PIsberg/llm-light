@@ -237,6 +237,8 @@ GLOBAL_STATS_FILE = Path(env_get("STATS_FILE") or Path.home() / ".llm_light_stat
 # In the home directory, not the project, so a cloned repo cannot supply one.
 # LLM_LIGHT_SESSION_DIR moves it; the test suite points it at a temp dir.
 SESSION_DIR = Path(env_get("SESSION_DIR") or Path.home() / ".llm_light_sessions")
+# Earlier conversations kept per project and provider after /clear, for /resume.
+SESSION_KEEP = 10
 
 # Disk cache — stored in a hidden dir so _is_skipped() ignores it automatically
 CACHE_DIR      = Path(".llm_light_cache")

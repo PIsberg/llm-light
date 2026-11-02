@@ -233,14 +233,14 @@ What llm_light may do without asking is set by a permission mode, named after Cl
 
 Bypass asks nothing, so use it only in a sandbox, a container or a repository you can restore: the agent can run any command your user can. As in Claude Code, `shift+tab` and `/permissions` offer it only when llm_light was started with `--dangerously-skip-permissions` or `--allow-dangerously-skip-permissions` (the latter starts in another mode). Spending questions are not permissions: the top-tier model prompt and the `/budget` cap still ask in every mode. In plan and bypass modes a one-line note goes before each question, so the model knows; default and `acceptEdits` requests are unchanged.
 
-`python3 llm_light.py --continue` (or `-c`) picks up this project's previous conversation where you left it, as `claude --continue` does. The conversation is saved after every turn to `~/.llm_light_sessions/` (one file per project, outside the repo so a cloned repo cannot supply one), along with the session's model. Cost counters start from zero. Retrieval runs fresh for each new question, but earlier answers may describe code that has changed since. `/clear` deletes the saved conversation. `--continue` works only for the interactive loop: a one-shot question sends no history, so combining the two is an error.
+`python3 llm_light.py --continue` (or `-c`) picks up this project's previous conversation where you left it, as `claude --continue` does. The conversation is saved after every turn to `~/.llm_light_sessions/` (one file per project, outside the repo so a cloned repo cannot supply one), along with the session's model. Cost counters start from zero. Retrieval runs fresh for each new question, but earlier answers may describe code that has changed since. `/clear` starts a new conversation and keeps the old one: `--resume` at startup, or `/resume` in a session, lists this project's saved conversations (date, turns, first question) and switches to the one you pick, keeping the newest 10 per project and provider. `--continue` and `--resume` work only for the interactive loop: a one-shot question sends no history, so combining them with one is an error.
 
 Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session keeps the first question's model (`LLM_LIGHT_ROUTE_ONCE=0` routes every question). A question that routes to Opus asks first: Opus 5.5, Fable 5.1 or Sonnet 5.5, each with its estimated cost for the turn. Esc, or running without a terminal, picks Sonnet 5.5.
 
 | Command / key | What it does |
 |---|---|
 | `/help` | Commands and keys |
-| `/clear` | Start a new conversation and delete the one saved for `--continue`; the next question also picks the model again, which the session then keeps (`LLM_LIGHT_ROUTE_ONCE=0` picks it per question) |
+| `/clear` | Start a new conversation; the old one stays available to `/resume`; the next question also picks the model again, which the session then keeps (`LLM_LIGHT_ROUTE_ONCE=0` picks it per question) |
 | `/compact` | Replace the conversation so far with a summary, so later turns send fewer tokens |
 | `/copy [n]` | Copy the latest reply, or the n-th latest, to the clipboard, code blocks included. Uses `clip` on Windows, `pbcopy` on macOS and `wl-copy`, `xclip` or `xsel` on Linux; without one (over SSH, say) it sends an OSC 52 escape, which many terminals copy locally |
 | `/cost` | Token usage and cost for this session, and lifetime savings |
@@ -251,6 +251,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/run <cmd>` | Run a shell command and ask Claude about its output |
 | `/budget <$>` | Cap the session's spend; at the cap, questions go to the cheapest model. `/budget off` removes it |
 | `/status` | Version, project, provider and access, model, permission mode, what the shell may run, index state and where the conversation is saved |
+| `/resume` | Switch to one of this project's saved conversations, picked from a list with their date, turn count and first question. The conversation you leave is kept |
 | `/rewind` | Go back to before an earlier turn of this run: picks the turn from a menu, truncates the conversation to before it and resets the files to the commit HEAD was at then (`git reset --keep`). Refuses, changing nothing, if a commit since is not a `Claude:` one or a file it would reset has local edits. Edits the agent left uncommitted are not restored; compaction and `/clear` drop the earlier turns from the menu |
 | `/undo` | Undo the last `Claude:` commit. Keeps uncommitted work; refuses if the last commit is yours or its files have local edits |
 | `/why` | How the last query was routed and what was retrieved |

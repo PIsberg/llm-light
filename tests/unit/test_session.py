@@ -214,18 +214,123 @@ class TestContinueFlag(unittest.TestCase):
 
     def test_continue_resumes_an_interactive_session(self):
         start_chat, one_shot = self._main(["--continue"])
-        start_chat.assert_called_once_with(auto_apply=False, resume=True)
+        start_chat.assert_called_once_with(auto_apply=False, resume=True, pick=False)
         one_shot.assert_not_called()
 
     def test_plain_start_does_not_resume(self):
         start_chat, _ = self._main([])
-        start_chat.assert_called_once_with(auto_apply=False, resume=False)
+        start_chat.assert_called_once_with(auto_apply=False, resume=False, pick=False)
+
+    def test_resume_flag_asks_which_conversation(self):
+        start_chat, _ = self._main(["--resume"])
+        start_chat.assert_called_once_with(auto_apply=False, resume=False, pick=True)
+
+    def test_resume_with_a_one_shot_question_is_a_usage_error(self):
+        with patch("sys.stderr"), self.assertRaises(SystemExit) as raised:
+            self._main(["--resume", "what next?"])
+        self.assertEqual(raised.exception.code, 2)
 
     def test_continue_with_a_one_shot_question_is_a_usage_error(self):
         # One-shot turns send no history, so resuming one would do nothing.
         with patch("sys.stderr"), self.assertRaises(SystemExit) as raised:
             self._main(["--continue", "what next?"])
         self.assertEqual(raised.exception.code, 2)
+
+
+class TestEarlierConversations(_SessionTest):
+    """#136: /clear keeps the conversation as an archive, and /resume or
+    --resume picks one of this project's earlier conversations."""
+
+    def _save(self, *questions):
+        state.conversation_history.clear()
+        for q in questions:
+            state.conversation_history += [{"role": "user", "content": q},
+                                           {"role": "assistant", "content": "a"}]
+        state.turn_count = len(questions)
+        self.assertTrue(session.save())
+
+    def test_clear_archives_the_conversation_instead_of_deleting_it(self):
+        self._save("first question")
+        session.clear()
+        self.assertFalse(session.session_file().exists())
+        entries = session.conversations()
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["first"], "first question")
+        self.assertFalse(entries[0]["current"])
+
+    def test_conversations_lists_the_current_one_first_then_the_archives_newest_first(self):
+        self._save("old one")
+        session.clear()
+        self._save("middle one", "second turn")
+        session.clear()
+        self._save("current one")
+        entries = session.conversations()
+        self.assertEqual([e["first"] for e in entries], ["current one", "middle one", "old one"])
+        self.assertEqual([e["turns"] for e in entries], [1, 2, 1])
+        self.assertEqual([e["current"] for e in entries], [True, False, False])
+
+    def test_resume_swaps_an_archived_conversation_in_and_keeps_the_current_one(self):
+        self._save("old one")
+        session.clear()
+        self._save("current one")
+        old = next(e for e in session.conversations() if not e["current"])
+        msg = session.resume(old["path"])
+        self.assertIn("1 turn", msg)
+        self.assertEqual(state.conversation_history[0]["content"], "old one")
+        firsts = {e["first"]: e["current"] for e in session.conversations()}
+        self.assertEqual(firsts, {"old one": True, "current one": False})
+
+    def test_only_the_newest_archives_are_kept(self):
+        for i in range(config.SESSION_KEEP + 3):
+            self._save(f"conversation {i}")
+            session.clear()
+        entries = session.conversations()
+        self.assertEqual(len(entries), config.SESSION_KEEP)
+        self.assertEqual(entries[0]["first"], f"conversation {config.SESSION_KEEP + 2}")
+
+    def test_archives_belong_to_their_provider(self):
+        self._save("claude conversation")
+        session.clear()
+        gemini = MagicMock()
+        gemini.name = "gemini"
+        with patch.object(session.providers, "active", return_value=gemini):
+            self.assertEqual(session.conversations(), [])
+
+    def test_an_unreadable_archive_is_skipped(self):
+        self._save("good one")
+        session.clear()
+        bad = session.session_file().with_name(session.session_file().stem + ".saved-19990101-000000.json")
+        bad.write_text("{not json", encoding="utf-8")
+        self.assertEqual([e["first"] for e in session.conversations()], ["good one"])
+
+
+class TestResumeCommand(unittest.TestCase):
+
+    def test_loop_resume_picks_a_conversation_and_resets_the_turn_state(self):
+        import llm_light.main as main_mod
+        state.checkpoints[:] = [{"question": "q", "history_len": 0, "head": None, "turn": 0}]
+        state.replies[:] = ["r"]
+        entries = [{"path": Path("x.json"), "label": "2026-11-02 10:00 · 1 turn · old"}]
+        feed = iter(["/resume", "exit"])
+        with patch.object(session, "conversations", return_value=entries), \
+             patch.object(session, "resume", return_value="Continuing.") as resume, \
+             patch.object(main_mod, "choose", return_value="0"), \
+             patch.object(cl, "full_refresh"), \
+             patch("llm_light.Observer", return_value=MagicMock()), \
+             patch("llm_light.SourceHandler", return_value=MagicMock()), \
+             patch("threading.Thread", return_value=MagicMock()), \
+             patch.object(cl, "_PROMPTTK_AVAILABLE", False), \
+             patch.object(cl, "print_session_summary"), \
+             patch.object(cl.main.session, "save"), \
+             patch("builtins.input", side_effect=lambda _p=">": next(feed)), \
+             patch("builtins.print"):
+            try:
+                cl.start_chat()
+            finally:
+                state.stop_event.clear()
+        resume.assert_called_once_with(Path("x.json"))
+        self.assertEqual(state.checkpoints, [])
+        self.assertEqual(state.replies, [])
 
 
 if __name__ == "__main__":
