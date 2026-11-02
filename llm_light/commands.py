@@ -1,5 +1,5 @@
 """The session commands modelled on Claude Code's: /copy, /model, /export,
-/status, /diff, `!command` and `@file` mentions.
+/status, /diff, /rewind, `!command` and `@file` mentions.
 
 Each returns the line to show (or prints its own output for the ones that
 show a diff or a command's output), so main.py's prompt loop only dispatches.
@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 import llm_light.state as state
-from llm_light import config, git_manager, permissions, providers
+from llm_light import config, git_manager, permissions, providers, session
 from llm_light.providers.base import SHELL, TOP_TIER
 
 
@@ -378,3 +378,53 @@ def diff_command() -> str:
         more = f" and {len(new) - 10} more" if len(new) > 10 else ""
         summary += f"; untracked: {', '.join(new[:10])}{more}"
     return summary + "."
+
+
+# --- /rewind ------------------------------------------------------------------
+
+def checkpoint(question: str) -> dict:
+    """The state before a turn: chat() takes one at the start of every turn and
+    keeps it in state.checkpoints when the turn completes."""
+    return {"question": question, "history_len": len(state.conversation_history),
+            "head": git_manager.head_commit() if git_manager.is_git_repo() else None,
+            "turn": state.turn_count}
+
+
+def rewind_targets() -> list:
+    """(index into state.checkpoints, label) for each turn, newest first."""
+    return [(i, f"turn {cp['turn'] + 1}: {cp['question'][:60]}")
+            for i, cp in reversed(list(enumerate(state.checkpoints)))]
+
+
+def rewind(index: int) -> str:
+    """Restore the files and the conversation to before checkpoint `index`.
+
+    Files go back with git reset --keep to the commit HEAD was at before that
+    turn. It refuses, changing nothing, when a commit since is not one of
+    Claude's, or when a file it would reset has uncommitted edits. Edits the
+    agent made that were never committed are not tracked and stay as they are.
+    """
+    cp = state.checkpoints[index]
+    reverted = 0
+    files_note = ""
+    if cp["head"] is None:
+        files_note = " The files were not changed (no git repository when that turn ran)."
+    elif git_manager.is_git_repo():
+        subjects = git_manager.subjects_since(cp["head"])
+        if subjects is None:
+            return "Nothing rewound: the git history changed since that turn."
+        if any(not s.startswith(git_manager.COMMIT_PREFIX) for s in subjects):
+            return ("Nothing rewound: a commit after that turn was not made by Claude. "
+                    "/undo and /rewind only take back Claude's own commits.")
+        if subjects and not git_manager.reset_keep(cp["head"]):
+            return ("Nothing rewound: files Claude changed since that turn have uncommitted "
+                    "edits. Commit or stash them first.")
+        reverted = len(subjects)
+    else:
+        files_note = " The files were not changed (not in a git repository)."
+    del state.conversation_history[cp["history_len"]:]
+    state.turn_count = cp["turn"]
+    del state.checkpoints[index:]
+    session.save()
+    commits = f", reverted {reverted} commit{'' if reverted == 1 else 's'}" if reverted else ""
+    return f"Rewound to before {cp['question'][:60]!r}{commits}.{files_note}"

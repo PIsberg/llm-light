@@ -84,6 +84,7 @@ def _fresh_permissions_and_commands():
         state.pinned_model = None
         state.pending_context.clear()
         state.replies.clear()
+        state.checkpoints.clear()
     reset()
     history = list(state.conversation_history)
     yield

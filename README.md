@@ -251,6 +251,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/run <cmd>` | Run a shell command and ask Claude about its output |
 | `/budget <$>` | Cap the session's spend; at the cap, questions go to the cheapest model. `/budget off` removes it |
 | `/status` | Version, project, provider and access, model, permission mode, what the shell may run, index state and where the conversation is saved |
+| `/rewind` | Go back to before an earlier turn of this run: picks the turn from a menu, truncates the conversation to before it and resets the files to the commit HEAD was at then (`git reset --keep`). Refuses, changing nothing, if a commit since is not a `Claude:` one or a file it would reset has local edits. Edits the agent left uncommitted are not restored; compaction and `/clear` drop the earlier turns from the menu |
 | `/undo` | Undo the last `Claude:` commit. Keeps uncommitted work; refuses if the last commit is yours or its files have local edits |
 | `/why` | How the last query was routed and what was retrieved |
 | `/exit`, `exit`, `quit` | Quit; prints a one-line session summary |

@@ -554,3 +554,142 @@ def test_toolbar_shows_non_default_modes():
     permissions.set_mode(permissions.BYPASS)
     narrow = m._status_text(40)
     assert "bypass" in narrow  # never dropped to fit
+
+
+# --- /rewind (#134) ------------------------------------------------------------
+# Each completed turn records a checkpoint (its question, the history length and
+# HEAD before it). /rewind truncates the history and git reset --keep's back to
+# that commit, refusing as /undo does when a later commit is not Claude's or a
+# file Claude changed has local edits.
+
+import subprocess as _sp
+
+
+def _git(repo, *args):
+    return _sp.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+
+
+@pytest.fixture
+def rewind_repo(tmp_path, monkeypatch):
+    from llm_light import git_manager
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "t@example.com")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "a.py").write_text("v0\n", encoding="utf-8")
+    _git(tmp_path, "add", "a.py")
+    _git(tmp_path, "commit", "-qm", "initial")
+    monkeypatch.chdir(tmp_path)
+    state.conversation_history.clear()
+    state.checkpoints.clear()
+    state.turn_count = 0
+
+    def turn(question, content):
+        cp = commands.checkpoint(question)
+        (tmp_path / "a.py").write_text(content, encoding="utf-8")
+        _git(tmp_path, "commit", "-qam", git_manager.COMMIT_PREFIX + question)
+        state.conversation_history += [{"role": "user", "content": question},
+                                       {"role": "assistant", "content": "done"}]
+        state.turn_count += 1
+        state.checkpoints.append(cp)
+    return tmp_path, turn
+
+
+def test_rewind_restores_the_files_and_the_conversation_to_before_the_turn(rewind_repo):
+    repo, turn = rewind_repo
+    start = _git(repo, "rev-parse", "HEAD")
+    turn("make v1", "v1\n")
+    turn("make v2", "v2\n")
+    assert [label for _, label in commands.rewind_targets()] == [
+        "turn 2: make v2", "turn 1: make v1"]
+    with patch.object(commands.session, "save"):
+        msg = commands.rewind(0)  # back to before turn 1
+    assert "2 commits" in msg
+    assert (repo / "a.py").read_text(encoding="utf-8") == "v0\n"
+    assert _git(repo, "rev-parse", "HEAD") == start
+    assert state.conversation_history == [] and state.turn_count == 0
+    assert state.checkpoints == []
+
+
+def test_rewind_to_a_later_turn_keeps_the_earlier_ones(rewind_repo):
+    repo, turn = rewind_repo
+    turn("make v1", "v1\n")
+    turn("make v2", "v2\n")
+    with patch.object(commands.session, "save"):
+        commands.rewind(1)
+    assert (repo / "a.py").read_text(encoding="utf-8") == "v1\n"
+    assert len(state.conversation_history) == 2 and state.turn_count == 1
+    assert [cp["question"] for cp in state.checkpoints] == ["make v1"]
+
+
+def test_rewind_refuses_past_a_commit_that_is_not_claudes(rewind_repo):
+    repo, turn = rewind_repo
+    turn("make v1", "v1\n")
+    (repo / "b.py").write_text("mine\n", encoding="utf-8")
+    _git(repo, "add", "b.py")
+    _git(repo, "commit", "-qm", "my own work")
+    head = _git(repo, "rev-parse", "HEAD")
+    msg = commands.rewind(0)
+    assert "not made by Claude" in msg
+    assert _git(repo, "rev-parse", "HEAD") == head and len(state.conversation_history) == 2
+
+
+def test_rewind_refuses_when_a_changed_file_has_local_edits(rewind_repo):
+    repo, turn = rewind_repo
+    turn("make v1", "v1\n")
+    (repo / "a.py").write_text("my edit\n", encoding="utf-8")
+    msg = commands.rewind(0)
+    assert "uncommitted" in msg
+    assert (repo / "a.py").read_text(encoding="utf-8") == "my edit\n"
+    assert len(state.conversation_history) == 2 and state.turn_count == 1
+
+
+def test_rewind_outside_git_rewinds_the_conversation_only(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    state.conversation_history[:] = []
+    state.checkpoints.clear()
+    state.turn_count = 0
+    with patch.object(commands.git_manager, "is_git_repo", return_value=False):
+        cp = commands.checkpoint("q1")
+    state.conversation_history += [{"role": "user", "content": "q1"}, {"role": "assistant", "content": "a"}]
+    state.turn_count = 1
+    state.checkpoints.append(cp)
+    with patch.object(commands.git_manager, "is_git_repo", return_value=False), \
+         patch.object(commands.session, "save"):
+        msg = commands.rewind(0)
+    assert "files were not changed" in msg
+    assert state.conversation_history == []
+
+
+def test_nothing_to_rewind_before_the_first_turn():
+    state.checkpoints.clear()
+    assert commands.rewind_targets() == []
+
+
+def test_chat_records_a_checkpoint_per_completed_turn():
+    state.checkpoints.clear()
+    state.conversation_history.clear()
+    with patch.object(commands.git_manager, "is_git_repo", return_value=False):
+        _run_chat("an answer", query="first")
+        _run_chat("an answer", query="second")
+    assert [(cp["question"], cp["history_len"]) for cp in state.checkpoints] == [
+        ("first", 0), ("second", 2)]
+
+
+def test_compressing_the_history_drops_the_checkpoints():
+    from llm_light import llm
+    state.checkpoints[:] = [{"question": "q", "history_len": 0, "head": None, "turn": 0}]
+    state.conversation_history[:] = [{"role": "user", "content": f"m{i}"}
+                                     for i in range(llm.MAX_HISTORY_TURNS * 2 + 4)]
+    with patch.object(llm, "_summarize_turns", return_value=("summary", None)), \
+         patch("builtins.print"):
+        llm._maybe_compress_history()
+    assert state.checkpoints == []
+
+
+def test_loop_rewind_asks_which_turn(monkeypatch):
+    state.checkpoints[:] = [{"question": "q1", "history_len": 0, "head": None, "turn": 0}]
+    with patch("llm_light.main.choose", return_value="0") as choose, \
+         patch.object(commands, "rewind", return_value="Rewound.") as rewind:
+        _loop(monkeypatch, ["/rewind", "exit"])
+    choose.assert_called_once()
+    rewind.assert_called_once_with(0)

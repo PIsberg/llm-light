@@ -30,6 +30,7 @@ This sequence diagram illustrates the complete flow from user query to response,
 | `/cost` | Show session spend and global lifetime savings |
 | `/why` | Explain the last query's routing and retrieval |
 | `/run <cmd>` | Run shell command and feed output to Claude |
+| `/rewind` | Go back to before an earlier turn of this run: picks the turn from a menu, truncates the conversation to before it and resets the files to the commit HEAD was at then (`git reset --keep`). Refuses, changing nothing, if a commit since is not a `Claude:` one or a file it would reset has local edits. Edits the agent left uncommitted are not restored; compaction and `/clear` drop the earlier turns from the menu |
 | `/undo` | Undo the last `Claude:` commit. Keeps uncommitted work; refuses if the last commit is yours or its files have local edits |
 | `/help` | Display help menu |
 | `exit` / `quit` | Quit the application |

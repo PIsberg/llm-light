@@ -459,6 +459,7 @@ def compact_history() -> int:
     turns = (len(history) + 1) // 2
     summary_text, usage = _summarize_turns(list(history))
     _record_usage(usage, SUMMARY_MODEL)
+    state.checkpoints.clear()  # the summary replaces the turns they point into
     history[:] = [
         {"role": "user",      "content": f"[Summary of earlier conversation]\n{summary_text}"},
         {"role": "assistant", "content": "Understood, I have context from our earlier discussion."},
@@ -470,6 +471,7 @@ def _maybe_compress_history():
     if len(state.conversation_history) <= MAX_HISTORY_TURNS * 2:
         return
     batch_msgs   = SUMMARIZE_BATCH * 2
+    state.checkpoints.clear()  # their history lengths stop matching either way
     to_summarize = state.conversation_history[:batch_msgs]
     remaining    = state.conversation_history[batch_msgs:]
     try:
@@ -723,6 +725,8 @@ def chat(query, auto_apply=False, use_index=True, context=""):
     an attached file cannot push a short question to the top tier."""
     routed_model, effort, max_tok = _finalize_route(*route_query(query))
     token_budget = _RETRIEVAL_BUDGET[effort]
+    from llm_light.commands import checkpoint
+    turn_checkpoint = checkpoint(query)
 
     from llm_light.indexer import _chunk_label
     skipped_reason = None
@@ -848,6 +852,7 @@ def chat(query, auto_apply=False, use_index=True, context=""):
 
             state.turn_count += 1
             turns = state.turn_count
+            state.checkpoints.append(turn_checkpoint)
 
             explanation = _ANY_BLOCK.sub("", reply).strip() if edits else reply
             if explanation and not was_streamed:
