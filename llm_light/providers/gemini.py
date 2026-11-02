@@ -24,6 +24,9 @@ _USER_SETTINGS = (".gemini", "antigravity-cli", "settings.json")
 _PARSE_REMEDY = "Update agy (agy update) and run it on its own to see what it prints."
 # Where agy keeps per-conversation state, its plan artifacts included (#123).
 _BRAIN = (".gemini", "antigravity-cli", "brain")
+# What _carry_sign_in() brings into the run's temporary home (#124).
+_TOKEN_FILE = (".gemini", "antigravity-cli", "antigravity-oauth-token")
+_KEYCHAINS = ("Library", "Keychains")
 
 # A custom agent with no tools, selected with --agent. No permission kind stops
 # agy's search_web, so a Gemini turn could put repo code into web-search queries
@@ -73,13 +76,41 @@ def _settings() -> str:
     return json.dumps(dict(json.loads(SETTINGS), model=model))
 
 
+def _carry_sign_in(home: str) -> None:
+    """Make the user's agy sign-in reachable from the run's temporary home, and nothing else.
+
+    Windows needs nothing: agy uses the Credential Manager, which ignores HOME. Elsewhere
+    a redirected HOME loses it, so agy would ask a signed-in user to sign in (#124):
+    - Without a usable OS keychain agy reads a token file under HOME (strace of agy 1.4.12
+      on Linux). The copy goes away with the home; a token agy refreshes during the run
+      is not written back, and the user's own stays as it was.
+    - macOS: agy calls /usr/bin/security, which finds no login keychain once HOME moves
+      (exit 44, macOS 26.6.2) and finds it with only Library/Keychains linked. rmtree
+      removes the link without following it.
+    """
+    real = Path.home()
+    token = real.joinpath(*_TOKEN_FILE)
+    try:
+        if token.is_file():
+            target = Path(home).joinpath(*_TOKEN_FILE)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(token, target)
+            target.chmod(0o600)
+    except OSError:
+        pass  # agy then says for itself that it is not signed in
+    keychains = real.joinpath(*_KEYCHAINS)
+    if sys.platform == "darwin" and keychains.is_dir():
+        link = Path(home).joinpath(*_KEYCHAINS)
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(keychains, target_is_directory=True)
+
+
 def _isolated_env(home: str) -> dict:
     """Our environment with HOME and USERPROFILE pointing at an empty directory.
 
     agy then loads none of the user's plugins, hooks, rules or MCP servers
     (all under ~/.gemini) and keeps its conversations and logs out of the
-    user's history. Sign-in still works: agy keeps no credential file there
-    (probed with agy 1.4.12 on Windows, #118).
+    user's history. _carry_sign_in() keeps the sign-in working there.
     """
     env = proxy.child_env(dict(os.environ))
     env["HOME"] = home
@@ -239,6 +270,7 @@ class GeminiProvider(Provider):
         argv = [binary] + _argv_tail(_settings())
         with empty_temp_dir() as cwd, empty_temp_dir() as home:
             _install_agent(home)
+            _carry_sign_in(home)
             out = run_cli(self.name, argv, _stdin_line(stdin_text), cwd=cwd,
                           env=_isolated_env(home))
             return _result_reply(out, home), _usage(out)

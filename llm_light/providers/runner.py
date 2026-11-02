@@ -17,7 +17,12 @@ _SIGKILL = getattr(signal, "SIGKILL", 9)
 
 def new_session() -> bool:
     """Popen's start_new_session for a CLI child: its own process group on
-    POSIX, so kill_process_tree can stop everything it starts."""
+    POSIX, so kill_process_tree can stop everything it starts.
+
+    It also drops the controlling terminal, which agy depends on: signed out and
+    with a terminal, agy 1.4.12 waits for a browser sign-in; without one it exits
+    at once with an error (Linux, setsid vs not, #124). Windows does not detach.
+    """
     return os.name != "nt"
 
 
