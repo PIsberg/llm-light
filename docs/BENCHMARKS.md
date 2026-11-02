@@ -37,7 +37,7 @@ comparison, and this document now reflects that.
 | `benchmark_router.py` | Effort tier and model the router picks for each question | No | Free (static model download on first run) |
 | `benchmark_session_cache.py` | Session cost of four routing policies under a prompt-cache model | No | Free (static model download on first run) |
 | `benchmark_cache_warming.py` | What the startup warm and the idle heartbeat spend, run through the real `heartbeat()` and `warm_cache()` | No | Free |
-| `benchmark_answer_quality.py` | Answer quality of two variants on the same question, judged by Opus with swapped orders; Fable/Opus smoke | No (refuses with one); needs the Claude subscription | Subscription quota, about 110 CLI calls for `all` |
+| `benchmark_answer_quality.py` | Answer quality of two variants on the same question, judged by Opus with swapped orders; Fable/Opus smoke | No (refuses with one); needs the Claude subscription | Subscription quota, about 150 CLI calls for `all` |
 | `benchmark_cli_providers.py` | Tokens codex (or agy, `--provider gemini`) reports for one question through the shipped provider's `_run`, as shipped or `--baseline` | `codex login`, or a signed-in agy | Subscription or key usage, about 4k to 46k input tokens per run |
 | `benchmark_cost.py` | Real-world cost savings vs naive baseline | Yes | ~$0.05–$0.50 |
 | `benchmark_claude_code.py` | Claude Code vs `llm_light` vs naive baseline | Yes | Varies with live API/tool runs |
@@ -683,7 +683,7 @@ The shipped agent sends about 6,500 fewer input tokens per question: agy's own a
 
 ### Purpose
 
-The offline benchmarks score whether the right file reaches the context, not whether the answer is right. This one answers the same repo question with two variants and has a judge model pick the better answer, for the three open answer-quality questions: Haiku against Sonnet under ROUTE_ONCE (#90), the medium against the high retrieval budget (#77), and call-graph expansion off against on (#86). A `toptier` mode sends two plan-mode turns to Fable 5.1 and Opus 5.5 (#92).
+The offline benchmarks score whether the right file reaches the context, not whether the answer is right. This one answers the same repo question with two variants and has a judge model pick the better answer, for the open answer-quality questions: Haiku against Sonnet under ROUTE_ONCE (#90), the medium against the high retrieval budget (#77), and call-graph expansion off against on (#86). A `tools` experiment answers Sonnet-routed questions with tools off and with the agent's read-only tools on, to see what the agent's file reads cost (#79). A `toptier` mode sends two plan-mode turns to Fable 5.1 and Opus 5.5 (#92).
 
 ### Methodology
 
@@ -699,7 +699,7 @@ python tests/benchmarks/benchmark_answer_quality.py --experiment all
 python tests/benchmarks/benchmark_answer_quality.py --report
 ```
 
-Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spends subscription quota: about 110 CLI calls for `all`.
+Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spends subscription quota: about 150 CLI calls for `all`.
 
 ### Results (2026-11-02, claude 2.1.316, Windows)
 
@@ -713,6 +713,14 @@ Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spen
 - **Budget (#77).** The rendered context barely changes: 1,065 against 1,086 mean tokens, identical on 5 of 8 questions. At high effort only the top two chunks are shown in full and the rest as a bounded file summary, so a larger selection adds little to what is sent. The 57% gap in section 2b's budget table counts the selected chunks' text, not the rendered context. Lowering the high budget would save about 2% of the context with no measured change in quality, so the budgets stay.
 - **Call graph (#86).** Expansion nearly doubles the context (822 to 1,581) and does not win: 2 against 2 in pairwise judgement. The rubric scores lean its way (6 against 4 of 16; it lifted two answers from 0 to 1), but neither answer side could see the real callers, so most scores are 0 or 1. By the rule #86 set, it is removed.
 - **Top tier (#92).** Fable 5.1 and Opus 5.5 each answered two plan-mode turns through the real agent path (3,460 to 3,969 characters, about 30 s each), and the second call read the cache (Fable 120,948 cached tokens, Opus 121,727). The CLI builds its own request, so this says nothing about llm_light's API-mode effort message or breakpoints.
+- **Tools (#79), 2026-11-02, a second run.** Same 10 Sonnet-routed questions, same retrieved context; x without tools, y with the CLI's read-only tools in plan mode, the repo as the working directory:
+
+  | | Wins | Mean total input (input + cache read + cache write) | Mean output | Sonnet-priced cost per question |
+  |---|---|---|---|---|
+  | tools off | 2 | 29,218 | 578 | $0.0223 |
+  | tools on | 6 (2 ties) | 91,322 | 982 | $0.0495 |
+
+  The agent read files on 4 of 10 questions (3 to 4 model rounds; 135,504 to 193,180 total input tokens, nearly all cache reads); on the other 6 it answered in one round, and having tools available still added about 15,000 input tokens (the tool definitions). Cache writes on the reading questions exceed the non-reading ones by about 2,000 to 6,000 tokens: that is the file content read, about $0.005 to $0.015 per reading question at Sonnet prices. A cheaper-model read shunt (lever 5) could save at most part of that, on the questions where reading won on quality, so it is not built. The CLI path's tools are Claude Code's, not llm_light's API-mode `read_file`; API mode is unmeasured (it needs a key, see #85).
 - Small samples: a difference of one pair is noise. The answers had no tools, so a variant that would have read a file to recover is scored without that chance.
 
 ---

@@ -12,6 +12,11 @@ Experiments (each pairs a variant x with a variant y on the same question):
   budget     High-routed questions with the medium retrieval budget (x) and the
              high one (y), both rendered at high effort. Can the high budget drop
              to 3,000 tokens? (issue #77)
+  tools      Sonnet-routed questions answered with tools off (x) and with the
+             agent's read-only tools on (y, plan mode, the repo as cwd), same
+             retrieved context. The difference in input tokens is what the
+             agent's file reads cost, the most a cheaper-model read shunt could
+             save (issue #79).
   toptier    No judge: one question each on Fable 5.1 and Opus 5.5 through the
              real agent path in plan mode (tools on, read-only), twice, to see the
              model answer, use its tools, and read the cache on the second call.
@@ -65,7 +70,7 @@ from llm_light.providers.base import transcript  # noqa: E402
 
 REPO_FIXTURE = ROOT / "tests" / "fixtures" / "repo_questions.json"
 DEFAULT_OUT = ROOT / ".llm_light_cache" / "bench" / "answer_quality.jsonl"
-EXPERIMENTS = ("models", "budget")
+EXPERIMENTS = ("models", "budget", "tools")
 JUDGE_MODEL = config.MODEL_OPUS
 REFERENCE_CHARS = 16_000
 TOPTIER_QUESTION = "Which function decides the model and effort level a question gets, and how?"
@@ -138,8 +143,8 @@ def reference_for(q) -> str:
 
 # --- pairs ------------------------------------------------------------------
 
-def _arm(model, effort, budget):
-    return {"model": model, "effort": effort, "budget": budget}
+def _arm(model, effort, budget, tools=False):
+    return {"model": model, "effort": effort, "budget": budget, "tools": tools}
 
 
 def pairs(experiment, questions, route):
@@ -154,6 +159,10 @@ def pairs(experiment, questions, route):
             out.append({"experiment": experiment, "question": q,
                         "x": _arm(config.MODEL_HAIKU, effort, budgets[effort]),
                         "y": _arm(config.MODEL_SONNET, effort, budgets[effort])})
+        elif experiment == "tools" and model == config.MODEL_SONNET:
+            out.append({"experiment": experiment, "question": q,
+                        "x": _arm(model, effort, budgets[effort], tools=False),
+                        "y": _arm(model, effort, budgets[effort], tools=True)})
         elif experiment == "budget" and effort == "high":
             out.append({"experiment": experiment, "question": q,
                         "x": _arm(model, effort, budgets["medium"]),
@@ -219,10 +228,23 @@ def _usage_row(usage) -> dict:
             "cache_creation_input_tokens": get("cache_creation_input_tokens")}
 
 
-def answer(skeleton, retrieved_ctx, question, model, effort) -> dict:
+@contextlib.contextmanager
+def _plan_mode():
+    """Read-only for the agent: the CLI runs with the repo as its cwd, and the
+    default mode (acceptEdits) would let it edit files."""
+    previous = permissions.mode()
+    permissions.set_mode("plan")
+    try:
+        yield
+    finally:
+        permissions.set_mode(previous)
+
+
+def answer(skeleton, retrieved_ctx, question, model, effort, tools=False) -> dict:
     system_text, prompt = transcript(_request(skeleton, retrieved_ctx, question, model, effort))
     start = time.monotonic()
-    text, usage, _sid = _cli(prompt, model, system_text)
+    with _plan_mode() if tools else contextlib.nullcontext():
+        text, usage, _sid = _cli(prompt, model, system_text, tools=tools)
     return {"text": text, "seconds": round(time.monotonic() - start, 1), **_usage_row(usage)}
 
 
@@ -246,7 +268,8 @@ def run_pair(pair, skeleton, retriever, judge_model) -> dict:
         ctx, hits = retriever.context(q["question"], arm)
         sides[side] = {**arm, "chunks": [c for c, _ in hits],
                        "context_tokens": retrieval._estimate_tokens(ctx),
-                       **answer(skeleton, ctx, q["question"], arm["model"], arm["effort"])}
+                       **answer(skeleton, ctx, q["question"], arm["model"], arm["effort"],
+                                tools=arm.get("tools", False))}
     outcome, verdicts = judge(q["question"], reference_for(q), sides["x"]["text"],
                               sides["y"]["text"], model=judge_model)
     return {"experiment": pair["experiment"], "question": q["question"], "file": q.get("file"),
@@ -257,22 +280,30 @@ def summarize(rows) -> dict:
     out = {}
     for row in rows:
         s = out.setdefault(row["experiment"], {"pairs": 0, "x_wins": 0, "y_wins": 0, "ties": 0,
-                                               "invalid": 0, "_x": [], "_y": [], "_xi": [], "_yi": []})
+                                               "invalid": 0, "_x": [], "_y": [], "_xi": [], "_yi": [],
+                                               "_xt": [], "_yt": []})
         s["pairs"] += 1
         s[{"x": "x_wins", "y": "y_wins", "tie": "ties"}.get(row["outcome"], "invalid")] += 1
         s["_x"].append(row["x"]["output_tokens"])
         s["_y"].append(row["y"]["output_tokens"])
         s["_xi"].append(row["x"].get("context_tokens", 0))
         s["_yi"].append(row["y"].get("context_tokens", 0))
+        for side in ("x", "y"):
+            d = row[side]
+            s[f"_{side}t"].append(d.get("input_tokens", 0) + d.get("cache_read_input_tokens", 0)
+                                  + d.get("cache_creation_input_tokens", 0))
     for s in out.values():
         for side in ("x", "y"):
-            outs, ctx = s.pop(f"_{side}"), s.pop(f"_{side}i")
+            outs, ctx, total = s.pop(f"_{side}"), s.pop(f"_{side}i"), s.pop(f"_{side}t")
             s[f"{side}_output_tokens"] = round(sum(outs) / len(outs))
             s[f"{side}_context_tokens"] = round(sum(ctx) / len(ctx))
+            # Every input token the CLI reported, cached or not, over all model rounds.
+            s[f"{side}_total_input_tokens"] = round(sum(total) / len(total))
     return out
 
 
-_LABELS = {"models": ("Haiku", "Sonnet"), "budget": ("medium budget", "high budget")}
+_LABELS = {"models": ("Haiku", "Sonnet"), "budget": ("medium budget", "high budget"),
+           "tools": ("tools off", "tools on")}
 
 
 def report(rows) -> None:
@@ -282,6 +313,8 @@ def report(rows) -> None:
               f"  ties {s['ties']}  invalid {s['invalid']}")
         print(f"  mean context tokens  {x} {s['x_context_tokens']:,}  {y} {s['y_context_tokens']:,}")
         print(f"  mean output tokens   {x} {s['x_output_tokens']:,}  {y} {s['y_output_tokens']:,}")
+        print(f"  mean total input     {x} {s['x_total_input_tokens']:,}  "
+              f"{y} {s['y_total_input_tokens']:,}  (input + cache read + cache write)")
 
 
 def toptier(skeleton) -> list:
