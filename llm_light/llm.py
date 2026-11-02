@@ -460,6 +460,7 @@ def compact_history() -> int:
     summary_text, usage = _summarize_turns(list(history))
     _record_usage(usage, SUMMARY_MODEL)
     state.checkpoints.clear()  # the summary replaces the turns they point into
+    state.cli_session = None   # and the CLI session still holds them
     history[:] = [
         {"role": "user",      "content": f"[Summary of earlier conversation]\n{summary_text}"},
         {"role": "assistant", "content": "Understood, I have context from our earlier discussion."},
@@ -472,6 +473,9 @@ def _maybe_compress_history():
         return
     batch_msgs   = SUMMARIZE_BATCH * 2
     state.checkpoints.clear()  # their history lengths stop matching either way
+    # The next prompt carries the shorter history into a new CLI session, which is
+    # also what bounds a session: the old one grows with every file the agent reads.
+    state.cli_session = None
     to_summarize = state.conversation_history[:batch_msgs]
     remaining    = state.conversation_history[batch_msgs:]
     try:
@@ -874,14 +878,18 @@ def chat(query, auto_apply=False, use_index=True, context=""):
                 if agent_edits:
                     _commit_agent_edits(agent_edits, query, auto_apply=auto_apply)
 
+            providers.active().turn_done()
             print()
             if has_usage:
                 print_stats(usage, label=f"Turn {turns}", model=routed_model)
             else:
                 print(f"  {_ANSI_DIM}{usage_unavailable(providers.active().name)}{_ANSI_RESET}")
             break
+        else:
+            state.cli_session = None  # every attempt failed, so no turn went in the history
 
     except KeyboardInterrupt:
+        state.cli_session = None  # the session may hold a turn the history does not
         note = (" The agent was stopped; files it already changed are left"
                 " uncommitted in the working tree.") if _agent_oauth() else ""
         print(f"\n  {_T_ERR}  Interrupted.{note}")
@@ -889,6 +897,7 @@ def chat(query, auto_apply=False, use_index=True, context=""):
         # Re-raise so main.py can handle the interactive login trigger
         raise
     except Exception as e:
+        state.cli_session = None  # as above
         print(f"\n[Error] API call failed: {e}")
 
 # How long a one-shot OAuth run waits for the index before asking without it.

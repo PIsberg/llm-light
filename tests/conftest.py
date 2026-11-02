@@ -84,6 +84,9 @@ def _fresh_permissions_and_commands():
         state.permission_mode = "default"
         state.bypass_allowed = False
         state.pinned_model = None
+        state.cli_session = None
+        state.cli_tree = None
+        state.cli_resume_failed = False
         state.pending_context.clear()
         state.replies.clear()
         state.checkpoints.clear()

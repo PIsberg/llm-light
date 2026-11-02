@@ -38,6 +38,7 @@ comparison, and this document now reflects that.
 | `benchmark_session_cache.py` | Session cost of four routing policies under a prompt-cache model | No | Free (static model download on first run) |
 | `benchmark_cache_warming.py` | What the startup warm and the idle heartbeat spend, run through the real `heartbeat()` and `warm_cache()` | No | Free |
 | `benchmark_answer_quality.py` | Answer quality of two variants on the same question, judged by Opus with swapped orders; Fable/Opus smoke | No (refuses with one); needs the Claude subscription | Subscription quota, about 150 CLI calls for `all` |
+| `benchmark_cli_session.py` | A whole subscription session through the real `chat()`: one resumed CLI session against the history re-sent each turn, judged by Opus | No (refuses with one); needs the Claude subscription | Subscription quota |
 | `benchmark_cli_providers.py` | Tokens codex (or agy, `--provider gemini`) reports for one question through the shipped provider's `_run`, as shipped or `--baseline` | `codex login`, or a signed-in agy | Subscription or key usage, about 4k to 46k input tokens per run |
 | `benchmark_live_api.py` | What only a real key can settle: the SDK on real responses (#71), effort messages and cache reads (#88), Fable and Opus requests (#92), whether `fetch_chunk` pays for itself (#85) | Yes, and `--i-accept-the-bill` | Stops at `--max-usd`, default $1.00 |
 | `benchmark_cost.py` | Real-world cost savings vs naive baseline | Yes | ~$0.05–$0.50 |
@@ -798,6 +799,54 @@ It prints one table per experiment and writes the rows to `.llm_light_cache/benc
 
 - The router is pinned to each experiment's model and effort; the rest of the turn is the real `chat()` and transport.
 - `fetch-chunk` uses the static embedder (`dense="skip"`), so retrieval there is the fast path, not hybrid.
+
+---
+
+## 2h · `benchmark_cli_session.py`: A Whole Subscription Session
+
+### Purpose
+
+The other live benchmarks ask one question at a time, so they cannot see what a session costs: the history a flat turn writes to the cache again, and the files the agent reads again because a new CLI process remembers none of them. This one asks the same questions in order, once continuing one CLI session (`--resume`) and once re-sending the history as one prompt on every turn (`LLM_LIGHT_CLI_RESUME=0`), lever 11.
+
+### Methodology
+
+- Each turn is the real `chat()` in plan mode, pinned to Sonnet 5.5, with llm_light's own retrieval on the static embedder (`dense="skip"`). Tokens and cost are `state.session_tokens` and `state.session_cost`, what a user is shown, so a history summary counts and a resume is charged its own cost.
+- Each repeat runs both arms with the order alternating. Two sessions of 6 turns (`routing`, `indexing`) and one of 12 that passes `MAX_HISTORY_TURNS`, so compression starts a new CLI session.
+- With `--judge`, Opus 5.5 scores the two answers to each turn in both orders against the source of the file that answers it, as section 2f does. A follow-up is shown with the question before it.
+- It refuses to run when an API key is configured.
+
+### Running
+
+```bash
+python tests/benchmarks/benchmark_cli_session.py --repeats 2 --judge
+python tests/benchmarks/benchmark_cli_session.py --session long --repeats 2
+python tests/benchmarks/benchmark_cli_session.py --report
+```
+
+Live: one six-turn pair is about 12 model turns and 24 judge calls of subscription quota.
+
+### Results (2026-11-02, claude 2.1.316, Windows)
+
+| Per session, API-equivalent | Flat | Resume | Change |
+|---|---|---|---|
+| 6 turns, 8 sessions per arm: cost | $0.3262 | $0.2446 | **-25.0%** |
+| Cache writes | 53,942 | 31,168 | -42.2% |
+| Cache reads | 245,989 | 400,052 | **+62.6%** |
+| Total input (input + read + write) | 299,965 | 431,262 | **+43.8%** |
+| Output | 8,575 | 7,985 | -6.9% |
+| Tool calls | 15.4 | 12.9 | -16.3% |
+| Seconds | 125 | 117 | -6.9% |
+| 12 turns, 2 sessions per arm: cost | $0.7683 | $0.5858 | -23.8% |
+| Cache writes | 144,560 | 95,007 | -34.3% |
+| Cache reads | 528,595 | 813,708 | +53.9% |
+
+No turn failed in either arm. The two six-turn batches agree on cost: -25.0% and -25.4%.
+
+- **Quality.** 48 turns judged in both orders: resume 6 wins, flat 8, 34 ties. The first batch alone read 2 to 6 and looked like a loss, with the resumed agent reading less on the turns it lost; the second read 4 to 2, with scores of 90 to 86 of 96. Neither batch alone is a result.
+- **Total input rises.** A resumed session keeps every file it read, so each later round reads more from the cache. The cost falls because a Sonnet cache read costs 1/25 of a write, and the writes fall further. Read this as a saving in API dollars. How the subscription's limits count cached tokens is not published, so it is not measured here whether a subscriber's limit lasts longer (#185).
+- **A nudge is undecided (#186).** One sentence on each resumed turn, telling the agent to read code it had not read yet, scored 11 wins to 1 against flat over 24 turns ($0.2708 against $0.3156, -14%), two of those wins on first turns, where the two arms run identically. Head to head with the plain resume over 30 turns on the same sessions it won 6, lost 1 and tied 23, with scores of 119 to 109 of 120, for 19% more cost ($0.2819 against $0.2372). It is not shipped. The run was planned for 6 sessions per arm and stopped at 5 at the subscription's limit. The script was a scratch wrapper around this benchmark.
+- **Checked live through this transport, not by the benchmark:** a resume at 140,053 input tokens took 5.3 s, against the 46k-token hang that removed `--resume` on 2026-04-23. A new run knew nothing of the old one's session. A rebuilt system prompt reached a resumed turn. A file read in one turn was edited in the next. A file changed between turns was reported correctly only once the turn named it: the first answer said `LIMIT is 42` of a file that said 77.
+- **Limits.** One repository, one model, questions written for this benchmark. The static embedder only, not hybrid retrieval. API-key mode is not on this path. A pause of 6.5 minutes cost nothing, but a resumed turn after the 1-hour cache entry expires was not measured: the probe hit the subscription's limit, so what that turn pays is unknown.
 
 ---
 

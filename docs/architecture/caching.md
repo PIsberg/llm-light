@@ -17,6 +17,21 @@ LLM Light uses Anthropic's ephemeral caching with three strategic breakpoints to
 | 2 | End of history | All but newest turn | 90% off conversation history |
 | 3 | End of chunks | Tool rounds and lint retries of the same turn | 90% off retrieved context on each extra round |
 
+### On the subscription
+
+An OAuth turn goes through the `claude` CLI, which sets its own breakpoints, so the table above is API-key mode. What llm_light controls there is what the prompt holds. Flattened by `transcript()`, the history is one text block, and no cache boundary falls inside a block, so every turn wrote all of it again. The files the agent read were gone too, since each turn is a new process and the history keeps only the replies.
+
+So turns continue one CLI session (`claude._session_to_resume`): the first turn sends the whole prompt, and later ones `--resume` it with only the new message and `--system-prompt-snapshot off`, without which the CLI resends the first turn's system prompt and a rebuilt skeleton never arrives. Measured live: 25% lower cost per session, 42% fewer cache writes, 63% more cache reads (`docs/BENCHMARKS.md`, section 2h). A pause within the CLI's 1-hour cache entry costs nothing: a resumed turn after 6.5 minutes read 54,154 tokens and wrote 19.
+
+What makes this safe:
+
+- **The session ends whenever the conversation stops matching it.** `state.cli_session` is set to `None` by `/clear`, `/compact`, `/rewind`, `/undo`, `/resume`, history compression, and a failed or interrupted turn, and a turn on another model starts over. The next turn sends the history as llm_light keeps it. Compression ending it is also what bounds its growth, since the session keeps every file it read.
+- **A resumed turn names the files that changed since the last one** (`claude._changed_files_note`, `git_manager.changed_since`). The session remembers what it read, and the CLI says nothing on a `-p` resume. `turn_done()` takes the snapshot after the turn's own edits and commits, so those are not reported. Outside a git repository nothing can tell, so nothing resumes.
+- **A resume that fails before showing or doing anything** runs the turn on the whole prompt and stops resuming for the run. One that fails later is not repeated, since it may have edited files.
+- **The kept home** (`state.cli_home`) holds the CLI's transcripts for the run. The credentials copy is removed after every call, and the directory at exit. Hidden calls such as the history summary keep their own home and stay out of the session.
+
+`total_cost_usd` is the whole session's on a resume, so `_remember_session` charges a turn the difference. `usage` is per run.
+
 ### What the skeleton holds
 
 `skeleton.build_skeleton()` renders the compressed directory tree, then the `.md` files `skeleton._in_prompt()` lets in: `CLAUDE.md` and `AGENTS.md` in full, other docs compacted to about 1,200 characters when long and structured.

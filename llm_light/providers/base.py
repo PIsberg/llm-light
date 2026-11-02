@@ -42,6 +42,10 @@ class Provider:
     def warm(self, quiet: bool = False) -> None:
         return None
 
+    def turn_done(self) -> None:
+        """chat() finished a turn, its edits and commits included."""
+        return None
+
 
 def json_events(stdout: str) -> Iterator[dict]:
     """The JSON-object lines of a CLI's NDJSON output, in order.

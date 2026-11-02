@@ -85,6 +85,39 @@ def get_modified_files() -> List[str]:
     return files
 
 
+def tree_state() -> Optional[dict]:
+    """HEAD and each dirty file's size and mtime, for changed_since(). None outside a
+    git repository, where there is no cheap way to tell what changed."""
+    if not is_git_repo():
+        return None
+    files = {}
+    for path in get_modified_files():
+        try:
+            stat = Path(path.strip('"')).stat()
+            files[path] = (stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            files[path] = None  # deleted
+    return {"head": head_commit(), "files": files}
+
+
+def changed_since(before: Optional[dict]) -> Optional[List[str]]:
+    """Files that differ from the tree_state() `before`, or None if that cannot be
+    told: outside a repository, or after HEAD moved in a way git cannot diff."""
+    now = tree_state()
+    if before is None or now is None:
+        return None
+    changed = {path for path in before["files"].keys() | now["files"].keys()
+               if before["files"].get(path, "absent") != now["files"].get(path, "absent")}
+    if before["head"] != now["head"]:
+        if not before["head"] or not now["head"]:
+            return None
+        stdout, code = _run_git("diff", "--name-only", before["head"], now["head"])
+        if code != 0:
+            return None
+        changed.update(stdout.splitlines())
+    return sorted(changed)
+
+
 def get_last_commit_message() -> Optional[str]:
     """
     Get the message of the last commit.
