@@ -195,6 +195,27 @@ chunk texts the embedding cache does not keep, so their curves are top-K like
 the other modes. Each model's vectors are cached separately, so `hybrid` after
 `dense` and `static` on the same repos embeds nothing new.
 
+Results on the dev split (2026-11-02, CPU, 23 instances in 6 repos; the hybrid
+run embedded every commit with both models in about 3 hours, then `dense` and
+`static` reused the cache):
+
+| Mode | Hit@5 | Hit@10 | Hit@15 | Recall@10 | MRR | Retrieved nothing |
+|---|---|---|---|---|---|---|
+| `dense` (all-mpnet-base-v2) | 6/23 | 9/23 | 9/23 | 39% | 0.228 | 0 |
+| `static` | 8/23 | 8/23 | 9/23 | 35% | 0.151 | 0 |
+| `hybrid` (shipped) | 7/23 | 8/23 | 9/23 | 35% | 0.202 | 0 |
+
+Per repo, Hit@10 dense / static / hybrid: sqlfluff 3/2/2 of 5, marshmallow 1/1/2
+of 2, pvlib 2/1/1 of 5, astroid 0/2/0 of 5, pyvista 1/1/1 of 1, pydicom 2/1/2 of
+5. The three modes are within one instance of each other at every K; head to
+head at Hit@10, hybrid alone found 2 and dense alone 3. That is noise at n = 23,
+so on other codebases the hybrid index neither gains nor loses recall against
+mpnet alone; its point stays the fast start (static vectors are ready before the
+dense pass). The floors and gap left no instance with nothing retrieved, so
+nothing here argues for re-tuning `HYBRID_MIN_SCORE` or `HYBRID_SCORE_GAP`, and
+they stay (#69). The `--split test` run (300 instances) was not done; on this
+machine it would take days of CPU.
+
 ### Metrics
 
 | Metric | Definition |
@@ -262,7 +283,7 @@ python tests/benchmarks/benchmark_retrieval.py --split dev --retrieval hybrid
 
 ### Interpreting Results
 
-The output table shows per-repo and overall metrics at each K:
+The output table shows per-repo and overall metrics at each K (the numbers below show the format only; the measured dev-split results are under Methodology):
 
 ```
 Results: dev split  23 instances  K=[5,10,15]
