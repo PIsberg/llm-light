@@ -95,8 +95,9 @@ def child_env(env: dict | None) -> dict | None:
     Without a proxy, env is returned as it is, so a None still means the child
     inherits our environment. HTTP_PROXY stays unset: llm-fw forwards CONNECT
     only. NODE_EXTRA_CA_CERTS adds the CA for Node clients; SSL_CERT_FILE
-    replaces the bundle for Python and Rust clients, so it gets the combined
-    one. Go clients on Windows and macOS read only the OS store.
+    replaces the bundle for other clients, so it gets the combined one. agy, a
+    Go program, trusted a private CA given this way on Windows and rejected the
+    same certificate without it (agy 1.4.12, #153).
     """
     if _url is None:
         return env
