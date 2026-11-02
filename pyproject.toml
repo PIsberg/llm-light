@@ -51,8 +51,6 @@ dev = [
 
 [project.scripts]
 llm-light = "llm_light.__main__:main"
-# Old name, kept for existing installs. Both run the same entry point.
-claude-light = "llm_light.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/PIsberg/llm-light"

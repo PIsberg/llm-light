@@ -32,8 +32,7 @@ CA_SUBJECT = ((("commonName", "llm_light test proxy CA"),),)
 
 @pytest.fixture(autouse=True)
 def _no_proxy(monkeypatch):
-    for var in ("LLM_LIGHT_PROXY", "LLM_LIGHT_PROXY_CA", "CLAUDE_LIGHT_PROXY",
-                "CLAUDE_LIGHT_PROXY_CA"):
+    for var in ("LLM_LIGHT_PROXY", "LLM_LIGHT_PROXY_CA"):
         monkeypatch.delenv(var, raising=False)
     proxy.configure(None)
     yield

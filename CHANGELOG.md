@@ -15,6 +15,10 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 - **Codex sends about half the tokens per question.** llm_light replaces codex's own agent instructions with a short no-tools note and switches off the codex prompt sections and tool features an answer engine never uses. On one repo question (5 runs each, codex-cli 0.166.0) input tokens fell from a mean of 21,766 to 9,190 and output from 926 to 621, and the trimmed runs took no hidden extra model rounds. `tests/benchmarks/benchmark_cli_providers.py` measures it; see `docs/BENCHMARKS.md`, section 2e.
 - **Codex turns show their token counts.** The turn line, `/cost`, the exit footer and the status bar show the input, cached and output tokens codex reports, instead of `tokens, cost and caching unavailable for codex`. No dollar figure: codex's prices are not Claude's, so nothing is added to the session cost or the lifetime dollar savings. Gemini still reports none (#148).
 
+### Removed
+
+- **The `claude_light` names are gone (#119).** The `claude-light` command, `claude_light.py`, the `CLAUDE_LIGHT_*` environment variables and the `~/.claude_light_*` home files are no longer read or copied; 0.1.0 kept them for one release. Run `llm-light`, rename the variables to `LLM_LIGHT_*` and the files to `~/.llm_light_*`. Startup prints one line for each old setting or file it still finds, so a renamed-away `CLAUDE_LIGHT_PROXY` does not silently stop routing traffic through the proxy.
+
 ## [0.1.0]
 
 The first release on PyPI, as `llm-light-cli`: `pipx install llm-light-cli` or `uv tool install llm-light-cli`. The command is still `llm-light`. It needs Python 3.12 or newer, and the first install downloads PyTorch (about 1.5 GB) through `sentence-transformers`.
