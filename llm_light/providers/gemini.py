@@ -4,9 +4,10 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from llm_light import proxy
-from llm_light.providers.base import Provider, ProviderError, json_events, transcript
+from llm_light.providers.base import USAGE, Provider, ProviderError, json_events, transcript
 from llm_light.providers.runner import empty_temp_dir, run_cli
 
 BINARY = "agy"
@@ -185,9 +186,38 @@ def _result_reply(stdout: str, home=None) -> str:
     return reply.strip()
 
 
+def _count(value) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(value)
+    return value
+
+
+def _usage(stdout: str):
+    """Token counts from the last result event's usage; None if unreadable (#159).
+
+    agy's input_tokens excludes the cached part, which it reports as
+    cache_read_tokens, the split Claude's usage already has. output_tokens
+    includes the thinking tokens.
+    """
+    usage = None
+    for event in json_events(stdout):
+        if event.get("event") == "result" and isinstance(event.get("result"), dict):
+            usage = event["result"].get("usage")
+    try:
+        if not isinstance(usage, dict):
+            raise ValueError(usage)
+        return SimpleNamespace(input_tokens=_count(usage["input_tokens"]),
+                               cache_read_input_tokens=_count(usage.get("cache_read_tokens", 0)),
+                               cache_creation_input_tokens=0,
+                               output_tokens=_count(usage["output_tokens"]))
+    except (KeyError, ValueError):
+        return None
+
+
 class GeminiProvider(Provider):
     name = "gemini"
-    capabilities = frozenset()
+    # Exact token counts, at prices that are not Claude's: no USD_BUDGET (#159).
+    capabilities = frozenset({USAGE})
 
     def model_label(self, routed_model: str) -> str:
         return _LABEL
@@ -201,7 +231,8 @@ class GeminiProvider(Provider):
             print(f"\n  {_T_ERR}  {_MISSING}", file=sys.stderr)
             sys.exit(1)
 
-    def _run(self, stdin_text: str) -> str:
+    def _run(self, stdin_text: str) -> tuple:
+        """(reply, usage) of one agy run; usage is None when agy printed none."""
         binary = shutil.which(BINARY)
         if not binary:
             raise ProviderError(_MISSING)
@@ -210,20 +241,19 @@ class GeminiProvider(Provider):
             _install_agent(home)
             out = run_cli(self.name, argv, _stdin_line(stdin_text), cwd=cwd,
                           env=_isolated_env(home))
-            return _result_reply(out, home)
+            return _result_reply(out, home), _usage(out)
 
     def complete(self, request: dict):
         from llm_light.ui import _Spinner
         system_text, prompt = transcript(request)
         with _Spinner("Waiting for gemini"):
-            reply = self._run(system_text + "\n\n" + prompt)
-        return reply, None, False
+            reply, usage = self._run(system_text + "\n\n" + prompt)
+        return reply, usage, False
 
     def summarize(self, instructions: str):
         from llm_light.ui import _Spinner
         with _Spinner("Summarizing"):
-            text = self._run("You summarize conversations.\n\n" + instructions)
-        return text, None
+            return self._run("You summarize conversations.\n\n" + instructions)
 
 
 PROVIDER = GeminiProvider()
