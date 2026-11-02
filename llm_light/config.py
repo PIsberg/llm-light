@@ -240,6 +240,11 @@ SESSION_DIR = Path(env_get("SESSION_DIR") or Path.home() / ".llm_light_sessions"
 # Earlier conversations kept per project and provider after /clear, for /resume.
 SESSION_KEEP = 10
 
+# The user's own slash commands: <name>.md here becomes /<name> (commands.py).
+# Only the user's directory: a repo's .llm_light/commands/ would be prompt text
+# a cloned repo controls. LLM_LIGHT_COMMANDS_DIR moves it; the tests use a temp dir.
+USER_COMMANDS_DIR = Path(env_get("COMMANDS_DIR") or Path.home() / ".llm_light" / "commands")
+
 # Disk cache — stored in a hidden dir so _is_skipped() ignores it automatically
 CACHE_DIR      = Path(".llm_light_cache")
 CACHE_INDEX    = CACHE_DIR / "index.npz"   # numpy + JSON; never a pickle (see indexer._decode_index)
