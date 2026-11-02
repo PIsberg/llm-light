@@ -1,0 +1,15 @@
+{
+  "_comment": "Questions only the project's docs can answer, the worst case for leaving doc excerpts out of the skeleton. file is the doc the judge is given as the reference.",
+  "questions": [
+    {"question": "How do I run the tests in this project, and how are they laid out?", "file": "TESTING.md", "kind": "doc"},
+    {"question": "What does CI run on a pull request here?", "file": "docs/WORKFLOW.md", "kind": "doc"},
+    {"question": "Which environment variable sets the token threshold for prompt compression, and what is its default?", "file": "docs/CONFIG.md", "kind": "doc"},
+    {"question": "How should I report a security vulnerability in this project?", "file": "SECURITY.md", "kind": "doc"},
+    {"question": "How are releases signed, and how can a user verify one?", "file": "RELEASE_SIGNING.md", "kind": "doc"},
+    {"question": "How does the three-tier caching strategy work?", "file": "docs/architecture/caching.md", "kind": "doc"},
+    {"question": "Was lowering the retrieval budgets tried, and what was decided?", "file": "TOKEN-SAVINGS.md", "kind": "doc"},
+    {"question": "What do I need installed to contribute, and how do I set up a dev environment?", "file": "CONTRIBUTING.md", "kind": "doc"},
+    {"question": "How do I measure whether a change saves tokens, and which benchmarks need an API key?", "file": "docs/BENCHMARKS.md", "kind": "doc"},
+    {"question": "How does the router decide a question's effort tier?", "file": "docs/architecture/routing.md", "kind": "doc"}
+  ]
+}

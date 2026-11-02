@@ -76,6 +76,8 @@ _ROUTES = {
     "q-sonnet-medium": (config.MODEL_SONNET, "medium", 2048),
     "q-sonnet-high": (config.MODEL_SONNET, "high", 4096),
     "q-unrelated": (config.MODEL_HAIKU, "low", 1024),
+    "q-doc-1": (config.MODEL_HAIKU, "low", 1024),
+    "q-doc-2": (config.MODEL_SONNET, "medium", 4096),
 }
 
 
@@ -191,6 +193,76 @@ def test_tools_on_runs_read_only_in_plan_mode_and_restores_the_mode(bench):
         bench.answer("SK", "CTX", "Q?", config.MODEL_SONNET, "medium", tools=True)
     assert seen == {"tools": True, "mode": "plan"}  # never acceptEdits with the repo as cwd
     assert permissions.mode() == "acceptEdits"
+
+
+# --- docs: the skeleton an agent gets against every excerpt ---------------------------
+
+_DOC_QUESTIONS = [{"question": "q-doc-1", "file": "a.md", "kind": "doc"},
+                  {"question": "q-doc-2", "file": "b.md", "kind": "doc"}]
+
+
+@pytest.mark.parametrize("experiment, tools", [("docs", True), ("docs-no-tools", False)])
+def test_docs_pairs_the_two_skeletons_on_doc_questions(bench, experiment, tools):
+    pairs = bench.pairs(experiment, _DOC_QUESTIONS, _route)
+    assert [p["question"]["question"] for p in pairs] == ["q-doc-1", "q-doc-2"]
+    x, y = pairs[0]["x"], pairs[0]["y"]
+    assert (x.get("all_docs", False), y["all_docs"]) == (False, True)
+    assert x["tools"] == y["tools"] == tools
+    assert x["model"] == y["model"] and x["budget"] == y["budget"]
+
+
+def test_docs_code_runs_the_sonnet_routed_code_questions_with_tools(bench):
+    pairs = bench.pairs("docs-code", _QUESTIONS, _route)
+    assert [p["question"]["question"] for p in pairs] == ["q-sonnet-medium", "q-sonnet-high"]
+    assert pairs[0]["x"]["tools"] and pairs[0]["y"]["all_docs"]
+
+
+def test_docs_alternates_which_arm_goes_first(bench):
+    # The first arm pays the cold cache writes the second one reads.
+    pairs = bench.pairs("docs", _DOC_QUESTIONS, _route)
+    assert [p["first"] for p in pairs] == ["x", "y"]
+
+
+def test_a_docs_pair_answers_each_arm_from_its_own_skeleton(bench):
+    pair = bench.pairs("docs", _DOC_QUESTIONS[:1], _route)[0]
+    pair["first"] = "y"
+    calls = []
+
+    def fake_answer(skeleton, ctx, question, model, effort, tools=False, all_cli_tools=False):
+        calls.append(skeleton)
+        return {"text": f"from {skeleton}", "seconds": 0.0, "input_tokens": 0, "output_tokens": 0,
+                "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+
+    retriever = type("R", (), {"context": lambda self, q, arm: ("CTX", [])})()
+    with patch.object(bench, "answer", side_effect=fake_answer), \
+         patch.object(bench, "judge", return_value=("tie", [])), \
+         patch.object(bench, "reference_for", return_value="REF"):
+        row = bench.run_pair(pair, "TRIMMED", retriever, "judge-model", all_docs_skeleton="FULL")
+    assert calls == ["FULL", "TRIMMED"]  # y first, as the pair asked
+    assert row["x"]["text"] == "from TRIMMED" and row["y"]["text"] == "from FULL"
+
+
+def test_the_all_docs_skeleton_keeps_excerpts_and_leaves_the_shipped_one_alone(bench, tmp_path, monkeypatch):
+    from llm_light import skeleton as skeleton_mod, state
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(state, "provider", None)
+    skeleton_mod._invalidate_path_cache()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "GUIDE.md").write_text("# H\nguide-body", encoding="utf-8")
+    try:
+        assert "guide-body" not in skeleton_mod.build_skeleton()
+        assert "guide-body" in bench._all_docs_skeleton()
+        assert "guide-body" not in skeleton_mod.build_skeleton()
+    finally:
+        skeleton_mod._invalidate_path_cache()
+
+
+def test_the_doc_fixture_points_at_files_that_exist(bench):
+    questions = json.loads(bench.DOC_FIXTURE.read_text(encoding="utf-8"))["questions"]
+    assert len(questions) >= 10
+    for q in questions:
+        assert q["kind"] == "doc"
+        assert (bench.ROOT / q["file"]).is_file(), q["file"]
 
 
 # --- toolset: the --tools list against the CLI's default of every built-in tool ------

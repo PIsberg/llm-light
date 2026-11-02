@@ -1098,7 +1098,7 @@ class TestCliCommandPermissions(unittest.TestCase):
         # A repo's .claude/settings*.json can add allow rules and hooks (which
         # run commands), and its .mcp.json can add servers. Only llm_light's
         # own isolated user scope and --settings file may apply. The repo's
-        # CLAUDE.md is not lost: the skeleton prompt already carries every .md.
+        # CLAUDE.md is not lost: the skeleton prompt already carries it.
         cmd = self._cmd_for(["python -m pytest"])
         self.assertEqual(cmd[cmd.index("--setting-sources") + 1], "user")
         self.assertIn("--strict-mcp-config", cmd)

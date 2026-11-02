@@ -374,7 +374,7 @@ def _make_cli_subprocess_call(
             # .claude/settings*.json could add allow rules or hooks (which run
             # commands) and its .mcp.json could add servers. This also stops
             # the CLI loading the repo's CLAUDE.md, which the skeleton prompt
-            # already carries along with every other .md file.
+            # already carries (skeleton._in_prompt).
             "--setting-sources", "user",
             "--strict-mcp-config",
             "--settings", settings_path.as_posix(),
