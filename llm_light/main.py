@@ -46,6 +46,7 @@ _COMMANDS = [
     ("/run <cmd>",  "run a shell command and ask Claude about its output"),
     ("/budget <$>", "cap session spend; routing drops to the cheapest model at the cap"),
     ("/status",     "version, provider, model, permissions, shell and index"),
+    ("/rewind",     "go back to before an earlier turn: its files and the conversation"),
     ("/undo",       "revert the last commit Claude made"),
     ("/why",        "explain the last query's routing and retrieval"),
     ("/exit",       "quit (also exit, quit)"),
@@ -428,6 +429,7 @@ def start_chat(auto_apply=False, resume=False):
                 state.session_model = None
                 state.pending_context.clear()
                 state.replies.clear()
+                state.checkpoints.clear()
                 session.clear()
                 print(f"  {_T_SYS}  Conversation cleared.")
                 continue
@@ -470,6 +472,19 @@ def start_chat(auto_apply=False, resume=False):
                 continue
             if query == "/budget" or query.startswith("/budget "):
                 print(f"  {_T_SYS}  {_budget_command(query[7:].strip())}")
+                continue
+            if query == "/rewind":
+                targets = commands.rewind_targets()
+                if not targets:
+                    print(f"  {_T_SYS}  Nothing to rewind to yet: no turn has finished in this run.")
+                    continue
+                picked = choose("Rewind to before which turn? (edits the agent left uncommitted "
+                                "are not restored)",
+                                [(str(i), label) for i, label in targets] + [("cancel", "Cancel")])
+                if picked in (None, "cancel"):
+                    print(f"  {_T_SYS}  Cancelled.")
+                    continue
+                print(f"  {_T_SYS}  {commands.rewind(int(picked))}")
                 continue
             if query == "/undo":
                 from llm_light import git_manager

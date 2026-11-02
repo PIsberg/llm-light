@@ -240,6 +240,31 @@ def undo_last_commit() -> bool:
     return True
 
 
+def head_commit() -> Optional[str]:
+    """The full SHA of HEAD, or None outside a repository or before the first commit."""
+    stdout, code = _run_git("rev-parse", "HEAD")
+    return stdout.strip() if code == 0 and stdout.strip() else None
+
+
+def subjects_since(commit: str) -> Optional[List[str]]:
+    """Subjects of the commits after `commit` up to HEAD, newest first; None if
+    `commit` is not an ancestor of HEAD (history was rewritten since)."""
+    _, code = _run_git("merge-base", "--is-ancestor", commit, "HEAD")
+    if code != 0:
+        return None
+    stdout, code = _run_git("log", "--format=%s", f"{commit}..HEAD")
+    if code != 0:
+        return None
+    return [line for line in stdout.splitlines() if line.strip()]
+
+
+def reset_keep(commit: str) -> bool:
+    """git reset --keep: refuses, and changes nothing, if a file it would
+    reset has uncommitted edits."""
+    _, code = _run_git("reset", "--keep", commit)
+    return code == 0
+
+
 def get_commit_history(n: int = 5) -> List[str]:
     """
     Get recent commit messages for reference.

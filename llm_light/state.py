@@ -36,6 +36,11 @@ pending_context = []
 # This run's full replies, newest last, for /copy (history keeps them
 # without their code blocks, and compression rewrites it).
 replies = []
+# One checkpoint per completed turn of this run, oldest first, for /rewind:
+# {"question", "history_len", "head", "turn"}, taken before the turn ran.
+# Cleared when the history is compressed (the lengths no longer apply) and by
+# /clear; not saved, so a --continue session can only rewind its own turns.
+checkpoints = []
 # "Sonnet 5.5, and don't ask again" at the top-tier prompt: later questions
 # routed to Opus run on Sonnet without asking.
 top_tier_declined = False
