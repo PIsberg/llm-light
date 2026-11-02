@@ -6,6 +6,7 @@ from llm_light.config import SKIP_DIRS
 import llm_light.state as state
 
 _FULL_MD_NAMES = {"claude.md", "agents.md"}
+_ROOT_README = "readme.md"
 _FULL_MD_LIMIT = 5_000
 _COMPACT_MD_LIMIT = 1_200
 _SMALL_MD_LIMIT = 1_500
@@ -34,8 +35,28 @@ def _tracked_md():
     return {p for p in out.stdout.decode("utf-8", "replace").split("\0") if p}
 
 
+def _agent_can_open_docs() -> bool:
+    from llm_light import providers
+    from llm_light.providers.base import AGENT
+    return providers.active().has(AGENT)
+
+
 def _in_prompt(path: Path, tracked) -> bool:
-    return tracked is None or path.as_posix() in tracked
+    """Whether this .md file's text goes into the skeleton. The tree lists every file.
+
+    A provider whose agent can open files gets only the instruction files, at any
+    depth, and the root README. Most other excerpts are compacted to their headings,
+    and every turn pays for them: on doc-only questions through the real agent path the
+    smaller skeleton won 6 of 10 and lost none, at 54% less total input, because the
+    model opens the file rather than answer from an outline. With no tool to open a
+    file it lost 7 of 10, so Gemini and Codex keep every excerpt (#142).
+    """
+    if tracked is not None and path.as_posix() not in tracked:
+        return False
+    if not _agent_can_open_docs():
+        return True
+    name = path.name.lower()
+    return name in _FULL_MD_NAMES or (name == _ROOT_README and len(path.parts) == 1)
 
 def _file_hash(path: Path) -> str:
     """MD5 of file bytes — fast change detection, not cryptographic."""

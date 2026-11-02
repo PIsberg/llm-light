@@ -705,7 +705,7 @@ The shipped agent sends about 6,500 fewer input tokens per question: agy's own a
 
 ### Purpose
 
-The offline benchmarks score whether the right file reaches the context, not whether the answer is right. This one answers the same repo question with two variants and has a judge model pick the better answer, for the open answer-quality questions: Haiku against Sonnet under ROUTE_ONCE (#90), the medium against the high retrieval budget (#77), and call-graph expansion off against on (#86). A `tools` experiment answers Sonnet-routed questions with tools off and with the agent's read-only tools on, to see what the agent's file reads cost (#79), and a `toolset` experiment compares the `--tools` list with every built-in tool (lever 7). A `toptier` mode sends two plan-mode turns to Fable 5.1 and Opus 5.5 (#92).
+The offline benchmarks score whether the right file reaches the context, not whether the answer is right. This one answers the same repo question with two variants and has a judge model pick the better answer, for the open answer-quality questions: Haiku against Sonnet under ROUTE_ONCE (#90), the medium against the high retrieval budget (#77), and call-graph expansion off against on (#86). A `tools` experiment answers Sonnet-routed questions with tools off and with the agent's read-only tools on, to see what the agent's file reads cost (#79), a `toolset` experiment compares the `--tools` list with every built-in tool (lever 7), and the `docs` experiments compare the skeleton Claude gets with every doc excerpt (lever 8, #142). A `toptier` mode sends two plan-mode turns to Fable 5.1 and Opus 5.5 (#92).
 
 ### Methodology
 
@@ -721,7 +721,7 @@ python tests/benchmarks/benchmark_answer_quality.py --experiment all
 python tests/benchmarks/benchmark_answer_quality.py --report
 ```
 
-Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spends subscription quota: about 190 CLI calls for `all`.
+Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spends subscription quota: about 310 CLI calls for `all`.
 
 ### Results (2026-11-02, claude 2.1.316, Windows)
 
@@ -751,6 +751,16 @@ Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spen
   | every tool | 11 of 18 | 1.39 | 99,052 | 9,543 | 1,148 | $0.0443 |
 
   Four of the 6 questions read at the same rate in both arms. At equal tool calls the list is 25% to 28% lower (0 calls 33,293 against 44,535, 1 call 67,340 against 89,356, 2 calls 98,443 against 137,006), which is the schema saving repeated per round. The model's reads are noisy between runs, so one pass is too few to read a total from. Plan mode only: `default` and `bypassPermissions` got a live smoke test (a real edit, an allowlisted command, a bypass command), not this comparison.
+- **Docs (lever 8, #142), 2026-11-02, claude 2.1.316.** x is the skeleton with only `CLAUDE.md`, `AGENTS.md` and the root `README` (3,564 tokens on this repo), y is every excerpt (15,952). Same retrieved context, both with the `--tools` list. `docs` and `docs-no-tools` use `tests/fixtures/doc_questions.json`, 10 questions only the docs can answer, with that doc as the judge's reference. These are the worst case for x. The runs came from a scratch prototype of these experiments, which also ran code questions with tools off.
+
+  | Questions, tools | x wins | y wins | Ties | Mean total input, x / y | Sonnet-priced cost, x / y | Mean seconds, x / y |
+  |---|---|---|---|---|---|---|
+  | doc, on (`docs`) | 6 | 0 | 4 | 34,945 / 75,824 | $0.0378 / $0.0401 | 14.4 / 14.2 |
+  | code, on (`docs-code`) | 1 | 1 | 7 (1 invalid) | 34,772 / 76,634 | $0.0310 / $0.0353 | 14.2 / 16.9 |
+  | doc, off (`docs-no-tools`) | 0 | 7 | 3 | 7,841 / 27,756 | $0.0129 / $0.0203 | 9.3 / 9.2 |
+  | code, off (prototype only, 9 of 10: the last question hung and was stopped) | 2 | 3 | 4 | 9,531 / 29,450 | $0.0154 / $0.0167 | 8.9 / 8.5 |
+
+  With a tool to open files the excerpts cost tokens and bought nothing: most are compacted to headings, and without them the model opens the file rather than answer from an outline. With no such tool they are the only route to the docs, and leaving them out loses doc answers. So Claude gets x, and Gemini and Codex keep y. Three limits. x ran first on every `docs` question, which pays cold writes against it; the other runs alternate, and the benchmark now does too. All of this went through the subscription's CLI path, so API-key mode, whose `read_file` is a different tool, is only modelled: `benchmark_session_cache.py` gives $0.6262 to $0.5084 per session (-19%) in fixture order, from a prefix of 17,080 to 4,692 tokens. And it is one repository, whose docs are unusually many; a repo with few docs saves less.
 - Small samples: a difference of one pair is noise. Where a pair had no tools, a variant that would have read a file to recover is scored without that chance.
 
 ---

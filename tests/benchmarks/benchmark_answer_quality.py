@@ -21,6 +21,11 @@ Experiments (each pairs a variant x with a variant y on the same question):
              llm_light's --tools list (x) and with the CLI's default of every
              built-in tool (y), both read-only in plan mode with the repo as cwd.
              Does the shorter list cost answers? The tokens are in the report.
+  docs       Questions only the project's docs can answer (doc_questions.json), with
+             tools on: the skeleton a provider with tools gets (x) against every
+             excerpt (y). Its worst case, through the real agent path (issue #142).
+  docs-no-tools  The same with tools off, which is all Gemini and Codex ever have.
+  docs-code  x against y on the Sonnet-routed code questions, with tools on.
   toptier   No judge: one question each on Fable 5.1 and Opus 5.5 through the
              real agent path in plan mode (tools on, read-only), twice, to see the
              model answer, use its tools, and read the cache on the second call.
@@ -75,7 +80,8 @@ from llm_light.providers.base import transcript  # noqa: E402
 
 REPO_FIXTURE = ROOT / "tests" / "fixtures" / "repo_questions.json"
 DEFAULT_OUT = ROOT / ".llm_light_cache" / "bench" / "answer_quality.jsonl"
-EXPERIMENTS = ("models", "budget", "tools", "toolset")
+DOC_FIXTURE = ROOT / "tests" / "fixtures" / "doc_questions.json"
+EXPERIMENTS = ("models", "budget", "tools", "toolset", "docs", "docs-no-tools", "docs-code")
 JUDGE_MODEL = config.MODEL_OPUS
 REFERENCE_CHARS = 16_000
 TOPTIER_QUESTION = "Which function decides the model and effort level a question gets, and how?"
@@ -173,6 +179,12 @@ def pairs(experiment, questions, route):
                         "x": _arm(model, effort, budgets[effort], tools=True),
                         "y": {**_arm(model, effort, budgets[effort], tools=True),
                               "all_cli_tools": True}})
+        elif experiment in ("docs", "docs-no-tools", "docs-code") and (
+                experiment != "docs-code" or model == config.MODEL_SONNET):
+            arm = _arm(config.MODEL_SONNET, effort, budgets[effort], tools=experiment != "docs-no-tools")
+            # The first arm pays the cold cache writes the second one reads.
+            out.append({"experiment": experiment, "question": q, "x": arm,
+                        "y": {**arm, "all_docs": True}, "first": "y" if len(out) % 2 else "x"})
         elif experiment == "budget" and effort == "high":
             out.append({"experiment": experiment, "question": q,
                         "x": _arm(model, effort, budgets["medium"]),
@@ -290,15 +302,29 @@ def load_rows(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def run_pair(pair, skeleton, retriever, judge_model) -> dict:
+def _all_docs_skeleton() -> str:
+    """The skeleton with every excerpt, as a provider with no tools gets; the shipped
+    build's state is put back afterwards."""
+    from llm_light import skeleton as skeleton_mod
+    real = skeleton_mod._agent_can_open_docs
+    skeleton_mod._agent_can_open_docs = lambda: False
+    try:
+        return skeleton_mod.build_skeleton()
+    finally:
+        skeleton_mod._agent_can_open_docs = real
+        skeleton_mod.build_skeleton()
+
+
+def run_pair(pair, skeleton, retriever, judge_model, all_docs_skeleton=None) -> dict:
     q = pair["question"]
     sides = {}
-    for side in ("x", "y"):
+    for side in ("y", "x") if pair.get("first") == "y" else ("x", "y"):
         arm = pair[side]
         ctx, hits = retriever.context(q["question"], arm)
         sides[side] = {**arm, "chunks": [c for c, _ in hits],
                        "context_tokens": retrieval._estimate_tokens(ctx),
-                       **answer(skeleton, ctx, q["question"], arm["model"], arm["effort"],
+                       **answer(all_docs_skeleton if arm.get("all_docs") else skeleton, ctx,
+                                q["question"], arm["model"], arm["effort"],
                                 tools=arm.get("tools", False),
                                 all_cli_tools=arm.get("all_cli_tools", False))}
     outcome, verdicts = judge(q["question"], reference_for(q), sides["x"]["text"],
@@ -334,7 +360,9 @@ def summarize(rows) -> dict:
 
 
 _LABELS = {"models": ("Haiku", "Sonnet"), "budget": ("medium budget", "high budget"),
-           "tools": ("tools off", "tools on"), "toolset": ("--tools list", "every tool")}
+           "tools": ("tools off", "tools on"), "toolset": ("--tools list", "every tool"),
+           "docs": ("root docs", "every excerpt"), "docs-no-tools": ("root docs", "every excerpt"),
+           "docs-code": ("root docs", "every excerpt")}
 
 
 def report(rows) -> None:
@@ -412,13 +440,15 @@ def main(argv=None) -> int:
             return 0
 
     repo = json.loads(REPO_FIXTURE.read_text(encoding="utf-8"))["questions"]
+    doc = json.loads(DOC_FIXTURE.read_text(encoding="utf-8"))["questions"]
     route = _route_with_static_embedder()
-    retriever = Retriever(repo, args.cache_dir)
+    retriever = Retriever(repo + doc, args.cache_dir)
     wanted = EXPERIMENTS if args.experiment == "all" else (args.experiment,)
+    all_docs = _all_docs_skeleton() if any(e.startswith("docs") for e in wanted) else None
     done = {_key(r) for r in load_rows(args.out)}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     for experiment in wanted:
-        todo = pairs(experiment, repo, route)
+        todo = pairs(experiment, doc if experiment in ("docs", "docs-no-tools") else repo, route)
         if args.limit:
             todo = todo[:args.limit]
         print(f"{experiment}: {len(todo)} pairs", flush=True)
@@ -426,7 +456,7 @@ def main(argv=None) -> int:
             if (experiment, pair["question"]["question"]) in done:
                 continue
             with contextlib.redirect_stdout(sys.stderr):
-                row = run_pair(pair, skeleton, retriever, args.judge_model)
+                row = run_pair(pair, skeleton, retriever, args.judge_model, all_docs)
             with args.out.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row) + "\n")
             print(f"  {row['outcome']:7} {row['question']}", flush=True)

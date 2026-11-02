@@ -19,7 +19,11 @@ LLM Light uses Anthropic's ephemeral caching with three strategic breakpoints to
 
 ### What the skeleton holds
 
-`skeleton.build_skeleton()` renders the compressed directory tree, then every `.md` file: `CLAUDE.md` and `AGENTS.md` in full, long structured docs compacted to about 1,200 characters. In a git work tree only the `.md` files `git ls-files` lists go in (`skeleton._tracked_md()`, the index included, so a staged file counts); outside one, all of them. An untracked draft is left out because every turn reads the skeleton and every 1-hour cache write pays twice for it: on this repo two local drafts were 699 of 16,448 skeleton tokens. The tree still names the file, so the model can ask to read it. The file watcher applies the same rule (`_refresh_single_md`), and a file staged later comes in at the next full rebuild.
+`skeleton.build_skeleton()` renders the compressed directory tree, then the `.md` files `skeleton._in_prompt()` lets in: `CLAUDE.md` and `AGENTS.md` in full, other docs compacted to about 1,200 characters when long and structured.
+
+Which docs depends on the provider. One whose agent can open files (Claude, the `AGENT` capability) gets only `CLAUDE.md` and `AGENTS.md` at any depth and the root `README`; the tree lists the rest, and the model opens what it needs. Most excerpts are little more than headings and every turn pays for them: on this repo the skeleton goes from 15,952 to 3,564 tokens. Gemini and Codex have no tool to open a file, so they keep every excerpt: without them they lost 7 of 10 doc questions. The measurements are in `docs/BENCHMARKS.md` section 2f (#142). Editing a doc that is left out does not change the prompt, so it costs no cache write.
+
+In a git work tree only the `.md` files `git ls-files` lists go in (`skeleton._tracked_md()`, the index included, so a staged file counts); outside one, all of them. An untracked draft is left out because every turn reads the skeleton and every 1-hour cache write pays twice for it: on this repo two local drafts were 699 of 16,448 skeleton tokens. The tree still names the file, so the model can ask to read it. The file watcher applies the same rule (`_refresh_single_md`), and a file staged later comes in at the next full rebuild.
 
 ### Effort and model changes
 

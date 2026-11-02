@@ -94,6 +94,7 @@ class TestFileHash(unittest.TestCase):
 # build_skeleton
 # ---------------------------------------------------------------------------
 
+@patch("llm_light.skeleton._agent_can_open_docs", new=lambda: False)  # every excerpt, as Gemini and Codex get
 class TestBuildSkeleton(unittest.TestCase):
 
     def test_returns_directory_structure_header(self):
@@ -180,6 +181,94 @@ class TestBuildSkeleton(unittest.TestCase):
                 cl._skeleton_md_parts = {}
 
 
+class TestDocsAnAgentCanOpen(unittest.TestCase):
+    """A provider whose agent can read files gets the instruction files and the root
+    README; the tree lists the rest (#142). Most excerpts are headings and cost every
+    turn. On doc-only questions through the real agent path the smaller skeleton won 6
+    of 10 and lost none. With no tool to open a file it lost 7 of 10, so Gemini and
+    Codex keep every excerpt.
+    """
+
+    def setUp(self):
+        import llm_light as cl
+        import llm_light.state as state
+        self._saved = (cl._skeleton_tree, dict(cl._skeleton_md_hashes),
+                       dict(cl._skeleton_md_parts), state.provider)
+        self._orig = os.getcwd()
+        self._tmp = tempfile.TemporaryDirectory()
+        os.chdir(self._tmp.name)
+        for name, body in (("CLAUDE.md", "claude-body"), ("AGENTS.md", "agents-body"),
+                           ("README.md", "readme-body"), ("CHANGELOG.md", "changelog-body"),
+                           ("docs/GUIDE.md", "guide-body"), ("pkg/CLAUDE.md", "nested-claude-body"),
+                           ("pkg/README.md", "nested-readme-body")):
+            Path(name).parent.mkdir(exist_ok=True)
+            Path(name).write_text(f"# Heading\n{body}", encoding="utf-8")
+
+    def tearDown(self):
+        import llm_light as cl
+        import llm_light.state as state
+        os.chdir(self._orig)
+        self._tmp.cleanup()
+        cl._skeleton_tree, cl._skeleton_md_hashes, cl._skeleton_md_parts, state.provider = self._saved
+
+    def _use(self, name):
+        import llm_light.state as state
+        from llm_light import providers
+        state.provider = providers.get(name)
+
+    def test_an_agent_gets_instructions_and_the_root_readme_only(self):
+        self._use("claude")
+        result = build_skeleton()
+        for kept in ("claude-body", "agents-body", "readme-body"):
+            self.assertIn(kept, result)
+        for left_out in ("guide-body", "changelog-body", "nested-readme-body"):
+            self.assertNotIn(left_out, result)
+
+    def test_a_nested_instruction_file_stays(self):
+        # The CLI runs with the repo's settings blocked, so it would not load this itself.
+        self._use("claude")
+        self.assertIn("nested-claude-body", build_skeleton())
+
+    def test_the_tree_still_lists_what_was_left_out(self):
+        self._use("claude")
+        self.assertIn("GUIDE", build_skeleton())
+
+    def test_a_provider_with_no_tools_keeps_every_excerpt(self):
+        for name in ("gemini", "codex"):
+            self._use(name)
+            result = build_skeleton()
+            for kept in ("guide-body", "changelog-body", "nested-readme-body", "claude-body"):
+                self.assertIn(kept, result, name)
+
+    def test_editing_a_left_out_doc_does_not_change_the_prompt(self):
+        # A change here would rewrite the cached prefix and pay for it.
+        self._use("claude")
+        before = build_skeleton()
+        Path("docs/GUIDE.md").write_text("# Heading\nedited", encoding="utf-8")
+        self.assertFalse(_refresh_single_md(str(Path("docs/GUIDE.md"))))
+        self.assertEqual(_assemble_skeleton(), before)
+
+    def test_editing_the_readme_still_changes_the_prompt(self):
+        self._use("claude")
+        build_skeleton()
+        Path("README.md").write_text("# Heading\nedited-readme", encoding="utf-8")
+        self.assertTrue(_refresh_single_md("README.md"))
+        self.assertIn("edited-readme", _assemble_skeleton())
+
+    def test_the_readme_match_ignores_case_and_needs_the_root(self):
+        from llm_light.skeleton import _in_prompt
+        self._use("claude")
+        self.assertTrue(_in_prompt(Path("Readme.md"), None))
+        self.assertFalse(_in_prompt(Path("pkg/readme.md"), None))
+
+    def test_an_untracked_readme_stays_out_even_for_an_agent(self):
+        from llm_light.skeleton import _in_prompt
+        self._use("claude")
+        self.assertFalse(_in_prompt(Path("README.md"), {"CLAUDE.md"}))
+        self.assertFalse(_in_prompt(Path("CLAUDE.md"), {"README.md"}))
+
+
+@patch("llm_light.skeleton._agent_can_open_docs", new=lambda: False)  # every excerpt, as Gemini and Codex get
 class TestUntrackedMarkdown(unittest.TestCase):
     """In a git repo, only .md files git tracks go into the prompt (#142).
 
@@ -245,6 +334,7 @@ class TestUntrackedMarkdown(unittest.TestCase):
 # _assemble_skeleton / _refresh_single_md
 # ---------------------------------------------------------------------------
 
+@patch("llm_light.skeleton._agent_can_open_docs", new=lambda: False)  # every excerpt, as Gemini and Codex get
 class TestSkeletonHelpers(unittest.TestCase):
 
     def setUp(self):

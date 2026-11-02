@@ -747,6 +747,7 @@ class TestAutoTune(unittest.TestCase):
 # build_skeleton
 # ---------------------------------------------------------------------------
 
+@patch("llm_light.skeleton._agent_can_open_docs", new=lambda: False)  # every excerpt, as Gemini and Codex get
 class TestBuildSkeleton(unittest.TestCase):
 
     def test_returns_directory_structure_header(self):
@@ -1733,6 +1734,7 @@ class TestUpdateSkeleton(unittest.TestCase):
 # _assemble_skeleton / _refresh_single_md
 # ---------------------------------------------------------------------------
 
+@patch("llm_light.skeleton._agent_can_open_docs", new=lambda: False)  # every excerpt, as Gemini and Codex get
 class TestSkeletonHelpers(unittest.TestCase):
 
     def setUp(self):
@@ -2601,6 +2603,7 @@ class TestRefreshTreeOnly(unittest.TestCase):
 # build_skeleton — cached md reuse
 # ---------------------------------------------------------------------------
 
+@patch("llm_light.skeleton._agent_can_open_docs", new=lambda: False)  # every excerpt, as Gemini and Codex get
 class TestBuildSkeletonCached(unittest.TestCase):
 
     def test_reuses_cached_md_when_unchanged(self):
