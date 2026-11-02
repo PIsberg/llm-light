@@ -181,10 +181,12 @@ In API mode the same prefixes gate the `shell` tool in `tools.py`. A command mus
 
 | Mode | SEARCH/REPLACE edits | Agent commits | API `shell` tool | OAuth CLI agent |
 |---|---|---|---|---|
-| `default` | asked | asked | allowlist | `--permission-mode acceptEdits`, allowlist rules, guard hook |
+| `default` | asked | asked | allowlist | `--permission-mode acceptEdits`, `--tools Read,Grep,Glob,Edit,Write` plus allowlisted shells, allowlist rules, guard hook |
 | `acceptEdits` | applied | made | allowlist | as `default` |
-| `plan` | shown, not applied | none | refuses every command | `--permission-mode plan`, Bash, PowerShell, Edit, Write and NotebookEdit disallowed |
-| `bypassPermissions` | applied | made | any command via the shell, unchecked | `--permission-mode bypassPermissions`, no disallowed tools, no allow rules, no guard hook; `AGENT_SYSTEM_PROMPT` plus a line saying any command may run |
+| `plan` | shown, not applied | none | refuses every command | `--permission-mode plan`, `--tools Read,Grep,Glob`, Bash, PowerShell, Edit, Write and NotebookEdit disallowed |
+| `bypassPermissions` | applied | made | any command via the shell, unchecked | `--permission-mode bypassPermissions`, `--tools` adds Bash, PowerShell, WebFetch and WebSearch, no disallowed tools, no allow rules, no guard hook; `AGENT_SYSTEM_PROMPT` plus a line saying any command may run |
+
+`claude._agent_tools()` builds the OAuth `--tools` list. Without it the CLI sends every built-in schema on every model round, about 11,000 input tokens (`TOKEN-SAVINGS.md`, lever 7), and offers tools that act outside the turn, which reads untrusted repo text: `Task` and `CronCreate` ran with no prompt under the old flags. `NotebookEdit` is added only when the project has a `.ipynb` (`_project_has_notebooks`), because `Edit` refuses notebooks and the schema costs 630 tokens a round. The web tools are bypass-only because a `-p` run denies them in the other modes anyway. `--disallowed-tools` stays as the backstop, since CLI 2.1.118 ignored `--tools ""`. Hidden calls (the history summary) still get `--tools ""`. API-key requests are untouched.
 
 The `shell` tool's description (in the cached `TOOLS`) still names the allowlist in bypass mode, and `SYSTEM_PROMPT` says nothing of plan mode. Rather than change the cached prefix, `permissions.question_note()` puts a one-line note before the question in the uncached last turn: always in plan mode, and in bypass mode when the model has the API `shell` tool. In `default` and `acceptEdits` it is empty, so those requests are byte-for-byte what they were before the modes existed.
 

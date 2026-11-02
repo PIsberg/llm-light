@@ -986,6 +986,74 @@ class TestCliCommandPermissions(unittest.TestCase):
             _claude_mod._make_cli_subprocess_call("hi")
         return popen_mock.call_args.args[0]
 
+    def _tools_for(self, allowed=(), notebooks=False):
+        with patch.object(_claude_mod, "_project_has_notebooks", return_value=notebooks):
+            cmd = self._cmd_for(list(allowed))
+        return cmd[cmd.index("--tools") + 1].split(",")
+
+    def test_a_turn_offers_only_the_tools_it_can_use(self):
+        print("\n  ▶ TestCliCommandPermissions.test_a_turn_offers_only_the_tools_it_can_use")
+        # Without --tools the CLI sends every built-in schema on every model round:
+        # 14,874 input tokens against 3,911 for this list, measured through this
+        # transport (claude 2.1.316), and the agent could run Task and CronCreate.
+        self.assertEqual(self._tools_for(), ["Read", "Grep", "Glob", "Edit", "Write"])
+
+    def test_an_allowlisted_shell_is_offered_and_the_other_is_not(self):
+        print("\n  ▶ TestCliCommandPermissions.test_an_allowlisted_shell_is_offered_and_the_other_is_not")
+        tools = self._tools_for(["python -m pytest"])
+        self.assertIn("Bash", tools)
+        self.assertNotIn("PowerShell", tools)
+        tools = self._tools_for(["pwsh: Invoke-Pester"])
+        self.assertIn("PowerShell", tools)
+        self.assertNotIn("Bash", tools)
+
+    def test_notebook_editing_is_offered_only_where_there_are_notebooks(self):
+        print("\n  ▶ TestCliCommandPermissions.test_notebook_editing_is_offered_only_where_there_are_notebooks")
+        # Edit refuses .ipynb, so a notebook project needs it, and it adds 630 tokens
+        # to every round everywhere else.
+        self.assertIn("NotebookEdit", self._tools_for(notebooks=True))
+        self.assertNotIn("NotebookEdit", self._tools_for(notebooks=False))
+
+    def test_a_project_with_a_notebook_is_recognised(self):
+        print("\n  ▶ TestCliCommandPermissions.test_a_project_with_a_notebook_is_recognised")
+        from pathlib import Path
+        with patch("llm_light.skeleton._get_cached_paths", return_value=[Path("a.py"), Path("nb/x.ipynb")]):
+            self.assertTrue(_claude_mod._project_has_notebooks())
+        with patch("llm_light.skeleton._get_cached_paths", return_value=[Path("a.py"), Path("ipynb.md")]):
+            self.assertFalse(_claude_mod._project_has_notebooks())
+
+    def test_plan_mode_offers_only_reading_tools_even_with_notebooks(self):
+        print("\n  ▶ TestCliCommandPermissions.test_plan_mode_offers_only_reading_tools_even_with_notebooks")
+        from llm_light import permissions
+        permissions.set_mode(permissions.PLAN)
+        self.assertEqual(self._tools_for(["python -m pytest"], notebooks=True), ["Read", "Grep", "Glob"])
+
+    def test_bypass_keeps_what_works_there_and_nothing_else(self):
+        print("\n  ▶ TestCliCommandPermissions.test_bypass_keeps_what_works_there_and_nothing_else")
+        # Asked by name under the old flags, the web tools were denied in acceptEdits
+        # but are not gated in bypass, so bypass keeps them, and both shells.
+        import llm_light.state as state
+        from llm_light import permissions
+        state.bypass_allowed = True
+        permissions.set_mode(permissions.BYPASS)
+        self.assertEqual(self._tools_for(),
+                         ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "PowerShell",
+                          "WebFetch", "WebSearch"])
+
+    def test_no_mode_offers_tools_that_act_outside_the_turn(self):
+        print("\n  ▶ TestCliCommandPermissions.test_no_mode_offers_tools_that_act_outside_the_turn")
+        # The turn reads untrusted repo text. CronCreate and Task ran with no
+        # permission prompt under the old flags, asked for by name.
+        import llm_light.state as state
+        from llm_light import permissions
+        outside = {"Task", "Agent", "Skill", "CronCreate", "CronDelete", "RemoteTrigger", "Workflow",
+                   "SendMessage", "ScheduleWakeup", "ToolSearch", "EnterWorktree"}
+        state.bypass_allowed = True
+        for mode in (permissions.DEFAULT, permissions.ACCEPT_EDITS, permissions.PLAN, permissions.BYPASS):
+            permissions.set_mode(mode)
+            self.assertEqual(outside & set(self._tools_for(["python -m pytest"], notebooks=True)),
+                             set(), mode)
+
     def test_tool_free_call_cannot_edit_or_run_commands(self):
         print("\n  ▶ TestCliCommandPermissions.test_tool_free_call_cannot_edit_or_run_commands")
         # The history summary runs hidden (render=False) over conversation

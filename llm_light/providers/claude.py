@@ -131,6 +131,39 @@ def _report_denied_commands(denials) -> None:
           f" or LLM_LIGHT_ALLOW_COMMANDS{_ANSI_RESET}", flush=True)
 
 
+def _project_has_notebooks() -> bool:
+    from llm_light.skeleton import _get_cached_paths
+    return any(path.suffix == ".ipynb" for path in _get_cached_paths())
+
+
+def _agent_tools() -> str:
+    """The --tools list for an agent turn: what this mode can use and nothing else.
+
+    Without it the CLI sends every built-in schema on every model round: 14,874 input
+    tokens against 3,911 for the default list on a one-word question (claude 2.1.316).
+    It also offered tools that act outside the turn, which reads untrusted repo text:
+    Task and CronCreate ran with no permission prompt. --disallowed-tools stays as the
+    backstop, since one CLI release ignored --tools.
+
+    NotebookEdit costs 630 tokens a round and is only offered where there are notebooks,
+    because Edit refuses .ipynb. The web tools are only in bypass: in the other modes a
+    -p run denies them anyway.
+    """
+    from llm_light import permissions
+    if permissions.plan():
+        return "Read,Grep,Glob"
+    names = ["Read", "Grep", "Glob", "Edit", "Write"]
+    if _project_has_notebooks():
+        names.append("NotebookEdit")
+    if permissions.bypass():
+        names += ["Bash", "PowerShell", "WebFetch", "WebSearch"]
+    else:
+        # The same shells the caller leaves off --disallowed-tools.
+        shells = {config.command_rule(c)[0] for c in config.ALLOWED_COMMANDS}
+        names += [shell for shell in ("Bash", "PowerShell") if shell in shells]
+    return ",".join(names)
+
+
 # The CLI runs a full agent loop (read files, edit, re-read), so a multi-file
 # change routinely takes several minutes while streaming events the whole
 # time. Kill it only when it goes silent; the overall cap is a backstop.
@@ -347,9 +380,8 @@ def _make_cli_subprocess_call(
             "--settings", settings_path.as_posix(),
             *(["--disallowed-tools", disallowed] if disallowed else []),
         ]
-        if not tools:
-            command += ["--tools", ""]
-        elif allow_rules:
+        command += ["--tools", _agent_tools() if tools else ""]
+        if allow_rules:
             rules = [config.command_rule(c) for c in config.ALLOWED_COMMANDS]
             command += ["--allowedTools", ",".join(f"{tool}({prefix}:*)" for tool, prefix in rules)]
         if model:

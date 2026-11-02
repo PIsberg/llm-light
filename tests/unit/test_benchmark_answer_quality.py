@@ -193,6 +193,41 @@ def test_tools_on_runs_read_only_in_plan_mode_and_restores_the_mode(bench):
     assert permissions.mode() == "acceptEdits"
 
 
+# --- toolset: the --tools list against the CLI's default of every built-in tool ------
+
+def test_toolset_pairs_the_list_with_every_tool_on_sonnet_routed_questions(bench):
+    pairs = bench.pairs("toolset", _QUESTIONS, _route)
+    assert [p["question"]["question"] for p in pairs] == ["q-sonnet-medium", "q-sonnet-high"]
+    x, y = pairs[0]["x"], pairs[0]["y"]
+    assert (x["tools"], y["tools"]) == (True, True)
+    assert (x.get("all_cli_tools", False), y["all_cli_tools"]) == (False, True)
+    assert x["model"] == y["model"] and x["budget"] == y["budget"]
+
+
+@pytest.mark.parametrize("all_cli_tools, expected", [(False, "Read,Grep,Glob"), (True, None)])
+def test_toolset_arms_differ_on_the_real_command_line(bench, all_cli_tools, expected):
+    # Through the shipped transport: only the Popen at the end is faked.
+    import subprocess
+    from llm_light import permissions
+    seen = {}
+
+    def fake_popen(command, *a, **kw):
+        seen["command"] = command
+        raise RuntimeError("stop here")
+
+    with patch.object(subprocess, "Popen", side_effect=fake_popen), \
+         patch("shutil.which", return_value="/fake/bin/claude"), \
+         pytest.raises(RuntimeError, match="stop here"):
+        bench.answer("SK", "CTX", "Q?", config.MODEL_SONNET, "medium", tools=True,
+                     all_cli_tools=all_cli_tools)
+    command = seen["command"]
+    tool_list = command[command.index("--tools") + 1] if "--tools" in command else None
+    assert tool_list == expected
+    assert command[command.index("--permission-mode") + 1] == "plan"  # read-only either way
+    assert "Edit" in command[command.index("--disallowed-tools") + 1]
+    assert permissions.mode() != "plan"
+
+
 def test_tools_off_is_unchanged(bench):
     seen = {}
 

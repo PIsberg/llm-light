@@ -17,7 +17,11 @@ Experiments (each pairs a variant x with a variant y on the same question):
              retrieved context. The difference in input tokens is what the
              agent's file reads cost, the most a cheaper-model read shunt could
              save (issue #79).
-  toptier    No judge: one question each on Fable 5.1 and Opus 5.5 through the
+  toolset    Sonnet-routed questions answered through the real agent path with
+             llm_light's --tools list (x) and with the CLI's default of every
+             built-in tool (y), both read-only in plan mode with the repo as cwd.
+             Does the shorter list cost answers? The tokens are in the report.
+  toptier   No judge: one question each on Fable 5.1 and Opus 5.5 through the
              real agent path in plan mode (tools on, read-only), twice, to see the
              model answer, use its tools, and read the cache on the second call.
              (issue #92)
@@ -56,6 +60,7 @@ import contextlib
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -70,7 +75,7 @@ from llm_light.providers.base import transcript  # noqa: E402
 
 REPO_FIXTURE = ROOT / "tests" / "fixtures" / "repo_questions.json"
 DEFAULT_OUT = ROOT / ".llm_light_cache" / "bench" / "answer_quality.jsonl"
-EXPERIMENTS = ("models", "budget", "tools")
+EXPERIMENTS = ("models", "budget", "tools", "toolset")
 JUDGE_MODEL = config.MODEL_OPUS
 REFERENCE_CHARS = 16_000
 TOPTIER_QUESTION = "Which function decides the model and effort level a question gets, and how?"
@@ -163,6 +168,11 @@ def pairs(experiment, questions, route):
             out.append({"experiment": experiment, "question": q,
                         "x": _arm(model, effort, budgets[effort], tools=False),
                         "y": _arm(model, effort, budgets[effort], tools=True)})
+        elif experiment == "toolset" and model == config.MODEL_SONNET:
+            out.append({"experiment": experiment, "question": q,
+                        "x": _arm(model, effort, budgets[effort], tools=True),
+                        "y": {**_arm(model, effort, budgets[effort], tools=True),
+                              "all_cli_tools": True}})
         elif experiment == "budget" and effort == "high":
             out.append({"experiment": experiment, "question": q,
                         "x": _arm(model, effort, budgets["medium"]),
@@ -240,10 +250,30 @@ def _plan_mode():
         permissions.set_mode(previous)
 
 
-def answer(skeleton, retrieved_ctx, question, model, effort, tools=False) -> dict:
+@contextlib.contextmanager
+def _every_cli_tool():
+    """The CLI's default of every built-in tool, as before llm_light sent a --tools
+    list: the shipped command with that one flag taken off at the end."""
+    real_popen = subprocess.Popen
+
+    def popen(command, *args, **kwargs):
+        if "--tools" in command:
+            at = command.index("--tools")
+            command = command[:at] + command[at + 2:]
+        return real_popen(command, *args, **kwargs)
+
+    subprocess.Popen = popen
+    try:
+        yield
+    finally:
+        subprocess.Popen = real_popen
+
+
+def answer(skeleton, retrieved_ctx, question, model, effort, tools=False, all_cli_tools=False) -> dict:
     system_text, prompt = transcript(_request(skeleton, retrieved_ctx, question, model, effort))
     start = time.monotonic()
-    with _plan_mode() if tools else contextlib.nullcontext():
+    with _plan_mode() if tools else contextlib.nullcontext(), \
+            _every_cli_tool() if all_cli_tools else contextlib.nullcontext():
         text, usage, _sid = _cli(prompt, model, system_text, tools=tools)
     return {"text": text, "seconds": round(time.monotonic() - start, 1), **_usage_row(usage)}
 
@@ -269,7 +299,8 @@ def run_pair(pair, skeleton, retriever, judge_model) -> dict:
         sides[side] = {**arm, "chunks": [c for c, _ in hits],
                        "context_tokens": retrieval._estimate_tokens(ctx),
                        **answer(skeleton, ctx, q["question"], arm["model"], arm["effort"],
-                                tools=arm.get("tools", False))}
+                                tools=arm.get("tools", False),
+                                all_cli_tools=arm.get("all_cli_tools", False))}
     outcome, verdicts = judge(q["question"], reference_for(q), sides["x"]["text"],
                               sides["y"]["text"], model=judge_model)
     return {"experiment": pair["experiment"], "question": q["question"], "file": q.get("file"),
@@ -303,7 +334,7 @@ def summarize(rows) -> dict:
 
 
 _LABELS = {"models": ("Haiku", "Sonnet"), "budget": ("medium budget", "high budget"),
-           "tools": ("tools off", "tools on")}
+           "tools": ("tools off", "tools on"), "toolset": ("--tools list", "every tool")}
 
 
 def report(rows) -> None:
