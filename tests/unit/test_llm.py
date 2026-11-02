@@ -1203,7 +1203,7 @@ class TestCliCommandPermissions(unittest.TestCase):
         from llm_light import llm, config
         seen = {}
 
-        def fake_cli(prompt, model="", extra_flags=None):
+        def fake_cli(prompt, model="", extra_flags=None, **_kwargs):
             flags = list(extra_flags or [])
             seen["system"] = flags[flags.index("--system-prompt") + 1]
             usage = MagicMock(input_tokens=1, output_tokens=1, cost_usd=None,
