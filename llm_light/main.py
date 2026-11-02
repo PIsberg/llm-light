@@ -313,7 +313,7 @@ def _resume_picker() -> None:
     state.checkpoints.clear()
     state.replies.clear()
     state.pending_context.clear()
-    state.cli_session_id = None
+    state.cli_session = None
     print(f"  {_T_SYS}  {session.resume(entries[int(picked)]['path'])}")
 
 
@@ -459,7 +459,7 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                 continue
             if query == "/clear":
                 state.conversation_history.clear()
-                state.cli_session_id = None
+                state.cli_session = None
                 state.session_model = None
                 state.pending_context.clear()
                 state.replies.clear()
@@ -539,6 +539,8 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                                  [("yes", "Yes, revert it"), ("no", "No")]) == "yes"
                 if confirm:
                     git_manager.undo_last_commit()  # prints what it undid, or why not
+                    # The session remembers the reverted files as they were.
+                    state.cli_session = None
                 else:
                     print(f"  {_T_SYS}  Cancelled.\n")
                 continue

@@ -81,7 +81,17 @@ def save_global_stats():
 load_global_stats()
 global_stats["total_sessions"] += 1
 
-cli_session_id: str | None = None   # OAuth/Pro: reuse CLI session across turns
+# The claude CLI session the next OAuth turn resumes: {"id", "model", "cost"}, cost being
+# the CLI's running total for it. None sends the whole history as one prompt and starts
+# a new session. Set it to None whenever the conversation stops matching the session.
+cli_session = None
+# git_manager.tree_state() at the end of that session's last turn: a file that changed
+# since then is one the session may remember wrongly, so the next turn names it.
+cli_tree = None
+# That session's isolated home, one per run: resuming needs the transcript the CLI wrote.
+cli_home = None
+# A resume failed on this CLI, so this run sends the whole history on every turn.
+cli_resume_failed = False
 last_interaction = time.time()
 lock = threading.Lock()
 stop_event = threading.Event()

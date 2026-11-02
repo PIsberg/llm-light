@@ -151,6 +151,10 @@ HYBRID_RETRIEVAL   = env_get("HYBRID", "1") != "0"
 # by answering every later question on Haiku (quality unscored, #90).
 # LLM_LIGHT_ROUTE_ONCE=0 routes the model per turn again.
 ROUTE_ONCE         = env_get("ROUTE_ONCE", "1") != "0"
+# Subscription turns continue one claude CLI session (--resume), so earlier turns stay
+# in the prompt cache and the agent keeps the files it read. LLM_LIGHT_CLI_RESUME=0
+# sends the whole history as one prompt on every turn again.
+CLI_RESUME         = env_get("CLI_RESUME", "1") != "0"
 
 # Hybrid retrieval adds this many fused z-score units to chunks in files git
 # reports as modified, staged or untracked: questions are mostly about what you

@@ -425,6 +425,7 @@ def rewind(index: int) -> str:
     del state.conversation_history[cp["history_len"]:]
     state.turn_count = cp["turn"]
     del state.checkpoints[index:]
+    state.cli_session = None  # it still holds the turns just taken back
     session.save()
     commits = f", reverted {reverted} commit{'' if reverted == 1 else 's'}" if reverted else ""
     return f"Rewound to before {cp['question'][:60]!r}{commits}.{files_note}"

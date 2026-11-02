@@ -1,4 +1,5 @@
 """Claude provider: the anthropic SDK (API_KEY) or the claude CLI (OAUTH)."""
+import atexit
 import sys
 import os
 import time
@@ -181,17 +182,105 @@ _ALL_CLI_TOOLS = ",".join([
 _CLI_MAX_SECS = 3600
 
 
+class _ResumeRefused(RuntimeError):
+    """A --resume run failed before it showed or did anything, so running the turn
+    on the whole prompt repeats nothing."""
+
+
+_SESSION_ID = re.compile(r"[\w-]{1,128}")
+
+
+def _cli_session_home() -> str:
+    """This run's isolated home for the conversation. Resuming needs the transcript the
+    CLI wrote under it, so it outlives a call, unlike the one a hidden call gets."""
+    import tempfile
+    with state.lock:
+        if state.cli_home is None:
+            state.cli_home = tempfile.mkdtemp(prefix="llm_light_home_")
+            atexit.register(_remove_cli_home)
+        return state.cli_home
+
+
+def _remove_cli_home() -> None:
+    with state.lock:
+        home, state.cli_home, state.cli_session = state.cli_home, None, None
+        state.cli_resume_failed = False
+    if home:
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def _session_to_resume(model: str) -> str | None:
+    """The CLI session id this turn continues, or None to start a new one."""
+    if not config.CLI_RESUME or state.cli_resume_failed:
+        return None
+    with state.lock:
+        session = state.cli_session
+        if session and session["model"] != model:
+            # Its cached prefix is per model, so a resume would pay for the whole
+            # session again; the new model gets the history as llm_light keeps it.
+            session = state.cli_session = None
+    return session["id"] if session else None
+
+
+_MAX_CHANGED_NAMED = 20
+
+
+def _changed_files_note() -> str | None:
+    """Text for a resumed turn naming the files that changed since the last one, or None
+    if that cannot be told, so the turn must start over.
+
+    A resumed session remembers what it read and edited. Asked about a file changed
+    between turns, it answered from memory: "LIMIT is 42", in a file that said 77
+    (claude 2.1.316). The CLI says nothing on a -p resume, so this does.
+    """
+    from llm_light import git_manager
+    changed = git_manager.changed_since(state.cli_tree)
+    if changed is None:
+        return None
+    if not changed:
+        return ""
+    state.cli_tree = git_manager.tree_state()  # a lint retry in this turn need not repeat it
+    named = ", ".join(changed[:_MAX_CHANGED_NAMED])
+    more = f" and {len(changed) - _MAX_CHANGED_NAMED} more" if len(changed) > _MAX_CHANGED_NAMED else ""
+    return ("Files changed outside this conversation since your last reply, so what you "
+            f"read or edited earlier may be out of date: {named}{more}\n\n")
+
+
+def _remember_session(session_id, model: str, usage) -> None:
+    """Keep the session the turn ran in, and make usage this turn's alone: the CLI's
+    usage is per run, but on a resume its total_cost_usd is the whole session's."""
+    if not (isinstance(session_id, str) and _SESSION_ID.fullmatch(session_id)):
+        with state.lock:
+            state.cli_session = None
+        return
+    total = usage.cost_usd
+    with state.lock:
+        before = state.cli_session["cost"] if state.cli_session else 0.0
+        state.cli_session = {"id": session_id, "model": model,
+                             "cost": total if total is not None else before}
+    from llm_light import git_manager
+    state.cli_tree = git_manager.tree_state()
+    if total is not None:
+        usage.cost_usd = total - before if total >= before else total
+
+
 def _make_cli_subprocess_call(
     prompt: str,
     model: str = "",
     extra_flags: list | None = None,
     render: bool = True,
     tools: bool = True,
+    resume: str | None = None,
+    conversation: bool = False,
 ) -> tuple[str, any, str | None]:
     """
     Execute the official 'claude' CLI binary as a subprocess for OAUTH mode.
     Returns (reply_text, usage, session_id).
     Handles the 8,191 character limit on Windows by using temporary context files.
+
+    conversation: run in the session's kept home (_cli_session_home), so a later call
+    can resume this one. resume: the session id to continue; the prompt is then only
+    the new message. Hidden calls pass neither and leave nothing behind.
     """
     import shutil
     import tempfile
@@ -238,7 +327,7 @@ def _make_cli_subprocess_call(
         # while neutralizing user-memory leakage.
         import tempfile as _tempfile
         import shutil as _shutil
-        isolated_home = _tempfile.mkdtemp(prefix="llm_light_home_")
+        isolated_home = _cli_session_home() if conversation else _tempfile.mkdtemp(prefix="llm_light_home_")
         fake_claude_dir = Path(isolated_home) / ".claude"
         fake_claude_dir.mkdir(parents=True, exist_ok=True)
         (fake_claude_dir / "CLAUDE.md").write_text("", encoding="utf-8")
@@ -393,7 +482,11 @@ def _make_cli_subprocess_call(
             command += ["--model", model]
         if processed_extra_flags:
             command += processed_extra_flags
-        
+        if resume:
+            # The snapshot would resend the first turn's system prompt for the whole
+            # session, so a skeleton rebuilt after an edit would never reach the model.
+            command += ["--resume", resume, "--system-prompt-snapshot", "off"]
+
         # 3. Execute (streamed)
         # - stdin is DEVNULL, or the prompt's file, so the child can never
         #   block waiting on an inherited stdin (observed as silent
@@ -546,6 +639,16 @@ def _make_cli_subprocess_call(
         if render:
             _report_denied_commands(denials)
 
+        if resume and not reply_parts and not shown_tool_ids and (
+                returncode != 0 or timed_out.is_set() or idle_out.is_set()):
+            try:
+                stderr_tail = (proc.stderr.read() or "")[-2000:]
+            except Exception:
+                stderr_tail = ""
+            if "Not logged in" in stderr_tail or "Invalid API key" in stderr_tail:
+                raise ClaudeNotLoggedIn("Claude CLI: Not logged in. Please run 'claude auth login' in your terminal.")
+            raise _ResumeRefused(stderr_tail.strip() or f"exit code {returncode}")
+
         if timed_out.is_set() or idle_out.is_set():
             try:
                 stderr_tail = (proc.stderr.read() or "")[-2000:]
@@ -611,8 +714,15 @@ def _make_cli_subprocess_call(
                     pass
 
         # Cleanup the isolated HOME directory (contains only the empty
-        # CLAUDE.md and a copy of .credentials.json — safe to remove).
-        if isolated_home and os.path.isdir(isolated_home):
+        # CLAUDE.md and a copy of .credentials.json — safe to remove). The
+        # conversation's stays for the next turn, without the credentials,
+        # which the next call copies again.
+        if conversation:
+            try:
+                os.remove(Path(isolated_home) / ".claude" / ".credentials.json")
+            except (OSError, TypeError):
+                pass
+        elif isolated_home and os.path.isdir(isolated_home):
             try:
                 import shutil as _shutil
                 _shutil.rmtree(isolated_home, ignore_errors=True)
@@ -629,7 +739,18 @@ def _make_streaming_api_call(**create_kwargs):
     if AUTH_MODE == "OAUTH":
         model = create_kwargs.get("model", MODEL)
 
-        system_text, prompt = transcript(create_kwargs)
+        # A flattened history is one text block, so no cache boundary falls inside it
+        # and every turn wrote all of it again; the files the agent read were gone too.
+        # A resumed session has the earlier turns as messages, cached, reads included.
+        resume = _session_to_resume(model)
+        changed_note = _changed_files_note() if resume else ""
+        if changed_note is None:
+            resume, changed_note = None, ""
+            with state.lock:
+                state.cli_session = None
+        sent = dict(create_kwargs, messages=create_kwargs["messages"][-1:]) if resume else create_kwargs
+        system_text, prompt = transcript(sent)
+        prompt = changed_note + prompt
         from llm_light import permissions
         if permissions.bypass():
             # Any command runs, so the agent edits with its own tools and
@@ -656,11 +777,28 @@ def _make_streaming_api_call(**create_kwargs):
             )
 
         extra_flags = ["--system-prompt", system_text]
+        conversation = bool(config.CLI_RESUME and not state.cli_resume_failed)
 
         try:
-            reply_text, usage, _session_id = _make_cli_subprocess_call(
-                prompt, model=model, extra_flags=extra_flags
-            )
+            try:
+                reply_text, usage, session_id = _make_cli_subprocess_call(
+                    prompt, model=model, extra_flags=extra_flags,
+                    resume=resume, conversation=conversation,
+                )
+            except _ResumeRefused as refused:
+                # A CLI without these flags, or a session it cannot find. The history
+                # still has every turn, so this run goes on without resuming.
+                print(f"  {_ANSI_DIM}could not resume the CLI session ({str(refused)[:200]});"
+                      f" sending the whole history from now on{_ANSI_RESET}", flush=True)
+                with state.lock:
+                    state.cli_session = None
+                    state.cli_resume_failed = True
+                conversation = False
+                reply_text, usage, session_id = _make_cli_subprocess_call(
+                    transcript(create_kwargs)[1], model=model, extra_flags=extra_flags,
+                )
+            if conversation:
+                _remember_session(session_id, model, usage)
             # _make_cli_subprocess_call renders the reply as the CLI emits
             # stream-json events (ResponseView), so the caller must not
             # print it again.
@@ -838,6 +976,12 @@ class ClaudeProvider(Provider):
             if text is None:
                 raise
             raise base.ProviderError(text) from e
+
+    def turn_done(self) -> None:
+        """Files the agent or an edit changed this turn are ones the session knows about."""
+        if state.cli_session:
+            from llm_light import git_manager
+            state.cli_tree = git_manager.tree_state()
 
     def warm(self, quiet: bool = False) -> None:
         if AUTH_MODE == "OAUTH":
