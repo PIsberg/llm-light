@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 import llm_light  # noqa: F401  (loads the package before the submodules)
 from llm_light import git_manager, llm, state
 from llm_light.providers import gemini
+from llm_light.providers import base
 from llm_light.providers.base import ProviderError, transcript
 
 _RUN = "llm_light.providers.gemini.run_cli"
@@ -94,7 +95,8 @@ def test_us1s1_gemini_identity_and_label():
     p = gemini.PROVIDER
     assert gemini.BINARY == "agy"
     assert p.name == "gemini"
-    assert set(p.capabilities) == set()
+    # Token counts from agy's result event (#159), at prices that are not Claude's.
+    assert set(p.capabilities) == {base.USAGE}
     assert p.model_label("claude-opus-4") == "CLI default model"
     assert p.header() == ("CLI default model", "agy CLI")
 
@@ -623,3 +625,36 @@ def test_122_the_working_directory_stays_empty():
     with patch(_WHICH, return_value=_AGY), patch(_RUN, side_effect=fake):
         gemini.PROVIDER.complete(_request())
     assert seen["listing"] == []
+
+
+# --- #159: agy's token usage --------------------------------------------------
+# agy 1.4.12's result event carries usage; input_tokens excludes the cached part
+# (a measured run: input 2,038 + cache_read 2,542 = the 4,580 an uncached run sent).
+
+def _usage_stdout(usage, response="an answer"):
+    return _ndjson({"event": "init"}, _result(response, usage=usage))
+
+
+def test_159_usage_comes_from_the_result_event():
+    out = _usage_stdout({"input_tokens": 2_038, "output_tokens": 615, "thinking_tokens": 441,
+                         "cache_read_tokens": 2_542, "total_tokens": 5_195})
+    (reply, usage, _p), _, _ = _complete(out)
+    assert reply == "an answer"
+    assert (usage.input_tokens, usage.cache_read_input_tokens,
+            usage.cache_creation_input_tokens, usage.output_tokens) == (2_038, 2_542, 0, 615)
+
+
+@pytest.mark.parametrize("usage", [None, "lots", {"input_tokens": "9", "output_tokens": 1},
+                                   {"output_tokens": 3}, {"input_tokens": True, "output_tokens": 1}])
+def test_159_unreadable_usage_is_none_not_an_error(usage):
+    extra = {} if usage is None else {"usage": usage}
+    (reply, got, _p), _, _ = _complete(_ndjson({"event": "init"}, _result("an answer", **extra)))
+    assert reply == "an answer"
+    assert got is None
+
+
+def test_159_summarize_reports_usage():
+    out = _usage_stdout({"input_tokens": 800, "output_tokens": 100, "cache_read_tokens": 0})
+    with patch(_WHICH, return_value=_AGY), patch(_RUN, return_value=out):
+        _text, usage = gemini.PROVIDER.summarize("Summarize: X")
+    assert (usage.input_tokens, usage.output_tokens) == (800, 100)
