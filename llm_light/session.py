@@ -4,6 +4,10 @@ One file per project and provider, named by a hash of the project's absolute pat
 config.SESSION_DIR in the user's home rather than the project's
 .llm_light_cache: a cloned repo could otherwise ship a crafted
 conversation that --continue would hand to the model as the user's own.
+
+/clear moves that file aside as `<name>.saved-<stamp>.json` instead of
+deleting it, keeping the newest config.SESSION_KEEP, and /resume (or
+--resume) swaps one of them back in (#136).
 """
 
 import hashlib
@@ -63,11 +67,78 @@ def save() -> bool:
         return False
 
 
+def _archives(current: Path) -> list:
+    """This project's and provider's earlier conversations, newest first."""
+    return sorted(current.parent.glob(f"{current.stem}.saved-*.json"), reverse=True)
+
+
+def _archive(current: Path) -> None:
+    """Move the current conversation aside and keep the newest SESSION_KEEP."""
+    if not current.is_file():
+        return
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    os.replace(current, current.with_name(f"{current.stem}.saved-{stamp}.json"))
+    for old in _archives(current)[config.SESSION_KEEP:]:
+        old.unlink(missing_ok=True)
+
+
 def clear() -> None:
+    """Start a new conversation: the current one becomes an earlier one."""
     try:
-        session_file().unlink(missing_ok=True)
+        _archive(session_file())
     except OSError:
         pass
+
+
+def _first_question(history) -> str:
+    for message in history:
+        if message.get("role") == "user":
+            content = message.get("content")
+            if isinstance(content, list):
+                content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+            return " ".join(str(content).split())
+    return ""
+
+
+def conversations() -> list:
+    """The current conversation, then the earlier ones newest first; unreadable
+    files are skipped. Each: path, label, first, turns, saved_at, current."""
+    current = session_file()
+    entries = []
+    for path in [current] + _archives(current):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not _valid(data) or not data["conversation_history"]:
+            continue
+        turns = data.get("turn_count", len(data["conversation_history"]) // 2)
+        first = _first_question(data["conversation_history"])
+        when = str(data.get("saved_at", "")).replace("T", " ")[:16]
+        is_current = path == current
+        label = (f"{when or 'undated'}  ·  {turns} turn{'' if turns == 1 else 's'}  ·  {first[:60]}"
+                 + ("  (current)" if is_current else ""))
+        entries.append({"path": path, "label": label, "first": first, "turns": turns,
+                        "saved_at": data.get("saved_at"), "current": is_current})
+    return entries
+
+
+def resume(path) -> str:
+    """Make the conversation at `path` the current one and load it.
+
+    The conversation that was current becomes an earlier one, so nothing is lost.
+    """
+    current = session_file()
+    path = Path(path)
+    if path != current:
+        if not path.is_file():
+            return "That conversation is no longer saved."
+        try:
+            _archive(current)
+            os.replace(path, current)
+        except OSError as e:
+            return f"Could not switch conversations ({e}); nothing changed."
+    return restore()
 
 
 def _valid(data) -> bool:

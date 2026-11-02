@@ -25,7 +25,8 @@ This sequence diagram illustrates the complete flow from user query to response,
 
 | Command | Description |
 |---------|-------------|
-| `/clear` | Reset conversation history and the session model, so the next question routes it again, and delete the conversation saved for `--continue` |
+| `/clear` | Reset conversation history and the session model, so the next question routes it again; the saved conversation is moved aside for `/resume` (`session.clear()`) |
+| `/resume` | Pick one of this project's saved conversations and continue it (`session.conversations()`, `session.resume()`); the one left becomes an earlier conversation |
 | `/compact` | Replace the conversation with a summary of it (`llm.compact_history()`; Haiku, through the CLI in OAuth mode) |
 | `/cost` | Show session spend and global lifetime savings |
 | `/why` | Explain the last query's routing and retrieval |

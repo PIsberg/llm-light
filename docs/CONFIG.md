@@ -27,7 +27,8 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `MAX_HISTORY_TURNS` | Compress and cap when stored turns exceed this (default 6) |
 | `SUMMARIZE_BATCH` | Old turns collapsed per summary call (default 3) |
 | `GLOBAL_STATS_FILE` | Path to global savings persistence (`~/.llm_light_stats.json`; override with `LLM_LIGHT_STATS_FILE`) |
-| `SESSION_DIR` | Where `session.py` saves each project's conversation for `--continue`, one file per project named by a hash of its path (`~/.llm_light_sessions`; override with `LLM_LIGHT_SESSION_DIR`). In the home directory so a cloned repo cannot supply a conversation |
+| `SESSION_DIR` | Where `session.py` saves each project's conversation for `--continue`, one file per project named by a hash of its path (`~/.llm_light_sessions`; override with `LLM_LIGHT_SESSION_DIR`). In the home directory so a cloned repo cannot supply a conversation. `/clear` keeps the old one next to it as `<name>.saved-<stamp>.json` for `/resume` |
+| `SESSION_KEEP` | Earlier conversations kept per project and provider after `/clear`, for `/resume` and `--resume` (default 10; the oldest is deleted beyond that) |
 | `HEARTBEAT_SECS` | How often the heartbeat thread wakes (default 30) |
 | `CACHE_TTL_SECS` | Seconds since the last turn or warm before the heartbeat warms the cache again (default 3300, five minutes inside the skeleton's 1-hour TTL) |
 | `MODEL_HAIKU` / `MODEL_SONNET` / `MODEL_OPUS` | Model ID constants used by the router |

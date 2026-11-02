@@ -30,8 +30,9 @@ ANTHROPIC_API_KEY=sk-ant-... python3 llm_light.py
 python3 llm_light.py "What does OrderService do?"
 echo "List all REST endpoints" | python3 llm_light.py
 
-# Resume this project's previous conversation
+# Resume this project's previous conversation, or pick an earlier one
 python3 llm_light.py --continue
+python3 llm_light.py --resume
 
 # Pick the agent: claude (default), gemini or codex
 python3 llm_light.py --provider codex "What does OrderService do?"
@@ -63,7 +64,7 @@ pytest
 - **`/budget`**: `/budget 2.50` sets a spend cap, `/budget off` removes it, `/budget` shows cap and spend. At the cap, routing drops to Haiku at low effort. While a budget is set, the route line shows a per-turn estimate.
 - **Affected tests**: after an auto-commit, if a pytest command is allowed, the tests that mention the edited module run. On failure it offers to revert the commit and never reverts on its own. It does not run after OAuth-agent edits. In bypass mode it does not ask: the edit stays and `/undo` reverts it.
 - **Permission modes** (`permissions.py`): `default`, `acceptEdits` (`-y`), `plan` and `bypassPermissions` (`--dangerously-skip-permissions`, alias `--yolo`). The mode, not an `auto_apply` argument, decides whether edits apply unasked, so `shift+tab` can change it mid-session. Bypass is offered only when a startup flag allowed it. Default-mode requests must stay byte-identical: the plan and bypass notes go in the question, never in the cached system prompt or `TOOLS`. See [docs/architecture/components.md](docs/architecture/components.md#permission-modes).
-- **Session commands** (`commands.py`): `/copy`, `/model`, `/export`, `/status`, `/diff`, `/rewind`, `!command` and `@file`. `!command` output and `@file` contents reach `chat()` as `context`, sent after the question; routing and retrieval see the typed question only.
+- **Session commands** (`commands.py`): `/copy`, `/model`, `/export`, `/status`, `/diff`, `/rewind`, `!command` and `@file`; `/resume` is in `session.py`. `!command` output and `@file` contents reach `chat()` as `context`, sent after the question; routing and retrieval see the typed question only.
 
 Run from the root of the project you want to query. Exits with an error if no authentication is found, unless `--test-mode` is used; `--help` works without one. The check is `providers.active().require_auth()`, called by `main()` after the arguments are parsed, not at import.
 
