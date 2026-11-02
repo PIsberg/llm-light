@@ -219,6 +219,11 @@ def _session_to_resume(model: str) -> str | None:
             # Its cached prefix is per model, so a resume would pay for the whole
             # session again; the new model gets the history as llm_light keeps it.
             session = state.cli_session = None
+        elif session and time.time() - session["at"] >= config.CACHE_TTL_SECS:
+            # The entry has expired, so a resume would write the whole session again:
+            # 51,583 tokens and $0.2066 for a one-word turn after 65 idle minutes, against
+            # 4,680 and $0.0188 on the whole prompt. The agent reads again what it needs.
+            session = state.cli_session = None
     return session["id"] if session else None
 
 
@@ -256,7 +261,7 @@ def _remember_session(session_id, model: str, usage) -> None:
     total = usage.cost_usd
     with state.lock:
         before = state.cli_session["cost"] if state.cli_session else 0.0
-        state.cli_session = {"id": session_id, "model": model,
+        state.cli_session = {"id": session_id, "model": model, "at": time.time(),
                              "cost": total if total is not None else before}
     from llm_light import git_manager
     state.cli_tree = git_manager.tree_state()

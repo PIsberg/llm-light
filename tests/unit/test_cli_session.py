@@ -281,6 +281,44 @@ class TestChangedFiles(_RepoCase):
         self.assertIsNone(self.calls()[1]["resume"])
 
 
+class TestIdle(_CliCase):
+    """Past the cache entry's life a resume writes the whole session again. After 65 idle
+    minutes a one-word turn wrote 51,583 tokens and cost $0.2066; on the whole prompt the
+    same turn wrote 4,680 and cost $0.0188 (claude 2.1.316)."""
+
+    def _turn_after(self, idle_secs):
+        self.turn("first question")
+        state.cli_session["at"] -= idle_secs
+        self.turn("second question", history=[("user", "first question"), ("assistant", "reply 0")])
+        return self.calls()[1]
+
+    def test_a_turn_after_the_entry_expires_starts_over_with_the_whole_prompt(self):
+        call = self._turn_after(config.CACHE_TTL_SECS + 1)
+        self.assertIsNone(call["resume"])
+        self.assertIn("first question", call["prompt"])
+        self.assertIn("second question", call["prompt"])
+
+    def test_a_turn_inside_the_entrys_life_still_resumes(self):
+        call = self._turn_after(config.CACHE_TTL_SECS - 60)
+        self.assertEqual(call["resume"], "sess-0")
+        self.assertNotIn("first question", call["prompt"])
+
+    def test_every_turn_restarts_the_clock(self):
+        # A read renews the entry, so a long session of short gaps never starts over.
+        self.turn("first question")
+        state.cli_session["at"] -= config.CACHE_TTL_SECS - 60
+        self.turn("second question")
+        state.cli_session["at"] -= config.CACHE_TTL_SECS - 60
+        self.turn("third question")
+        self.assertEqual(self.calls()[2]["resume"], "sess-0")
+
+    def test_starting_over_charges_the_new_session_from_zero(self):
+        self.turn("first question")
+        state.cli_session["at"] -= config.CACHE_TTL_SECS + 1
+        _, usage, _ = self.turn("second question")
+        self.assertAlmostEqual(usage.cost_usd, 0.01)
+
+
 class TestCost(_CliCase):
     def test_a_resumed_turn_is_charged_only_its_own_cost(self):
         # total_cost_usd counts the whole session, so adding it per turn over-reports:
@@ -370,7 +408,7 @@ class TestForgetting(unittest.TestCase):
     the session, or the model keeps answering from turns the user took back."""
 
     def setUp(self):
-        state.cli_session = {"id": "sess-0", "model": config.MODEL_SONNET, "cost": 0.0}
+        state.cli_session = {"id": "sess-0", "model": config.MODEL_SONNET, "at": 0.0, "cost": 0.0}
         self.addCleanup(setattr, state, "cli_session", None)
         self.saved_history = list(state.conversation_history)
         self.addCleanup(lambda: state.conversation_history.__setitem__(slice(None), self.saved_history))
