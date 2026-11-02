@@ -658,3 +658,108 @@ def test_159_summarize_reports_usage():
     with patch(_WHICH, return_value=_AGY), patch(_RUN, return_value=out):
         _text, usage = gemini.PROVIDER.summarize("Summarize: X")
     assert (usage.input_tokens, usage.output_tokens) == (800, 100)
+
+
+# --- #124: the isolated home must not lose the sign-in ------------------------------
+# With HOME redirected, agy on Linux with no Secret Service looks for its token under
+# the redirected home (strace, agy 1.4.12). On macOS it reads the login keychain through
+# /usr/bin/security, which finds nothing there (exit 44, macOS 26.6.2) until
+# Library/Keychains is linked in.
+
+_TOKEN = (".gemini", "antigravity-cli", "antigravity-oauth-token")
+_KEYCHAINS = ("Library", "Keychains")
+
+
+def _run_seeing_home(seen):
+    def fake(provider, argv, stdin_text, *a, **kw):
+        import os
+        home = Path(kw["env"]["HOME"])
+        seen["home"] = home
+        seen["files"] = sorted(
+            os.path.relpath(os.path.join(d, f), home)
+            for d, _, files in os.walk(home) for f in files)
+        token = home.joinpath(*_TOKEN)
+        if token.exists():
+            seen["token"] = token.read_bytes()
+            seen["mode"] = token.stat().st_mode & 0o777
+        link = home.joinpath(*_KEYCHAINS)
+        seen["link_target"] = os.path.realpath(link) if link.is_symlink() else None
+        return _stdout("x")
+    return fake
+
+
+def _turn_seeing_home():
+    seen = {}
+    with patch(_WHICH, return_value=_AGY), patch(_RUN, side_effect=_run_seeing_home(seen)):
+        gemini.PROVIDER.complete(_request())
+    return seen
+
+
+def test_124_the_sign_in_token_is_carried_into_the_home_and_removed_after(_no_real_agy_settings):
+    real = _no_real_agy_settings.joinpath(*_TOKEN)
+    real.parent.mkdir(parents=True)
+    real.write_bytes(b"opaque \x00 token bytes")
+    seen = _turn_seeing_home()
+    assert seen["token"] == b"opaque \x00 token bytes"
+    assert not seen["home"].exists()
+    assert real.read_bytes() == b"opaque \x00 token bytes"  # the user's own is untouched
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+def test_124_the_carried_token_is_private_to_the_user(_no_real_agy_settings):
+    real = _no_real_agy_settings.joinpath(*_TOKEN)
+    real.parent.mkdir(parents=True)
+    real.write_bytes(b"t")
+    real.chmod(0o644)
+    assert _turn_seeing_home()["mode"] == 0o600
+
+
+def test_124_only_the_token_comes_over_not_the_rest_of_the_users_agy_config(_no_real_agy_settings):
+    import os
+    # Hooks, plugins and MCP servers are what the isolated home keeps out (#118).
+    base_dir = _no_real_agy_settings / ".gemini" / "antigravity-cli"
+    base_dir.mkdir(parents=True)
+    (base_dir / "antigravity-oauth-token").write_bytes(b"t")
+    (base_dir / "mcp_config.json").write_text("{}", encoding="utf-8")
+    (_no_real_agy_settings / ".gemini" / "GEMINI.md").write_text("rules", encoding="utf-8")
+    assert _turn_seeing_home()["files"] == sorted([os.path.join(*_TOKEN), os.path.join(*_AGENT_FILE)])
+
+
+def test_124_no_token_means_nothing_is_carried(_no_real_agy_settings):
+    import os
+    assert _turn_seeing_home()["files"] == [os.path.join(*_AGENT_FILE)]
+
+
+def test_124_an_unreadable_token_does_not_stop_the_turn(_no_real_agy_settings):
+    # agy then reports the sign-in problem itself.
+    real = _no_real_agy_settings.joinpath(*_TOKEN)
+    real.parent.mkdir(parents=True)
+    real.write_bytes(b"t")
+    with patch("llm_light.providers.gemini.shutil.copyfile", side_effect=PermissionError("locked")):
+        assert "token" not in _turn_seeing_home()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the link is macOS-only; symlinks need privileges on Windows")
+def test_124_on_macos_the_keychains_are_linked_and_survive_the_cleanup(_no_real_agy_settings):
+    import os
+    keychains = _no_real_agy_settings.joinpath(*_KEYCHAINS)
+    keychains.mkdir(parents=True)
+    (keychains / "login.keychain-db").write_bytes(b"keep me")
+    (_no_real_agy_settings / "Library" / "Preferences").mkdir()  # nothing else of Library
+    with patch.object(gemini.sys, "platform", "darwin"):
+        seen = _turn_seeing_home()
+    assert seen["link_target"] == os.path.realpath(keychains)
+    assert not seen["home"].exists()
+    # Removing the temporary home must not reach through the link.
+    assert (keychains / "login.keychain-db").read_bytes() == b"keep me"
+
+
+def test_124_elsewhere_no_keychain_link_is_made(_no_real_agy_settings):
+    _no_real_agy_settings.joinpath(*_KEYCHAINS).mkdir(parents=True)
+    with patch.object(gemini.sys, "platform", "linux"):
+        assert _turn_seeing_home()["link_target"] is None
+
+
+def test_124_on_macos_no_keychains_directory_means_no_link(_no_real_agy_settings):
+    with patch.object(gemini.sys, "platform", "darwin"):
+        assert _turn_seeing_home()["link_target"] is None
