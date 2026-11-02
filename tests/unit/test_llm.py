@@ -1671,6 +1671,79 @@ def _pid_alive(pid):
     return True
 
 
+class TestCliPromptOnStdin(unittest.TestCase):
+    """On Windows the prompt was an @file mention. Past a size between 24k and 34k
+    tokens the CLI dropped the file with no error, so the model got only its path: 498
+    input tokens for a 2,500-line prompt (claude 2.1.316). Under that size it arrived
+    as a fake Read result with a line number on every line. On stdin it arrives whole,
+    at 12,000 lines too, and about 204 tokens lighter on real prompts."""
+
+    _ECHO = (
+        "import json, sys\n"
+        "open(sys.argv[1], 'wb').write(sys.stdin.buffer.read())\n"
+        "print(json.dumps({'type': 'result', 'subtype': 'success', 'result': 'ok', 'usage': {}}), flush=True)\n"
+    )
+
+    def _run(self, prompt, by_stdin):
+        """Through the shipped call with a real child in place of the CLI."""
+        import shutil as _shutil
+        import subprocess as _sp
+        import sys as _sys
+        import tempfile as _tf
+        work = _tf.mkdtemp(prefix="cl_stdin_")
+        self.addCleanup(_shutil.rmtree, work, True)
+        received = os.path.join(work, "received")
+        script = os.path.join(work, "cli.py")
+        with open(script, "w") as fh:
+            fh.write(self._ECHO)
+        real_popen = _sp.Popen
+        seen = {}
+
+        def fake_popen(cmd, **kwargs):
+            seen.update(cmd=cmd, stdin=kwargs.get("stdin"))
+            return real_popen([_sys.executable, script, received], **kwargs)
+
+        with patch.object(_claude_mod, "_short_command_line", return_value=by_stdin), \
+             patch("llm_light.llm.subprocess.Popen", side_effect=fake_popen), \
+             patch("shutil.which", return_value=_sys.executable), \
+             patch("sys.stdout", io.StringIO()):
+            text, _usage, _sid = _claude_mod._make_cli_subprocess_call(prompt, render=False)
+        self.assertEqual(text, "ok")
+        with open(received, "rb") as fh:
+            seen["received"] = fh.read()
+        return seen
+
+    def test_a_long_prompt_reaches_the_cli_whole_on_stdin(self):
+        print("\n  ▶ TestCliPromptOnStdin.test_a_long_prompt_reaches_the_cli_whole_on_stdin")
+        prompt = "USER: " + "\n".join(f"line {i} åäö 日本語" for i in range(20_000)) + "\nZEBRA at the end"
+        seen = self._run(prompt, by_stdin=True)
+        self.assertEqual(seen["received"], prompt.encode("utf-8"))
+
+    def test_the_prompt_is_not_on_the_command_line_and_no_file_is_mentioned(self):
+        print("\n  ▶ TestCliPromptOnStdin.test_the_prompt_is_not_on_the_command_line_and_no_file_is_mentioned")
+        cmd = self._run("USER: hello-marker", by_stdin=True)["cmd"]
+        self.assertIn("-p", cmd)
+        self.assertFalse(any("hello-marker" in part or "@" in part for part in cmd), cmd)
+        # The next argument is a flag, so -p takes no prompt and reads stdin.
+        self.assertTrue(cmd[cmd.index("-p") + 1].startswith("--"))
+
+    def test_the_prompt_file_is_removed_afterwards(self):
+        print("\n  ▶ TestCliPromptOnStdin.test_the_prompt_file_is_removed_afterwards")
+        import tempfile as _tf
+        before = set(os.listdir(_tf.gettempdir()))
+        self._run("USER: hi", by_stdin=True)
+        left = {n for n in set(os.listdir(_tf.gettempdir())) - before if n.startswith("llm_light_ctx_")}
+        self.assertEqual(left, set())
+
+    def test_elsewhere_the_prompt_stays_an_argument_and_stdin_is_closed(self):
+        print("\n  ▶ TestCliPromptOnStdin.test_elsewhere_the_prompt_stays_an_argument_and_stdin_is_closed")
+        import subprocess as _sp
+        seen = self._run("USER: hello-marker", by_stdin=False)
+        self.assertEqual(seen["cmd"][seen["cmd"].index("-p") + 1], "USER: hello-marker")
+        self.assertEqual(seen["stdin"], _sp.DEVNULL)
+        self.assertEqual(seen["received"], b"")
+
+
 class TestCliProcessIsStopped(unittest.TestCase):
     """The CLI agent edits files with permission prompts disabled, so when a
     turn ends early (Ctrl+C, idle timeout) the agent process itself must be

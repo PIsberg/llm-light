@@ -131,6 +131,11 @@ def _report_denied_commands(denials) -> None:
           f" or LLM_LIGHT_ALLOW_COMMANDS{_ANSI_RESET}", flush=True)
 
 
+def _short_command_line() -> bool:
+    """Whether the prompt and system prompt must stay off the command line."""
+    return os.name == "nt"
+
+
 def _project_has_notebooks() -> bool:
     from llm_light.skeleton import _get_cached_paths
     return any(path.suffix == ".ipynb" for path in _get_cached_paths())
@@ -288,19 +293,19 @@ def _make_cli_subprocess_call(
 
         # Windows cmd.exe command line limit is 8,191 characters total (all args combined).
         # On Windows, ALWAYS use temp files for both prompt and system prompt.
-        # The prompt is an @-mention of its file (expanded by the CLI); the
-        # system prompt goes through --system-prompt-file.
-        cmd_prompt = prompt
+        # The prompt reaches -p on stdin, from its file (see TestCliPromptOnStdin: an
+        # @file mention lost the whole prompt past 24k to 34k tokens, with no error);
+        # the system prompt goes through --system-prompt-file.
+        prompt_args = [prompt]
         processed_extra_flags = list(extra_flags) if extra_flags else []
 
-        if current_os == 'nt':
-            # Write main prompt to temp file
+        if _short_command_line():
+            # Write main prompt to temp file. newline="" keeps its bytes as written.
             fd, path = tempfile.mkstemp(suffix=".md", prefix="llm_light_ctx_")
             temp_context_file = path
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            with os.fdopen(fd, 'w', encoding='utf-8', newline="") as f:
                 f.write(prompt)
-            safe_path = Path(temp_context_file).as_posix()
-            cmd_prompt = f"Please follow the instructions and use the codebase context provided in @{safe_path}"
+            prompt_args = []
 
             # Check for --system-prompt in extra_flags and move it to a temp file too
             new_flags = []
@@ -365,7 +370,7 @@ def _make_cli_subprocess_call(
             disallowed = _ALL_CLI_TOOLS
         command = [claude_bin]
         command += [
-            "-p", cmd_prompt,
+            "-p", *prompt_args,
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
@@ -390,28 +395,35 @@ def _make_cli_subprocess_call(
             command += processed_extra_flags
         
         # 3. Execute (streamed)
-        # - stdin=DEVNULL so the child can never block waiting on an
-        #   inherited stdin (observed as silent "Processing..." hangs).
+        # - stdin is DEVNULL, or the prompt's file, so the child can never
+        #   block waiting on an inherited stdin (observed as silent
+        #   "Processing..." hangs): a file ends, where a pipe could wait.
         # - Popen + line-by-line stdout so stream-json events surface as
         #   they arrive. A watchdog thread enforces the overall timeout
         #   (Popen has no timeout on iteration).
         # - shell=True on Windows ensures the Bun-based CLI finds its shim.
         import threading as _threading
 
-        proc = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-            encoding='utf-8',
-            errors='replace',
-            shell=(current_os == 'nt'),
-            stdin=subprocess.DEVNULL,
-            bufsize=1,
-            # Own process group on POSIX, so a timeout or Ctrl+C kills the
-            # CLI and everything it started (_kill_process_tree).
-            start_new_session=_new_session(),
-        )
+        prompt_stdin = open(temp_context_file, "rb") if temp_context_file else None
+        try:
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                encoding='utf-8',
+                errors='replace',
+                shell=(current_os == 'nt'),
+                stdin=prompt_stdin or subprocess.DEVNULL,
+                bufsize=1,
+                # Own process group on POSIX, so a timeout or Ctrl+C kills the
+                # CLI and everything it started (_kill_process_tree).
+                start_new_session=_new_session(),
+            )
+        finally:
+            # The child has its own handle; ours would stop the file being removed.
+            if prompt_stdin:
+                prompt_stdin.close()
 
         timed_out = _threading.Event()
         idle_out = _threading.Event()
