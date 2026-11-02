@@ -37,6 +37,7 @@ comparison, and this document now reflects that.
 | `benchmark_router.py` | Effort tier and model the router picks for each question | No | Free (static model download on first run) |
 | `benchmark_session_cache.py` | Session cost of four routing policies under a prompt-cache model | No | Free (static model download on first run) |
 | `benchmark_cache_warming.py` | What the startup warm and the idle heartbeat spend, run through the real `heartbeat()` and `warm_cache()` | No | Free |
+| `benchmark_answer_quality.py` | Answer quality of two variants on the same question, judged by Opus with swapped orders; Fable/Opus smoke | No (refuses with one); needs the Claude subscription | Subscription quota, about 110 CLI calls for `all` |
 | `benchmark_cli_providers.py` | Tokens codex (or agy, `--provider gemini`) reports for one question through the shipped provider's `_run`, as shipped or `--baseline` | `codex login`, or a signed-in agy | Subscription or key usage, about 4k to 46k input tokens per run |
 | `benchmark_cost.py` | Real-world cost savings vs naive baseline | Yes | ~$0.05–$0.50 |
 | `benchmark_claude_code.py` | Claude Code vs `llm_light` vs naive baseline | Yes | Varies with live API/tool runs |
@@ -381,7 +382,7 @@ command):
 
 Low still loses answers against medium. High no longer adds any over medium
 and sends 57% more mean tokens; max now adds two identifier answers over high.
-Both shifts rest on one or two questions; whether to lower high is open in #77.
+Both shifts rest on one or two questions. These token columns count the selected chunks' text; the context the high render sends differs from medium's by about 2%, and answer quality was equal, so the budgets stay (section 2f, #77).
 
 ### Router replay (2026-10-24, `benchmark_router.py`)
 
@@ -675,6 +676,45 @@ python tests/benchmarks/benchmark_cli_providers.py --provider gemini --runs 5 --
 | same | `llm-light`, no tools (shipped) | 4,600 | 16,239 | 12,542 | 0 of 5 runs |
 
 The shipped agent sends about 6,500 fewer input tokens per question: agy's own agent prompt and tool schemas. One easy-question run read 2,542 tokens from agy's cache, which is why its mean is below 4,580. On the hard question the output rose 30%, all of it thinking; output varies a lot from run to run (8,932 to 16,929 on the baseline), so five runs put that rise near the edge of noise, and it is followed up in #158. The change ships for #122: on a prompt that asks for a web search, the default agent ran `search_web` 3 times at 34,648 input tokens and the `llm-light` agent ran no tool in 5 of 5 runs at 1,249. Three edit requests through the shipped path each returned a SEARCH/REPLACE block that `parse_edit_blocks()` read.
+
+
+---
+
+## 2f · `benchmark_answer_quality.py` — Answer Quality, Live on the Subscription
+
+### Purpose
+
+The offline benchmarks score whether the right file reaches the context, not whether the answer is right. This one answers the same repo question with two variants and has a judge model pick the better answer, for the three open answer-quality questions: Haiku against Sonnet under ROUTE_ONCE (#90), the medium against the high retrieval budget (#77), and call-graph expansion off against on (#86). A `toptier` mode sends two plan-mode turns to Fable 5.1 and Opus 5.5 (#92).
+
+### Methodology
+
+- Retrieval is llm_light's own: hybrid static + dense scores, test chunks excluded, `_hybrid_select_pairs`, rendered by `retrieval._finish` (which adds callers and callees when `CALL_GRAPH` is on). The working-tree boost is left out.
+- The request is built as `chat()` builds a first turn, flattened by `transcript()`, and sent through `providers.claude._make_cli_subprocess_call` with **tools off**, so the answer rests on the context alone. The CLI path carries no effort, so every answer runs at the CLI's default effort.
+- The judge (Opus 5.5, tools off) gets the question, a reference (the answering file's source, or the ground-truth callers for #86) and both answers, scores each 0 to 2 and names a winner. Each pair is judged twice with the answers swapped; a side wins only when both orders agree.
+- It refuses to run when an API key is configured, so it never bills one.
+
+### Running
+
+```bash
+python tests/benchmarks/benchmark_answer_quality.py --experiment all
+python tests/benchmarks/benchmark_answer_quality.py --report
+```
+
+Live: it needs `claude auth login` (or `~/.llm_light_automation_token`) and spends subscription quota: about 110 CLI calls for `all`.
+
+### Results (2026-11-02, claude 2.1.316, Windows)
+
+| Experiment | Pairs | x wins | y wins | Ties | Score sum, x / y (of 2 per pair) | Mean context tokens, x / y | Mean output tokens, x / y |
+|---|---|---|---|---|---|---|---|
+| models: Haiku (x) / Sonnet (y), Sonnet-routed questions | 10 | 0 | 2 | 8 | 11 / 12 | 1,153 / 1,153 | 931 / 679 |
+| budget: medium 3,000 (x) / high 6,000 (y), high-routed questions | 8 | 1 | 2 | 5 | 9 / 9 | 1,065 / 1,086 | 600 / 572 |
+| callgraph: off (x) / on (y), `tests/fixtures/usage_questions.json` | 8 | 2 | 2 | 4 | 4 / 6 | 822 / 1,581 | 855 / 960 |
+
+- **Models (#90).** Haiku never beat Sonnet and lost 2 of 10 (once scored 1 against 2, once preferred in both orders at equal scores). Under ROUTE_ONCE a session that opens on Haiku answers Sonnet-routed questions on Haiku; on this set that costs quality on about 2 in 10 of them, for the 91% saving `benchmark_session_cache.py` models.
+- **Budget (#77).** The rendered context barely changes: 1,065 against 1,086 mean tokens, identical on 5 of 8 questions. At high effort only the top two chunks are shown in full and the rest as a bounded file summary, so a larger selection adds little to what is sent. The 57% gap in section 2b's budget table counts the selected chunks' text, not the rendered context. Lowering the high budget would save about 2% of the context with no measured change in quality, so the budgets stay.
+- **Call graph (#86).** Expansion nearly doubles the context (822 to 1,581) and does not win: 2 against 2 in pairwise judgement. The rubric scores lean its way (6 against 4 of 16; it lifted two answers from 0 to 1), but neither answer side could see the real callers, so most scores are 0 or 1. By the rule #86 set, it is removed.
+- **Top tier (#92).** Fable 5.1 and Opus 5.5 each answered two plan-mode turns through the real agent path (3,460 to 3,969 characters, about 30 s each), and the second call read the cache (Fable 120,948 cached tokens, Opus 121,727). The CLI builds its own request, so this says nothing about llm_light's API-mode effort message or breakpoints.
+- Small samples: a difference of one pair is noise. The answers had no tools, so a variant that would have read a file to recover is scored without that chance.
 
 ---
 
