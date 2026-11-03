@@ -1,7 +1,9 @@
 import os
+import queue
 import sys
 import io
 import threading
+import time
 import contextlib
 import warnings
 import logging
@@ -36,6 +38,9 @@ except ImportError:
 _RUN_HEAD_LINES   = 20
 _RUN_TAIL_LINES   = 80
 _RUN_MAX_CHARS    = 8_000
+# How long to keep reading once the command itself has exited. A background child
+# (`!server &`) inherits the pipe and may hold it open for as long as it lives.
+_RUN_DRAIN_SECS   = 0.5
 # Wall-clock cap for `/run <cmd>`. Without it a hanging command (a server,
 # `tail -f`, an interactive prompt) blocks the whole chat loop indefinitely.
 # Override with LLM_LIGHT_RUN_TIMEOUT (seconds); 0/blank disables the cap.
@@ -170,34 +175,101 @@ def _load_embedding_model(model_name: str, quiet: bool = False):
     return model
 
 
-def _run_command(cmd: str) -> str:
+def _queue_lines(stream, lines) -> None:
+    """Runs in a thread: a blocking read cannot notice Ctrl+C or a timeout, and
+    background threads never print, so the lines go to the caller."""
+    try:
+        for line in stream:
+            lines.put(line)
+    except (OSError, ValueError):
+        pass
+    finally:
+        lines.put(None)
+
+
+def _show_output(proc, timeout) -> tuple:
+    """Print the command's output as it arrives. Returns (output, exit code, timed out);
+    the exit code is None after a timeout. Ctrl+C stops the command and is re-raised."""
+    from llm_light.providers.runner import kill_process_tree
     import subprocess
+    lines = queue.Queue()
+    threading.Thread(target=_queue_lines, args=(proc.stdout, lines), daemon=True,
+                     name="llm-light-run-output").start()
+    deadline = None if timeout is None else time.monotonic() + timeout
+    captured, exited_at, timed_out = [], None, False
+
+    def show(line):
+        print(line, end="", flush=True)
+        captured.append(line)
+
+    try:
+        while True:
+            if deadline is not None and time.monotonic() > deadline:
+                timed_out = True
+                break
+            try:
+                line = lines.get(timeout=0.1)
+            except queue.Empty:
+                if proc.poll() is not None:
+                    exited_at = exited_at or time.monotonic()
+                    if time.monotonic() - exited_at > _RUN_DRAIN_SECS:
+                        break
+                continue
+            if line is None:
+                break
+            show(line)
+        if not timed_out:
+            # A command can close its stdout and go on running.
+            try:
+                proc.wait(timeout=None if deadline is None else max(0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                timed_out = True
+    except KeyboardInterrupt:
+        kill_process_tree(proc)
+        raise
+    if not timed_out:
+        return "".join(captured), proc.returncode, False
+    # kill_process_tree, not proc.kill(): with shell=True that ends only the shell,
+    # and on Windows its child keeps the pipe open and goes on running.
+    kill_process_tree(proc)
+    stop_at = time.monotonic() + _RUN_DRAIN_SECS
+    while time.monotonic() < stop_at:
+        try:
+            line = lines.get(timeout=0.1)
+        except queue.Empty:
+            break
+        if line is None:
+            break
+        show(line)
+    return "".join(captured), None, True
+
+
+def _run_command(cmd: str) -> str:
+    """Run a command the user typed (`!cmd`, `/run cmd`), showing its output as it
+    arrives, and return the transcript for the model. Its stdin is closed: nothing on
+    screen would say a command is waiting for input. KeyboardInterrupt stops the whole
+    process tree and is re-raised, so the caller can return to the prompt."""
+    import subprocess
+    from llm_light.providers.runner import new_session
     _T_RUN = f"{_ANSI_YELLOW}[Run]{_ANSI_RESET}"
     print(f"\n{_T_RUN} {_ANSI_DIM}$ {cmd}{_ANSI_RESET}")
     print(f"{_ANSI_DIM}{'-'*60}{_ANSI_RESET}")
-    timed_out = False
     try:
-        proc = subprocess.run(
-            cmd, shell=True,
+        proc = subprocess.Popen(
+            cmd, shell=True, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
-            timeout=_RUN_TIMEOUT_SECS,
+            # A piped Python buffers its stdout, which would hold back all its output.
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            # Own process group on POSIX, so a timeout can kill sh and its children.
+            start_new_session=new_session(),
         )
-        raw = proc.stdout or ""
-        exit_code = proc.returncode
-    except subprocess.TimeoutExpired as exc:
-        # The child is killed on timeout; surface whatever it printed so far.
-        timed_out = True
-        raw = exc.stdout or ""
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", errors="replace")
-        exit_code = None
     except Exception as exc:
         msg = f"[Run] Failed to start process: {exc}"
         print(f"{_T_ERR} {msg}")
         return msg
 
-    print(raw, end="")
+    raw, exit_code, timed_out = _show_output(proc, _RUN_TIMEOUT_SECS)
     print(f"{_ANSI_DIM}{'-'*60}{_ANSI_RESET}")
     if timed_out:
         print(f"{_T_RUN} {_ANSI_YELLOW}Timed out after {_RUN_TIMEOUT_SECS}s "

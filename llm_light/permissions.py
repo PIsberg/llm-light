@@ -4,7 +4,8 @@ Named after Claude Code's modes, and switched the same way: a startup flag,
 `/permissions <mode>`, or shift+tab at the prompt.
 
   default            ask before applying edits and before committing the CLI
-                     agent's edits; the shell runs only --allow-command prefixes
+                     agent's edits; the shell runs only allowed prefixes
+                     (/allow, --allow-command)
   acceptEdits        apply edits and commit agent edits without asking (-y)
   plan               read-only: the model plans, nothing is written, no command runs
   bypassPermissions  ask nothing: edits apply and the shell runs any command
@@ -40,7 +41,7 @@ LABELS = {
 }
 
 DESCRIPTIONS = {
-    DEFAULT: "asks before applying edits; the shell runs only --allow-command prefixes",
+    DEFAULT: "asks before applying edits; the shell runs only allowed prefixes (/allow)",
     ACCEPT_EDITS: "applies edits and commits the agent's edits without asking",
     PLAN: "read-only: the model plans, nothing is written and no command runs",
     BYPASS: "asks nothing: edits apply and the shell runs any command",

@@ -518,6 +518,56 @@ def test_loop_sends_bang_output_with_the_next_question(monkeypatch):
     assert "OUT" in chat.call_args.kwargs["context"]
 
 
+def test_ctrl_c_during_a_bang_command_stays_in_the_session(monkeypatch):
+    with patch("llm_light.executor._run_command", side_effect=KeyboardInterrupt):
+        chat = _loop(monkeypatch, ["!sleep 100", "still here?", "exit"])
+    chat.assert_called_once()
+    assert chat.call_args.args[0] == "still here?"
+    assert "context" not in chat.call_args.kwargs  # a stopped command queues nothing
+
+
+def test_ctrl_c_during_run_stays_in_the_session_and_asks_nothing(monkeypatch):
+    import llm_light as cl
+    with patch.object(cl, "_run_command", side_effect=KeyboardInterrupt):
+        chat = _loop(monkeypatch, ["/run sleep 100", "still here?", "exit"])
+    chat.assert_called_once()
+    assert chat.call_args.args[0] == "still here?"
+
+
+def test_not_logged_in_during_run_offers_login_instead_of_crashing(monkeypatch):
+    from llm_light.providers.base import NotLoggedIn
+    from llm_light.providers.claude import ClaudeProvider
+    import llm_light as cl
+    feed = iter(["/run echo hi", "exit"])
+    with patch.object(cl, "full_refresh"), \
+         patch("llm_light.Observer", return_value=MagicMock()), \
+         patch("llm_light.SourceHandler", return_value=MagicMock()), \
+         patch("threading.Thread", return_value=MagicMock()), \
+         patch.object(cl, "_PROMPTTK_AVAILABLE", False), \
+         patch.object(cl, "print_session_summary"), \
+         patch.object(cl, "_run_command", return_value="OUT"), \
+         patch.object(cl, "chat", side_effect=NotLoggedIn("log in")), \
+         patch.object(cl.main.session, "save"), \
+         patch.object(ClaudeProvider, "offer_login") as login, \
+         patch("builtins.input", side_effect=lambda _p=">": next(feed)), \
+         patch("builtins.print"):
+        try:
+            cl.start_chat()
+        finally:
+            state.stop_event.clear()
+    login.assert_called_once()
+
+
+def test_allow_at_the_prompt_lets_the_shell_tool_run_it(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "ALLOWED_COMMANDS", [])
+    monkeypatch.setattr(config, "SESSION_DIR", tmp_path / "sessions")
+    out, is_error = run_tool("shell", {"command": "echo hi"}, root=tmp_path)
+    assert is_error and "/allow" in out  # the refusal names the way out
+    _loop(monkeypatch, ["/allow echo", "exit"])
+    out, is_error = run_tool("shell", {"command": "echo hi"}, root=tmp_path)
+    assert not is_error and "hi" in out
+
+
 def test_loop_permissions_command_switches_mode(monkeypatch):
     _loop(monkeypatch, ["/permissions plan", "exit"])
     assert permissions.mode() == permissions.PLAN

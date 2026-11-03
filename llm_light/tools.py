@@ -355,8 +355,8 @@ def _shell(root, tool_input):
         tool = _match_allowed(command)
         if tool is None:
             raise _ToolError(
-                f"{command!r} is not allowed. The user must start llm_light with "
-                "--allow-command '<prefix>' to permit it.")
+                f"{command!r} is not allowed. The user can permit it by typing "
+                "/allow <prefix> at the prompt, or with --allow-command '<prefix>' at startup.")
         _refuse_chars(command, forbidden_chars(tool))
     if tool == "PowerShell":
         argv, use_shell = ["powershell", "-NoProfile", "-NonInteractive", "-Command", command], False

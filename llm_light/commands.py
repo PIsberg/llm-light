@@ -1,11 +1,12 @@
 """The session commands modelled on Claude Code's: /copy, /model, /export,
-/status, /diff, /rewind, custom /<name> commands, `!command` and `@file` mentions.
+/status, /diff, /rewind, /allow, custom /<name> commands, `!command` and `@file` mentions.
 
 Each returns the line to show (or prints its own output for the ones that
 show a diff or a command's output), so main.py's prompt loop only dispatches.
 """
 
 import base64
+import json
 import os
 import re
 import shutil
@@ -16,6 +17,7 @@ from pathlib import Path
 
 import llm_light.state as state
 from llm_light import config, git_manager, permissions, providers, session
+from llm_light.cli_shell_guard import forbidden_chars
 from llm_light.providers.base import SHELL, TOP_TIER
 
 
@@ -129,7 +131,10 @@ def run_bang(command: str) -> str:
     if not command:
         return "Usage: !<shell command>"
     from llm_light import executor
-    transcript = executor._run_command(command)  # prints the output as it goes
+    try:
+        transcript = executor._run_command(command)  # prints the output as it goes
+    except KeyboardInterrupt:
+        return "Stopped. Its output will not be sent."
     with state.lock:
         state.pending_context.append(
             f"I ran `{command}` in the project root. Its output:\n```\n{transcript}\n```")
@@ -142,6 +147,119 @@ def take_pending() -> str:
         text = "\n\n".join(state.pending_context)
         state.pending_context.clear()
     return text
+
+
+# --- /allow and /disallow ---------------------------------------------------------
+
+# On top of what the shell guard refuses: these would change the meaning of the
+# Bash(<prefix>:*) rule the CLI gets (a comma starts another rule, * is a wildcard).
+_NOT_IN_A_RULE = frozenset(",()*")
+
+
+def _allow_problem(entry: str) -> str | None:
+    """Why `entry` cannot be an allowlist entry, or None when it can. A prefix holding
+    a character the shell guard refuses could never match a command that runs."""
+    tool, prefix = config.command_rule(entry)
+    if not prefix:
+        return "it names no command"
+    bad = sorted(set(prefix) & (forbidden_chars(tool) | _NOT_IN_A_RULE))
+    if bad:
+        return "it may not contain " + " ".join(repr(c) for c in bad) + "; give the start of one simple command"
+    return None
+
+
+def _saved_allowed() -> list:
+    """The valid entries in this project's saved list. A damaged or hand-edited file
+    grants nothing that /allow would have refused."""
+    try:
+        data = json.loads(session.allowed_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [e for e in data if isinstance(e, str) and not _allow_problem(e)]
+
+
+def _write_allowed(entries: list) -> None:
+    path = session.allowed_file()
+    if not entries:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(entries), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def load_saved_allowed() -> list:
+    """Add this project's saved prefixes to config.ALLOWED_COMMANDS at startup, and
+    return the ones that were not already there, so they can be named to the user."""
+    added = [e for e in _saved_allowed() if e not in config.ALLOWED_COMMANDS]
+    config.ALLOWED_COMMANDS.extend(added)
+    return added
+
+
+def _allow_note() -> str:
+    """What the mode or the provider overrides about the list."""
+    provider = providers.active()
+    if not provider.has(SHELL):
+        return (f" {provider.name}'s agent cannot run commands, so this only lets llm_light "
+                "run the affected tests.")
+    if permissions.plan():
+        return " Plan mode runs no command until you leave it."
+    if permissions.bypass():
+        return " Bypass mode runs any command, whatever this list says."
+    return ""
+
+
+def allow_command(arg: str) -> str:
+    """`/allow [prefix]`: list the allowed prefixes, or add one, for this session and
+    for later sessions in this project. Only the user can type it: the agent has no
+    way to reach the prompt, so it cannot widen its own permissions."""
+    entry = arg.strip().strip("\"'").strip()
+    if not entry:
+        if config.ALLOWED_COMMANDS:
+            return ("Allowed: " + "; ".join(config.ALLOWED_COMMANDS)
+                    + ". /allow <prefix> adds one, /disallow <prefix> removes one.")
+        return ("Nothing is allowed: the agent runs no shell command. "
+                "/allow <prefix> adds one, for example /allow python -m pytest.")
+    problem = _allow_problem(entry)
+    if problem:
+        return f"Not allowed: {problem}."
+    entry = " ".join(entry.split())
+    if entry not in config.ALLOWED_COMMANDS:
+        config.ALLOWED_COMMANDS.append(entry)
+    message = (f"Allowed: commands starting with `{config.command_rule(entry)[1]}` run without "
+               f"asking, from the next turn. /disallow {entry} removes it.")
+    saved = _saved_allowed()
+    try:
+        if entry not in saved:
+            _write_allowed(saved + [entry])
+    except OSError as e:
+        message += f" Could not save it for later sessions: {e}."
+    return message + _allow_note()
+
+
+def disallow_command(arg: str) -> str:
+    """`/disallow <prefix>`: remove a prefix now and from later sessions. An entry from
+    --allow-command or the environment goes for this session; it returns with the flag."""
+    entry = " ".join(arg.strip().strip("\"'").split())
+    if not entry:
+        return "Usage: /disallow <prefix>"
+    saved = _saved_allowed()
+    if entry not in config.ALLOWED_COMMANDS and entry not in saved:
+        return (f"`{entry}` was not allowed. "
+                + ("Allowed: " + "; ".join(config.ALLOWED_COMMANDS) + "."
+                   if config.ALLOWED_COMMANDS else "Nothing is allowed."))
+    if entry in config.ALLOWED_COMMANDS:
+        config.ALLOWED_COMMANDS.remove(entry)
+    message = f"`{entry}` is no longer allowed."
+    try:
+        if entry in saved:
+            _write_allowed([e for e in saved if e != entry])
+    except OSError as e:
+        message += f" Could not update the saved list, so it returns next session: {e}."
+    return message
 
 
 # --- @file mentions ---------------------------------------------------------------
@@ -335,7 +453,7 @@ def status_lines() -> list:
     elif config.ALLOWED_COMMANDS:
         shell = "allowed: " + "; ".join(config.ALLOWED_COMMANDS)
     else:
-        shell = "off (--allow-command enables a command)"
+        shell = "off (/allow <prefix> enables a command)"
 
     index = (f"{len(state.chunk_store):,} chunks" if state.indexing_done.is_set()
              else "building")

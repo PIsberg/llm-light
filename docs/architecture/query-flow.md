@@ -31,6 +31,8 @@ This sequence diagram illustrates the complete flow from user query to response,
 | `/cost` | Show session spend and global lifetime savings |
 | `/why` | Explain the last query's routing and retrieval |
 | `/run <cmd>` | Run shell command and feed output to Claude |
+| `/loop <n or interval> <question>` | Repeat a question, up to `LOOP_MAX` turns |
+| `/allow [prefix]`, `/disallow <prefix>` | Change which commands the agent may run |
 | `/rewind` | Go back to before an earlier turn of this run: picks the turn from a menu, truncates the conversation to before it and resets the files to the commit HEAD was at then (`git reset --keep`). Refuses, changing nothing, if a commit since is not a `Claude:` one or a file it would reset has local edits. Edits the agent left uncommitted are not restored; compaction and `/clear` drop the earlier turns from the menu |
 | `/<name> [args]` | Your own command: `~/.llm_light/commands/<name>.md` (or `$LLM_LIGHT_COMMANDS_DIR`). Its body is sent as the question, with `$ARGUMENTS` replaced by what you type after the name (without the placeholder, that text goes after the body). An optional `---` frontmatter `description:` shows in `/help` and the `/` menu. Names are lowercase letters, digits, `-` and `_`; a built-in name wins. A repository's own `.llm_light/commands/` is not read: it would be prompt text a cloned repo controls |
 | `/undo` | Undo the last `Claude:` commit. Keeps uncommitted work; refuses if the last commit is yours or its files have local edits |

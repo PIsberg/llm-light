@@ -34,6 +34,13 @@ def session_file(root: Path | None = None, provider: str | None = None) -> Path:
     return Path(config.SESSION_DIR) / f"{digest}{suffix}.json"
 
 
+def allowed_file(root: Path | None = None) -> Path:
+    """Where /allow remembers this project's command prefixes. Outside the project for
+    the reason above: a file in a cloned repo must not be able to grant its commands.
+    One per project, whichever provider is active."""
+    return session_file(root, providers.DEFAULT).with_suffix(".allowed.json")
+
+
 def save() -> bool:
     """Write the conversation, or remove the file when there is none.
     Returns False, after a warning, if the write failed."""

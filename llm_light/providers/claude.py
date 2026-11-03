@@ -128,7 +128,7 @@ def _report_denied_commands(denials) -> None:
     print(f"\n  {_ANSI_DIM}{_SYM_TOOL} not allowed to run:{_ANSI_RESET}")
     for cmd in commands[:3]:
         print(f"    {_ANSI_DIM}{cmd[:100]}{_ANSI_RESET}")
-    print(f"  {_ANSI_DIM}  allow a command prefix with --allow-command \"<prefix>\""
+    print(f"  {_ANSI_DIM}  allow a command prefix with /allow <prefix>, --allow-command \"<prefix>\""
           f" or LLM_LIGHT_ALLOW_COMMANDS{_ANSI_RESET}", flush=True)
 
 

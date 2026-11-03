@@ -730,5 +730,33 @@ class TestResponseViewCleanup(unittest.TestCase):
         self.assertEqual(out.getvalue(), "")
 
 
+class TestPromptCtrlC(unittest.TestCase):
+    """Ctrl+C at the prompt: clear what was typed; only an empty prompt quits."""
+
+    def _prompt(self, keys):
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from llm_light.main import _prompt_bindings
+        with create_pipe_input() as inp:
+            inp.send_text(keys)
+            return PromptSession(input=inp, output=DummyOutput(),
+                                 key_bindings=_prompt_bindings()).prompt()
+
+    def test_ctrl_c_clears_typed_text_and_keeps_the_prompt(self):
+        self.assertEqual(self._prompt("a long question\x03what I meant\r"), "what I meant")
+
+    def test_ctrl_c_on_an_empty_prompt_quits(self):
+        with self.assertRaises(KeyboardInterrupt):
+            self._prompt("\x03")
+
+    def test_second_ctrl_c_quits(self):
+        with self.assertRaises(KeyboardInterrupt):
+            self._prompt("typed\x03\x03")
+
+    def test_alt_enter_still_adds_a_line(self):
+        self.assertEqual(self._prompt("one\x1b\rtwo\r"), "one\ntwo")
+
+
 if __name__ == "__main__":
     unittest.main()
