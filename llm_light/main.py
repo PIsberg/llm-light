@@ -507,6 +507,10 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             if query == "/budget" or query.startswith("/budget "):
                 print(f"  {_T_SYS}  {_budget_command(query[7:].strip())}")
                 continue
+            if name == "/loop":
+                _loop_command(arg, auto_apply=auto_apply)
+                session.save()
+                continue
             if query == "/resume":
                 _resume_picker()
                 continue
@@ -590,6 +594,44 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             except Exception as e:
                 print(f"{_T_ERR} Error stopping file watcher: {e}", file=sys.stderr)
         print_session_footer()
+
+
+LOOP_MAX = 20
+
+
+def _loop_command(arg: str, auto_apply) -> None:
+    """/loop N <question>: ask the same question N times, one turn each.
+
+    Runs in the prompt thread, so each turn goes through chat() as usual (routing,
+    budget, permissions, auto-commit). Stops early on Ctrl+C, a failed turn or a
+    reached session budget.
+    """
+    count_text, _, question = arg.partition(" ")
+    question = question.strip()
+    try:
+        count = int(count_text)
+    except ValueError:
+        count = 0
+    if not (1 <= count <= LOOP_MAX) or not question:
+        print(f"{_T_ERR} Usage: /loop <1-{LOOP_MAX}> <question>\n")
+        return
+    done = 0
+    try:
+        for i in range(1, count + 1):
+            if state.session_budget is not None and state.session_cost >= state.session_budget:
+                print(f"  {_T_SYS}  Session budget reached; loop stopped after {done} of {count}.")
+                return
+            print(f"  {_T_SYS}  Loop {i}/{count}")
+            chat(question, auto_apply=auto_apply, use_index=_index_ready_for_query())
+            done += 1
+            session.save()
+    except KeyboardInterrupt:
+        print(f"  {_T_SYS}  Loop stopped after {done} of {count}.")
+        return
+    except Exception as e:
+        print(f"  {_T_ERR}  Loop stopped after {done} of {count}: {e}")
+        return
+    print(f"  {_T_SYS}  Loop finished: {done} turn{'' if done == 1 else 's'}.")
 
 
 def _configure_proxy(parser, args) -> None:
