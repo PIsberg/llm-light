@@ -744,16 +744,23 @@ def _read_piped_stdin(wait: float = STDIN_WAIT_SECS, give_up: float = STDIN_MAX_
     keep = commands.MENTION_MAX_CHARS // 2
     lock = threading.Lock()
     head, tail, sizes = bytearray(), deque(), {"tail": 0, "total": 0}
-    started, finished = threading.Event(), threading.Event()
+    started, finished, abandoned = threading.Event(), threading.Event(), threading.Event()
 
     def _read():
         try:
-            # read1, not readline: a line can take far longer to finish than to start.
-            read = sys.stdin.buffer.read1
+            # The descriptor, not sys.stdin.buffer: a thread blocked in that holds its lock,
+            # and Python then dies at exit ("could not acquire lock for <_io.BufferedReader").
+            # And no readline: a line can take far longer to finish than to start.
+            try:
+                descriptor = sys.stdin.fileno()
+            except (OSError, ValueError, AttributeError):  # not a real stream: it cannot block
+                read = sys.stdin.buffer.read1
+            else:
+                read = lambda size: os.read(descriptor, size)
             while True:
                 chunk = read(65536)
                 started.set()
-                if not chunk:
+                if not chunk or abandoned.is_set():  # past give_up: stop spinning on `yes |`
                     return
                 with lock:
                     sizes["total"] += len(chunk)
@@ -779,8 +786,9 @@ def _read_piped_stdin(wait: float = STDIN_WAIT_SECS, give_up: float = STDIN_MAX_
     # Short waits: on Windows a long Event.wait does not notice Ctrl+C until it ends.
     while not finished.wait(0.2) and time.monotonic() < deadline:
         pass
+    abandoned.set()
     with lock:
-        total, kept_head, kept_tail = sizes["total"], bytes(head), b"".join(tail)
+        total, kept_head, kept_tail = sizes["total"], bytes(head), b"".join(tail)[-keep:]
     omitted = total - len(kept_head) - len(kept_tail)
     note = f"\n[... truncated: {omitted:,} bytes left out of the middle ...]\n" if omitted > 0 else ""
     if not finished.is_set():

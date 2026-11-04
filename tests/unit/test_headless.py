@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -217,9 +218,36 @@ def test_piped_text_is_labelled_as_data(monkeypatch):
     assert "not instructions" in one_shot.call_args.kwargs["context"]
 
 
+_OPEN_STREAMS = []  # closing a stream under a blocked read would wait for that read
+
+
 def _pipe_stdin():
     read_end, write_end = os.pipe()
-    return os.fdopen(read_end, "r", encoding="utf-8"), write_end
+    stream = os.fdopen(read_end, "r", encoding="utf-8")
+    _OPEN_STREAMS.append(stream)
+    return stream, write_end
+
+
+def test_an_idle_pipe_does_not_crash_the_process_at_exit():
+    """A reader blocked in sys.stdin.buffer holds its lock, and Python's shutdown then dies
+    with `Fatal Python error: could not acquire lock for <_io.BufferedReader name='<stdin>'>`."""
+    code = ("import llm_light.main as m\n"
+            "print(repr(m._read_piped_stdin(wait=0.1)))\n")
+    proc = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, cwd=ROOT, text=True, encoding="utf-8")
+    try:
+        out, err = _wait_with_stdin_open(proc)
+    finally:
+        proc.stdin.close()
+    assert proc.returncode == 0, err
+    assert "Fatal Python error" not in err
+    assert out.strip() == "''"
+
+
+def _wait_with_stdin_open(proc):
+    """communicate() would close stdin, which is the very thing that must not happen."""
+    proc.wait(timeout=60)
+    return proc.stdout.read(), proc.stderr.read()
 
 
 def test_a_pipe_nobody_writes_to_does_not_hang():
@@ -267,8 +295,29 @@ def test_an_endless_pipe_neither_fills_memory_nor_hangs():
             text = main_mod._read_piped_stdin(wait=1, give_up=0.5)
     finally:
         stop.set()
+    writer.join(timeout=5)
     assert len(text) < 60_000
     assert "still open" in text
+
+
+def test_reading_stops_after_giving_up():
+    """A reader left running against `yes |` would burn a core for the rest of the turn."""
+    stream, write_end = _pipe_stdin()
+    stop = threading.Event()
+
+    def write():
+        while not stop.is_set():
+            os.write(write_end, b"y" * 4096)
+
+    threading.Thread(target=write, daemon=True).start()
+    with patch.object(sys, "stdin", stream):
+        main_mod._read_piped_stdin(wait=1, give_up=0.2)
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and any(t.name == "llm-light-stdin" and t.is_alive()
+                                              for t in threading.enumerate()):
+        time.sleep(0.05)
+    stop.set()
+    assert not any(t.name == "llm-light-stdin" and t.is_alive() for t in threading.enumerate())
 
 
 def test_a_terminal_is_not_read(monkeypatch):
