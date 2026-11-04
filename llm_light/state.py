@@ -34,6 +34,7 @@ pinned_model = None
 # Output of `!command` runs, sent with the next question and then dropped.
 # Set by headless.run(): ResponseView sends its text and tool calls here, not the terminal.
 event_sink = None
+pinned_effort = None  # /effort: every question runs at this effort instead of the routed one
 vim_mode = False  # /vim: the prompt edits with vi keys
 pending_context = []
 # This run's full replies, newest last, for /copy (history keeps them

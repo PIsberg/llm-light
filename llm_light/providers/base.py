@@ -6,6 +6,10 @@ CACHING, EFFORT, TOP_TIER, USD_BUDGET, USAGE, AGENT, SHELL = (
     "caching", "effort", "top_tier", "usd_budget", "usage", "agent", "shell")
 
 
+# /doctor's verdict on one check: fine, worth knowing, or broken.
+OK, NOTE, PROBLEM = "ok", "note", "problem"
+
+
 class ProviderError(Exception):
     """str(e) names the provider and the remedy."""
 
@@ -38,6 +42,10 @@ class Provider:
 
     def offer_login(self, retry) -> None:
         return None
+
+    def diagnose(self) -> list:
+        """(status, line) checks for /doctor. Starts no program and sends nothing."""
+        return []
 
     def warm(self, quiet: bool = False) -> None:
         return None

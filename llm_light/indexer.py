@@ -140,7 +140,7 @@ def _save_cache(embed_model: str) -> None:
     # combined with _atomic_write the on-disk cache can never be left partial.
     with state.cache_io_lock:
         try:
-            CACHE_DIR.mkdir(exist_ok=True)
+            config.ensure_cache_dir(CACHE_DIR)
             manifest = {
                 "embed_model": embed_model,
                 "fast_model": config.FAST_EMBED_MODEL if config.HYBRID_RETRIEVAL else None,

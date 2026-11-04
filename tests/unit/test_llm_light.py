@@ -6238,7 +6238,7 @@ class TestStartChatLoop(unittest.TestCase):
         from prompt_toolkit.document import Document
         found = list(m._SlashCompleter().get_completions(Document("/c"), None))
         names = [c.text for c in found]
-        self.assertEqual(names, ["/clear", "/compact", "/copy", "/cost"])
+        self.assertEqual(names, ["/clear", "/compact", "/context", "/copy", "/cost"])
         self.assertTrue(all(c.display_meta_text for c in found))
         # Plain prose and command arguments are not completed.
         self.assertEqual(list(m._SlashCompleter().get_completions(Document("fix /c"), None)), [])
