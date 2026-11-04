@@ -281,14 +281,19 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/resume` | Switch to one of this project's saved conversations, picked from a list with their date, turn count and first question. The conversation you leave is kept |
 | `/rewind` | Go back to before an earlier turn of this run: picks the turn from a menu, truncates the conversation to before it and resets the files to the commit HEAD was at then (`git reset --keep`). Refuses, changing nothing, if a commit since is not a `Claude:` one or a file it would reset has local edits. Edits the agent left uncommitted are not restored; compaction and `/clear` drop the earlier turns from the menu |
 | `/undo` | Undo the last `Claude:` commit. Keeps uncommitted work; refuses if the last commit is yours or its files have local edits |
+| `/vim` | Switch the prompt between vi and emacs editing keys |
 | `/why` | How the last query was routed and what was retrieved |
 | `/<name> [args]` | Your own command: `~/.llm_light/commands/<name>.md` (or `$LLM_LIGHT_COMMANDS_DIR`). Its body is sent as the question, with `$ARGUMENTS` replaced by what you type after the name (without the placeholder, that text goes after the body). An optional `---` frontmatter `description:` shows in `/help` and the `/` menu. Names are lowercase letters, digits, `-` and `_`; a built-in name wins. A repository's own `.llm_light/commands/` is not read: it would be prompt text a cloned repo controls |
 | `/exit`, `exit`, `quit` | Quit; prints a one-line session summary |
+| `!!<cmd>` | Run a program that needs the terminal: an editor, a REPL, `git rebase -i`. It has the terminal to itself with no timeout, and nothing goes to the model |
 | `!<cmd>` | Run a command yourself, from the project root; its output is shown and sent with your next message. No allowlist applies, since you typed it. On Windows it runs in Git Bash when Git for Windows is installed, as the agent's commands do, else `cmd.exe` (`LLM_LIGHT_SHELL=cmd` keeps `cmd.exe`) |
 | `@<path>` | Attach a project file to the message (`tab` completes the path). Up to 50,000 characters per file; a file outside the project, a directory or a binary file is not attached, and a line says why. Routing and retrieval still see only what you typed |
 | Typing `/` | Menu of commands with descriptions |
 | `shift+tab` | Cycle the permission mode |
-| `alt+enter` | New line in the prompt (`enter` sends) |
+| `alt+enter`, `\`+`enter` | New line in the prompt (`enter` sends) |
+| `ctrl+g` | Edit the prompt in `$VISUAL` or `$EDITOR` (Notepad on Windows if neither is set) |
+| `ctrl+r` | Search earlier prompts |
+| `ctrl+l` | Clear the screen |
 | `ctrl+c` | Cancel the running turn, `!` command or `/loop`; at the prompt, clear what you typed, and on an empty prompt quit |
 
 One-shot runs write only the answer to stdout, as plain text; progress and tool lines go to stderr, so `llm_light.py "question" > answer.md` holds just the answer. `-p` (`--print`) asks for one-shot mode explicitly, as in `claude -p`; `@path` mentions work there too.

@@ -6,6 +6,7 @@ show a diff or a command's output), so main.py's prompt loop only dispatches.
 """
 
 import base64
+import functools
 import json
 import os
 import re
@@ -139,6 +140,26 @@ def run_bang(command: str) -> str:
         state.pending_context.append(
             f"I ran `{command}` in the project root. Its output:\n```\n{transcript}\n```")
     return "The output goes with your next message."
+
+
+def run_interactive(command: str) -> str:
+    """`!!command`: a program that needs the terminal (an editor, a REPL, `git rebase -i`).
+
+    It inherits stdin and stdout, so its output cannot be captured, and nothing goes to the
+    model. It has no timeout and shares our process group, so Ctrl+C reaches it as usual.
+    """
+    from llm_light import user_shell
+    command = command.strip()
+    if not command:
+        return "Usage: !!<command>, for a program that needs the terminal; nothing is sent to the model."
+    argv, use_shell = user_shell.command_argv(command)
+    try:
+        code = subprocess.call(argv, shell=use_shell)
+    except KeyboardInterrupt:
+        return "Stopped. Nothing was sent to the model."
+    except OSError as e:
+        return f"Could not run it: {e}"
+    return f"Exit code {code}. Nothing was sent to the model."
 
 
 def take_pending() -> str:
@@ -326,11 +347,67 @@ def expand_mentions(text: str, root: Path | None = None) -> tuple:
     return context, attached, problems
 
 
+_MAX_WALKED_FILES = 20_000
+
+
+@functools.lru_cache(maxsize=4)
+def _project_files(root: str, _minute: int = 0) -> tuple:
+    """The project's files, relative with forward slashes, skipping hidden and build
+    directories. Cached per minute: the completer runs on every keystroke."""
+    found = []
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in config.SKIP_DIRS and not d.startswith("."))
+        rel = os.path.relpath(folder, root).replace(os.sep, "/")
+        found.extend(name if rel == "." else f"{rel}/{name}" for name in sorted(files)
+                     if not name.startswith("."))
+        if len(found) >= _MAX_WALKED_FILES:
+            break
+    return tuple(found)
+
+
+def _subsequence(needle: str, text: str) -> bool:
+    letters = iter(text)
+    return all(c in letters for c in needle)
+
+
+def _mention_rank(needle: str, path: str) -> int | None:
+    """How well `path` matches: lower is better, None is no match."""
+    lowered = path.lower()
+    name = lowered.rsplit("/", 1)[-1]
+    if name.startswith(needle):
+        return 0
+    if needle in name:
+        return 1
+    if needle in lowered:
+        return 2
+    return 3 if _subsequence(needle, name) else None
+
+
+def _search_mentions(needle: str, root: Path) -> list:
+    """`@order` finds src/deep/order_service.py, without typing the folders."""
+    import time
+    needle = needle.lower()
+    ranked = []
+    for path in _project_files(str(root), int(time.time() // 60)):
+        rank = _mention_rank(needle, path)
+        if rank is not None:
+            ranked.append((rank, len(path), path))
+    return ["@" + path for _, _, path in sorted(ranked)[:50]]
+
+
 def mention_completions(word: str, root: Path | None = None) -> list:
-    """Paths completing the "@..." being typed: files and directories (with a
-    trailing /) under the project root, skipping hidden and build directories."""
+    """Paths completing the "@..." being typed: the entries of that folder, files and
+    directories (with a trailing /) under the project root, skipping hidden and build
+    directories. A bare name also searches the whole project, after the root's entries."""
     root = Path(root or Path.cwd())
     partial = word[1:].replace("\\", "/")
+    listed = _folder_completions(partial, root)
+    if partial and "/" not in partial and not partial.startswith("."):
+        return (listed + [p for p in _search_mentions(partial, root) if p not in listed])[:50]
+    return listed
+
+
+def _folder_completions(partial: str, root: Path) -> list:
     folder, _, stem = partial.rpartition("/")
     base = root / folder if folder else root
     try:
@@ -397,6 +474,16 @@ def model_command(arg: str) -> str:
         return f"Unknown model {arg!r}. Choose {', '.join(MODEL_ALIASES)}, or auto."
     state.pinned_model = model
     return f"Model pinned to {_short(model)}: every question runs on it until /model auto."
+
+
+# --- /vim -------------------------------------------------------------------------
+
+def vim_command(_arg: str = "") -> str:
+    """`/vim`: switch the prompt between vi and emacs editing keys."""
+    state.vim_mode = not state.vim_mode
+    if state.vim_mode:
+        return "Vim mode on: esc for normal mode, i to insert. /vim turns it off."
+    return "Vim mode off."
 
 
 # --- /export ----------------------------------------------------------------------

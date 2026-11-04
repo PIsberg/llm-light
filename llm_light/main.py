@@ -62,6 +62,7 @@ _COMMANDS = [
     ("/resume",     "switch to one of this project's earlier conversations"),
     ("/rewind",     "go back to before an earlier turn: its files and the conversation"),
     ("/undo",       "revert the last commit Claude made"),
+    ("/vim",        "switch the prompt between vi and emacs keys"),
     ("/why",        "explain the last query's routing and retrieval"),
     ("/exit",       "quit (also exit, quit)"),
 ]
@@ -79,9 +80,13 @@ def _all_commands() -> list:
 
 _KEYS = [
     ("enter",       "send"),
-    ("alt+enter",   "new line"),
+    ("alt+enter, \\+enter", "new line"),
+    ("ctrl+g",      "edit the prompt in $EDITOR"),
+    ("ctrl+r",      "search earlier prompts"),
+    ("ctrl+l",      "clear the screen"),
     ("shift+tab",   "cycle the permission mode"),
     ("!<cmd>",      "run a command; its output goes with your next message"),
+    ("!!<cmd>",     "run a program that needs the terminal; nothing is sent to the model"),
     ("@<path>",     "attach a project file to your message (tab completes)"),
     ("ctrl+c",      "cancel the running turn or command; at the prompt, clear the line, then quit"),
     ("↑ / ↓" if _UNICODE else "up / down", "previous prompts"),
@@ -107,7 +112,13 @@ try:
                 for path in commands.mention_completions(word):
                     yield _Completion(path, start_position=-len(word))
                 return
-            if not text.startswith("/") or " " in text:
+            if not text.startswith("/"):
+                return
+            if " " in text:
+                command, _, partial = text.partition(" ")
+                for value in _COMMAND_VALUES.get(command, ()):
+                    if value.startswith(partial) and " " not in partial:
+                        yield _Completion(value, start_position=-len(partial))
                 return
             for cmd, desc in _all_commands():
                 name = cmd.split()[0]
@@ -116,6 +127,12 @@ try:
 except ImportError:
     _PROMPTTK_AVAILABLE = False
 
+
+# What a command's argument can be, for tab completion.
+_COMMAND_VALUES = {
+    "/model": (*commands.MODEL_ALIASES, "auto"),
+    "/permissions": permissions.MODES,
+}
 
 _SEP = "  ·  "
 
@@ -370,16 +387,40 @@ def _ask(query, auto_apply=False, mentions=True) -> bool:
     return done
 
 
+def _on_windows() -> bool:
+    return os.name == "nt"
+
+
+def _ensure_editor():
+    """prompt_toolkit looks for $VISUAL, $EDITOR and then Unix paths: Windows has none.
+    A full path, with forward slashes because prompt_toolkit runs it through shlex."""
+    if _on_windows() and not (os.environ.get("VISUAL") or os.environ.get("EDITOR")):
+        root = os.environ.get("SystemRoot", "C:/Windows").replace("\\", "/")
+        os.environ["EDITOR"] = f"{root}/System32/notepad.exe"
+
+
 def _prompt_bindings():
-    """The prompt's own keys: alt+enter, shift+tab and ctrl+c."""
+    """The prompt's own keys: alt+enter, \\+enter, ctrl+g, shift+tab and ctrl+c."""
     from prompt_toolkit.application import get_app
-    from prompt_toolkit.filters import Condition, has_completions
+    from prompt_toolkit.filters import Condition, has_completions, is_searching
 
     bindings = _KeyBindings()
 
     @bindings.add("escape", "enter")  # alt+enter on most terminals
     def _newline(event):
         event.current_buffer.insert_text("\n")
+
+    # Works in terminals where alt+enter is taken (Windows Terminal: fullscreen).
+    @bindings.add("enter", filter=Condition(lambda: get_app().current_buffer.document.text_before_cursor.endswith("\\")
+                                            and get_app().current_buffer.document.is_cursor_at_the_end))
+    def _continue_line(event):
+        event.current_buffer.delete_before_cursor(1)
+        event.current_buffer.insert_text("\n")
+
+    @bindings.add("c-g", filter=~is_searching)
+    def _edit_in_editor(event):
+        _ensure_editor()
+        event.current_buffer.open_in_editor()
 
     # Not while the completion menu is open, where it steps back a choice.
     @bindings.add("s-tab", filter=~has_completions)
@@ -485,7 +526,7 @@ def start_chat(auto_apply=False, resume=False, pick=False):
         _prompt = [("", "\n"), ("class:prompt", "❯ " if _UNICODE else "> ")]
 
         def _get_input():
-            return _session.prompt(_prompt).strip()
+            return _session.prompt(_prompt, vi_mode=state.vim_mode).strip()
     else:
         def _get_input():
             with state.lock:
@@ -513,6 +554,9 @@ def start_chat(auto_apply=False, resume=False, pick=False):
 
             if query.lower() in ("exit", "quit", "/exit", "/quit"):
                 break
+            if query.startswith("!!"):
+                print(f"  {_T_SYS}  {commands.run_interactive(query[2:])}")
+                continue
             if query.startswith("!"):
                 print(f"  {_T_SYS}  {commands.run_bang(query[1:])}")
                 continue
@@ -523,6 +567,9 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                 continue
             if name == "/model":
                 print(f"  {_T_SYS}  {commands.model_command(arg)}")
+                continue
+            if query == "/vim":
+                print(f"  {_T_SYS}  {commands.vim_command()}")
                 continue
             if name == "/permissions":
                 print(f"  {_T_SYS}  {_permissions_command(arg)}")
