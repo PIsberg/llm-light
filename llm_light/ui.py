@@ -413,6 +413,21 @@ def print_session_footer():
     print(f"\n  {_ANSI_DIM}{_SYM_MARK} " + "  ·  ".join(parts) + _ANSI_RESET)
 
 
+def code_theme() -> str:
+    """monokai paints its own dark background; ansi_light uses the terminal's colours."""
+    return "ansi_light" if state.theme == "light" else "monokai"
+
+
+NOTIFY_AFTER_SECS = 15
+
+
+def turn_finished(seconds: float) -> None:
+    """Ring the bell after a long turn, if asked to: you may have looked away."""
+    if state.notify == "bell" and seconds >= NOTIFY_AFTER_SECS and _isatty(sys.stdout):
+        sys.stdout.write("\a")
+        sys.stdout.flush()
+
+
 def _colorize_diff(lines):
     result = []
     for line in lines:
@@ -442,7 +457,7 @@ def show_diff(path, new_content, old_content=None):
             _con.print(
                 _RichPanel(
                     _RichSyntax(preview, Path(path).suffix.lstrip(".") or "text",
-                                theme="monokai", line_numbers=True),
+                                theme=code_theme(), line_numbers=True),
                     title=f"[green][NEW FILE][/green]  {_escape_markup(str(path))}",
                     border_style="dim green",
                 )
@@ -485,7 +500,7 @@ def show_unified_diff(path, diff_text, max_lines=80):
         _con = _RichConsole(file=sys.stdout)
         _con.print(
             _RichPanel(
-                _RichSyntax("\n".join(lines), "diff", theme="monokai", line_numbers=False),
+                _RichSyntax("\n".join(lines), "diff", theme=code_theme(), line_numbers=False),
                 title=f"[cyan]{_escape_markup(str(path))}[/cyan]",
                 title_align="left",
                 subtitle=f"[dim]{more}[/dim]" if more else None,
@@ -795,7 +810,7 @@ def _reply_markdown(text):
             elements = {**Markdown.elements, "heading_open": _LeftHeading}
 
         _reply_markdown_class = _ReplyMarkdown
-    return _reply_markdown_class(text)
+    return _reply_markdown_class(text, code_theme=code_theme())
 
 
 _SPINNER_DOTS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏" if _UNICODE else r"-\|/"

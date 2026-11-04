@@ -34,6 +34,9 @@ pinned_model = None
 # Output of `!command` runs, sent with the next question and then dropped.
 # Set by headless.run(): ResponseView sends its text and tool calls here, not the terminal.
 event_sink = None
+theme = "dark"  # /config theme: code and diff colours
+notify = "off"  # /config notify: the bell when a long turn ends
+extra_system = ""  # --append-system-prompt
 pinned_effort = None  # /effort: every question runs at this effort instead of the routed one
 vim_mode = False  # /vim: the prompt edits with vi keys
 pending_context = []
