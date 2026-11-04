@@ -2,8 +2,8 @@
 import json
 from typing import Iterator
 
-CACHING, EFFORT, TOP_TIER, USD_BUDGET, USAGE, AGENT, SHELL = (
-    "caching", "effort", "top_tier", "usd_budget", "usage", "agent", "shell")
+CACHING, EFFORT, TOP_TIER, USD_BUDGET, USAGE, AGENT, SHELL, IMAGES = (
+    "caching", "effort", "top_tier", "usd_budget", "usage", "agent", "shell", "images")
 
 
 # /doctor's verdict on one check: fine, worth knowing, or broken.

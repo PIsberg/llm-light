@@ -104,7 +104,7 @@ _KEYS = [
     ("shift+tab",   "cycle the permission mode"),
     ("!<cmd>",      "run a command; its output goes with your next message"),
     ("!!<cmd>",     "run a program that needs the terminal; nothing is sent to the model"),
-    ("@<path>",     "attach a project file to your message (tab completes)"),
+    ("@<path>",     "attach a project file or image to your message (tab completes)"),
     ("ctrl+c",      "cancel the running turn or command; at the prompt, clear the line, then quit"),
     ("↑ / ↓" if _UNICODE else "up / down", "previous prompts"),
 ]
@@ -391,8 +391,17 @@ def _ask(query, auto_apply=False, mentions=True) -> bool:
             print(f"  {_T_SYS}  Not attached: {problem}")
         if attached:
             print(f"  {_T_SYS}  Attached {', '.join(attached)}")
+    images = []
+    if mentions:
+        images, problems = commands.attach_images(query)
+        for problem in problems:
+            print(f"  {_T_SYS}  Not attached: {problem}")
+        if images:
+            print(f"  {_T_SYS}  Attached {', '.join(i['path'] for i in images)}")
     context = "\n\n".join(c for c in (commands.take_pending(), mentioned) if c)
     extra = {"context": context} if context else {}
+    if images:
+        extra["images"] = images
     started = time.monotonic()
     try:
         done = chat(query, auto_apply=auto_apply, use_index=use_index, **extra)
@@ -1075,8 +1084,13 @@ def main():
     mentioned, attached, problems = commands.expand_mentions(prompt)
     for problem in problems:
         print(f"  {_T_SYS}  Not attached: {problem}", file=sys.stderr)
+    images, problems = commands.attach_images(prompt)
+    for problem in problems:
+        print(f"  {_T_SYS}  Not attached: {problem}", file=sys.stderr)
     context = "\n\n".join(c for c in (piped, mentioned) if c)
     extra = {"context": context} if context else {}
+    if images:
+        extra["images"] = images
     if args.resume or args.output_format:
         turn = continue_turn if args.resume else one_shot
         raise SystemExit(headless.run(args.output_format or "text",

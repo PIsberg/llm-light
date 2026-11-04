@@ -19,7 +19,7 @@ from pathlib import Path
 import llm_light.state as state
 from llm_light import config, git_manager, permissions, providers, session
 from llm_light.cli_shell_guard import forbidden_chars
-from llm_light.providers.base import EFFORT, SHELL, TOP_TIER
+from llm_light.providers.base import EFFORT, IMAGES, SHELL, TOP_TIER
 
 
 # --- version ------------------------------------------------------------------
@@ -308,6 +308,68 @@ def _looks_like_path(token: str) -> bool:
     return any(c in token for c in "/\\.")
 
 
+IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+IMAGE_MAX_BYTES = 5 * 1024 * 1024  # the API's limit for one image
+IMAGE_MAX_COUNT = 5
+
+
+def _image_type(raw: bytes) -> str | None:
+    """The media type the bytes say, or None. Not the file name's: the API refuses a
+    declared type that does not match."""
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def attach_images(text: str, root: Path | None = None) -> tuple:
+    """(images, problems) for the images `text` mentions as @path. Each image is a dict
+    with `path`, `media_type` and base64 `data`. As with any mention, a file outside the
+    project root is never read, whatever the path says."""
+    root = Path(root or Path.cwd()).resolve()
+    tokens = [m.group(1).rstrip(_TRAILING) for m in _MENTION.finditer(text)]
+    tokens = [t for t in tokens if Path(t).suffix.lower() in IMAGE_SUFFIXES]
+    if not tokens:
+        return [], []
+    provider = providers.active()
+    if not provider.has(IMAGES):
+        return [], [f"@{tokens[0]}: {provider.name} cannot read images, since it runs with no tools"]
+    images, problems = [], []
+    for token in tokens:
+        path = (root / token).resolve()
+        if not path.is_relative_to(root):
+            problems.append(f"@{token}: outside the project")
+            continue
+        rel = path.relative_to(root).as_posix()
+        if any(image["path"] == rel for image in images):
+            continue
+        if len(images) >= IMAGE_MAX_COUNT:
+            problems.append(f"@{token}: at most {IMAGE_MAX_COUNT} images go with a question")
+            continue
+        if not path.is_file():
+            problems.append(f"@{token}: not found")
+            continue
+        try:
+            raw = path.read_bytes()
+        except OSError as e:
+            problems.append(f"@{token}: {e.strerror or e}")
+            continue
+        if len(raw) > IMAGE_MAX_BYTES:
+            problems.append(f"@{token}: {len(raw) / 1_048_576:.1f} MB, over the {IMAGE_MAX_BYTES // 1_048_576} MB limit")
+            continue
+        media_type = _image_type(raw)
+        if media_type is None:
+            problems.append(f"@{token}: not an image, whatever its name says")
+            continue
+        images.append({"path": rel, "media_type": media_type, "data": base64.b64encode(raw).decode("ascii")})
+    return images, problems
+
+
 def expand_mentions(text: str, root: Path | None = None) -> tuple:
     """Attach the project files `text` mentions as @path.
 
@@ -329,12 +391,14 @@ def expand_mentions(text: str, root: Path | None = None) -> tuple:
                 target = path
                 break
         if target is None:
-            if _looks_like_path(token):
+            if _looks_like_path(token) and Path(token).suffix.lower() not in IMAGE_SUFFIXES:
                 path = (root / token).resolve()
                 reason = ("outside the project" if not path.is_relative_to(root)
                           else "a directory" if path.is_dir() else "not found")
                 problems.append(f"@{token}: {reason}")
             continue
+        if target.suffix.lower() in IMAGE_SUFFIXES:
+            continue  # attach_images() takes these
         if not target.is_relative_to(root):
             problems.append(f"@{token}: outside the project")
             continue

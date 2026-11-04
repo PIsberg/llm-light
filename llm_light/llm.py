@@ -709,6 +709,28 @@ def _question_text(query, context):
     return f"Question:\n{note}{query}" + (f"\n\n{context}" if context else "")
 
 
+def _images_note(images) -> str:
+    """Naming attached images: for the agent, which reads them itself, and for the history,
+    which keeps the path and not the bytes."""
+    return "Attached image" + ("s" if len(images) > 1 else "") + ": " + ", ".join(i["path"] for i in images)
+
+
+def _with_images(context, images):
+    """On the subscription the prompt is text, so the agent opens the image itself."""
+    if not (images and _agent_oauth()):
+        return context
+    note = f"{_images_note(images)}. Open each with your Read tool before answering."
+    return f"{context}\n\n{note}" if context else note
+
+
+def _image_blocks(images) -> list:
+    """API-key turns carry the image itself, after the question."""
+    if not images or _agent_oauth():
+        return []
+    return [{"type": "image", "source": {"type": "base64", "media_type": i["media_type"], "data": i["data"]}}
+            for i in images]
+
+
 def _extra(context):
     """`context` as a keyword only when there is some, so a turn without
     attachments calls exactly as it did before they existed."""
@@ -727,7 +749,7 @@ def _report_plan(planned, file=None):
               "shift+tab or /permissions leaves plan mode.", file=file)
 
 
-def chat(query, auto_apply=False, use_index=True, context=""):
+def chat(query, auto_apply=False, use_index=True, context="", images=()):
     """One interactive turn. `context` (attached files, !command output) goes
     after the question; routing and retrieval see the typed question only, so
     an attached file cannot push a short question to the top tier.
@@ -801,7 +823,8 @@ def chat(query, auto_apply=False, use_index=True, context=""):
         })
     import re
     from llm_light.editor import _ANY_BLOCK
-    current_blocks.append({"type": "text", "text": _question_text(query, context)})
+    current_blocks.append({"type": "text", "text": _question_text(query, _with_images(context, images))})
+    current_blocks.extend(_image_blocks(images))
     messages = trimmed + [{"role": "user", "content": current_blocks}]
 
     system = _build_system_blocks(skeleton)
@@ -846,7 +869,8 @@ def chat(query, auto_apply=False, use_index=True, context=""):
                     continue
 
             state.conversation_history.append(
-                {"role": "user", "content": query + (f"\n\n{context}" if context else "")})
+                {"role": "user", "content": query + (f"\n\n{context}" if context else "")
+                 + (f"\n\n[{_images_note(images)}]" if images else "")})
 
             if edits:
                 labels = ", ".join(e["path"] for e in edits)
@@ -915,16 +939,18 @@ def chat(query, auto_apply=False, use_index=True, context=""):
 _ONE_SHOT_INDEX_WAIT_SECS = 20
 
 
-def one_shot(prompt, auto_apply=False, context=""):
-    return _with_index(lambda use_index: _one_shot_turn(prompt, auto_apply, use_index=use_index, **_extra(context)))
+def one_shot(prompt, auto_apply=False, context="", images=()):
+    extra = {**_extra(context), **({"images": images} if images else {})}
+    return _with_index(lambda use_index: _one_shot_turn(prompt, auto_apply, use_index=use_index, **extra))
 
 
-def continue_turn(prompt, auto_apply=False, context=""):
+def continue_turn(prompt, auto_apply=False, context="", images=()):
     """`-c -p`: one turn on this project's saved conversation, saved again afterwards.
     Returns whether the turn completed."""
     from llm_light import session
     print(f"{_T_SYS} {session.restore()}", file=sys.stderr)
-    done = _with_index(lambda use_index: chat(prompt, auto_apply=auto_apply, use_index=use_index, **_extra(context)))
+    extra = {**_extra(context), **({"images": images} if images else {})}
+    done = _with_index(lambda use_index: chat(prompt, auto_apply=auto_apply, use_index=use_index, **extra))
     session.save()
     return done
 
@@ -971,7 +997,7 @@ def _with_index(turn):
             index_thread.join()
 
 
-def _one_shot_turn(prompt, auto_apply, use_index, context=""):
+def _one_shot_turn(prompt, auto_apply, use_index, context="", images=()):
     routed_model, effort, max_tok = _finalize_route(*route_query(prompt))
     if use_index:
         retrieved_ctx, hits = retrieve(prompt, token_budget=_RETRIEVAL_BUDGET[effort], effort=effort)
@@ -994,11 +1020,14 @@ def _one_shot_turn(prompt, auto_apply, use_index, context=""):
         skeleton = state.skeleton_context
 
     ctx_prefix = f"Retrieved Codebase Context:\n{retrieved_ctx}\n\n" if retrieved_ctx else ""
+    question = ctx_prefix + _question_text(prompt, _with_images(context, images))
+    image_blocks = _image_blocks(images)
     create_kwargs = dict(
         model=routed_model,
         max_tokens=max_tok,
         system=_build_system_blocks(skeleton),
-        messages=[{"role": "user", "content": ctx_prefix + _question_text(prompt, context)}],
+        messages=[{"role": "user", "content": [{"type": "text", "text": question}, *image_blocks]
+                   if image_blocks else question}],
         extra_headers=_EXTENDED_CACHE_HEADERS,
     )
     _apply_effort(create_kwargs, effort)
