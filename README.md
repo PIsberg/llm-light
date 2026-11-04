@@ -225,6 +225,22 @@ Run the script from the root of your project — it will immediately build the s
 
 The prompt appears in about half a second: the index builds in the background, and the toolbar under the prompt says `indexing…` until it is ready, then shows the session's tokens, cache hit rate and cost. Replies stream in as rendered markdown (tables, lists, syntax-highlighted code), with a spinner and elapsed time while Claude thinks or runs a tool, and one line per file it reads, searches or edits. In the reply each proposed edit is a single `✎ edit to path` line; the change itself is shown as a diff, with a menu underneath to approve them (arrow keys and Enter, or press `1`/`2`/`3`; Esc says no). Keys typed before the menu appears are ignored, so a stray Enter cannot answer it. "Yes, and don't ask again" stops that one question for the rest of the session (applying edits and committing the agent's edits are remembered separately); `-y` approves both from the start.
 
+#### Scripting
+
+`-p` answers one question and exits, and a script can rely on what it prints:
+
+```bash
+git diff | llm_light.py -p "review this"             # piped text goes with the question
+llm_light.py -p "what does OrderService do?" > a.md  # stdout holds the reply, nothing else
+llm_light.py -p --output-format json "..." | jq -r .result
+llm_light.py -p --output-format stream-json "..."    # one object per line as it happens
+llm_light.py -c -p "and then?"                       # continue the saved conversation
+```
+
+`json` prints one object when the turn ends, with `result`, `is_error`, `error`, `subtype` (`success`, `error` or `interrupted`), `model`, `duration_ms`, `num_turns`, `usage` and `total_cost_usd`, the field names `claude -p` uses. `usage` and `total_cost_usd` are `null` for a provider that does not report them, never 0. `stream-json` prints a `system` init line, then `text` and `tool` events, then that same object. Progress and the turn's stats go to stderr. The process exits 0 on success, 1 on a failed turn (including an edit that still has syntax errors after 3 attempts) and 130 on Ctrl+C.
+
+If a question is given and stdin is a pipe, llm_light waits 3 seconds for the first data, then goes on without it, so a script with an idle inherited stdin does not hang. Once data starts it reads to the end, up to 50,000 characters. `NO_COLOR` turns off colour.
+
 #### Permission modes
 
 What llm_light may do without asking is set by a permission mode, named after Claude Code's. `shift+tab` at the prompt cycles through them, `/permissions <mode>` sets one, and the toolbar shows any mode other than the default.
@@ -240,7 +256,7 @@ Bypass asks nothing, so use it only in a sandbox, a container or a repository yo
 
 On a subscription the agent is offered only the tools its mode can use: reading and editing files, plus a shell where the table above allows one, plus `NotebookEdit` in a project with notebooks, and the web tools in bypass. It cannot start subagents, run skills or schedule jobs. That saves about 11,000 input tokens on every model round.
 
-`python3 llm_light.py --continue` (or `-c`) picks up this project's previous conversation where you left it, as `claude --continue` does. The conversation is saved after every turn to `~/.llm_light_sessions/` (one file per project, outside the repo so a cloned repo cannot supply one), along with the session's model. Cost counters start from zero. Retrieval runs fresh for each new question, but earlier answers may describe code that has changed since. `/clear` starts a new conversation and keeps the old one: `--resume` at startup, or `/resume` in a session, lists this project's saved conversations (date, turns, first question) and switches to the one you pick, keeping the newest 10 per project and provider. `--continue` and `--resume` work only for the interactive loop: a one-shot question sends no history, so combining them with one is an error.
+`python3 llm_light.py --continue` (or `-c`) picks up this project's previous conversation where you left it, as `claude --continue` does. The conversation is saved after every turn to `~/.llm_light_sessions/` (one file per project, outside the repo so a cloned repo cannot supply one), along with the session's model. Cost counters start from zero. Retrieval runs fresh for each new question, but earlier answers may describe code that has changed since. `/clear` starts a new conversation and keeps the old one: `--resume` at startup, or `/resume` in a session, lists this project's saved conversations (date, turns, first question) and switches to the one you pick, keeping the newest 10 per project and provider. `--resume` asks which conversation, so it needs a terminal. `--continue` also takes a question: `llm_light.py -c -p "and then?"` answers in the saved conversation and saves it again, while a plain `-p` question sends no history and saves nothing.
 
 Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session keeps the first question's model (`LLM_LIGHT_ROUTE_ONCE=0` routes every question). A question that routes to Opus asks first: Opus 5.5, Fable 5.1 or Sonnet 5.5, each with its estimated cost for the turn. Esc, or running without a terminal, picks Sonnet 5.5.
 

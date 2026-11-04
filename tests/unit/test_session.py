@@ -230,13 +230,6 @@ class TestContinueFlag(unittest.TestCase):
             self._main(["--resume", "what next?"])
         self.assertEqual(raised.exception.code, 2)
 
-    def test_continue_with_a_one_shot_question_is_a_usage_error(self):
-        # One-shot turns send no history, so resuming one would do nothing.
-        with patch("sys.stderr"), self.assertRaises(SystemExit) as raised:
-            self._main(["--continue", "what next?"])
-        self.assertEqual(raised.exception.code, 2)
-
-
 class TestEarlierConversations(_SessionTest):
     """#136: /clear keeps the conversation as an archive, and /resume or
     --resume picks one of this project's earlier conversations."""

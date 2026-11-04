@@ -32,6 +32,8 @@ bypass_allowed = False
 # pick. None = route. Survives /clear, unlike session_model.
 pinned_model = None
 # Output of `!command` runs, sent with the next question and then dropped.
+# Set by headless.run(): ResponseView sends its text and tool calls here, not the terminal.
+event_sink = None
 pending_context = []
 # This run's full replies, newest last, for /copy (history keeps them
 # without their code blocks, and compression rewrites it).

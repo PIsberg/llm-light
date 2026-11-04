@@ -49,6 +49,10 @@ python3 llm_light.py --dangerously-skip-permissions       # ask nothing (alias -
 # Send the model traffic through a proxy (llm-fw: --llm-fw for its local defaults)
 python3 llm_light.py --proxy http://127.0.0.1:8080 --proxy-ca ~/.llm-fw/ca.crt
 
+# Script it: piped text goes with the question, stdout holds only the answer
+git diff | python3 llm_light.py -p --output-format json "review this"
+python3 llm_light.py -c -p "and then?"
+
 # Pin the model instead of routing; print the version
 python3 llm_light.py --model opus
 python3 llm_light.py --version
@@ -84,6 +88,7 @@ Users install with `pipx install llm-light-cli` from PyPI (the distribution name
 - **Chunk ids are `filepath::methodName`.** Watchdog paths go through `indexer._project_path()`, or a re-index duplicates the file's chunks.
 - **A proxy reaches model traffic only.** `proxy.py` never sets `os.environ`; the Anthropic client gets its own transport (`claude._new_client()`), and a CLI child gets the proxy through `proxy.child_env()`. Add a new CLI child's environment there too.
 - **Never load `index.pkl`.** The disk cache loads with `allow_pickle=False` because a cloned repo can ship a hostile pickle.
+- **In a `-p` run, only the answer reaches stdout.** `headless.run()` points stdout at stderr for the turn. A new way of showing a reply goes through `ResponseView`, which sends its text to `state.event_sink` when one is set.
 - **Tests never call the real API or write the real stats or session files.** `tests/conftest.py` sets a mock key, `LLM_LIGHT_HYBRID=0`, a temp `LLM_LIGHT_STATS_FILE` and a temp `LLM_LIGHT_SESSION_DIR`. Keep those settings when you add tests.
 - **Anything that changes the conversation behind the CLI session's back sets `state.cli_session = None`.** A subscription turn resumes that session (`claude._session_to_resume`), so it still holds any turn the history dropped: `/clear`, `/compact`, `/rewind`, `/undo`, `/resume`, compression and a failed turn all end it, and a change of model or a gap past `CACHE_TTL_SECS` starts over. The next turn then sends the whole history. Test usage through `state.session_cost`, not `total_cost_usd`, which on a resume is the session's running total.
 - **Auto-commit is the undo path.** AI edits commit as `Claude: [summary]`. `/undo` refuses unless the last commit is one of those and no file in it has changed since; `/rewind` applies the same rule to every commit after the turn it goes back to (`state.checkpoints`, recorded by `chat()`, cleared when history is compressed).
