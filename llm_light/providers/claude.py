@@ -132,11 +132,6 @@ def _report_denied_commands(denials) -> None:
           f" or LLM_LIGHT_ALLOW_COMMANDS{_ANSI_RESET}", flush=True)
 
 
-def _short_command_line() -> bool:
-    """Whether the prompt and system prompt must stay off the command line."""
-    return os.name == "nt"
-
-
 def _project_has_notebooks() -> bool:
     from llm_light.skeleton import _get_cached_paths
     return any(path.suffix == ".ipynb" for path in _get_cached_paths())
@@ -385,45 +380,44 @@ def _make_cli_subprocess_call(
             env.setdefault('HOMEDRIVE', os.environ.get('HOMEDRIVE', 'C:'))
             env.setdefault('HOMEPATH', os.environ.get('HOMEPATH', real_home.split(':', 1)[1] if ':' in real_home else real_home))
 
-        # Windows cmd.exe command line limit is 8,191 characters total (all args combined).
-        # On Windows, ALWAYS use temp files for both prompt and system prompt.
-        # The prompt reaches -p on stdin, from its file (see TestCliPromptOnStdin: an
-        # @file mention lost the whole prompt past 24k to 34k tokens, with no error);
-        # the system prompt goes through --system-prompt-file.
-        prompt_args = [prompt]
+        # The prompt and the system prompt never go on the command line. cmd.exe stops at
+        # 8,191 characters and Linux at 131,072 per argument, so a long conversation
+        # failed there with "Argument list too long" (#183). The prompt reaches -p on
+        # stdin, from its file (see TestCliPromptOnStdin: an @file mention lost the
+        # whole prompt past 24k to 34k tokens, with no error); the system prompt goes
+        # through --system-prompt-file.
         processed_extra_flags = list(extra_flags) if extra_flags else []
 
-        if _short_command_line():
-            # Write main prompt to temp file. newline="" keeps its bytes as written.
-            fd, path = tempfile.mkstemp(suffix=".md", prefix="llm_light_ctx_")
-            temp_context_file = path
-            with os.fdopen(fd, 'w', encoding='utf-8', newline="") as f:
-                f.write(prompt)
-            prompt_args = []
+        # Write main prompt to temp file. newline="" keeps its bytes as written.
+        fd, path = tempfile.mkstemp(suffix=".md", prefix="llm_light_ctx_")
+        temp_context_file = path
+        with os.fdopen(fd, 'w', encoding='utf-8', newline="") as f:
+            f.write(prompt)
+        prompt_args = []
 
-            # Check for --system-prompt in extra_flags and move it to a temp file too
-            new_flags = []
-            i = 0
-            while i < len(processed_extra_flags):
-                flag = processed_extra_flags[i]
-                if flag == "--system-prompt" and i + 1 < len(processed_extra_flags):
-                    # Next item is the system prompt text - move it to a temp file
-                    system_prompt_text = processed_extra_flags[i + 1]
-                    fd, path = tempfile.mkstemp(suffix=".md", prefix="llm_light_sys_")
-                    temp_system_prompt_file = path
-                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                        f.write(system_prompt_text)
-                    safe_sys_path = Path(temp_system_prompt_file).as_posix()
-                    # --system-prompt-file, not `--system-prompt @path`: the
-                    # CLI takes the latter literally, so the skeleton never
-                    # reached the model (verified with claude 2.1.310).
-                    new_flags.append("--system-prompt-file")
-                    new_flags.append(safe_sys_path)
-                    i += 2
-                else:
-                    new_flags.append(flag)
-                    i += 1
-            processed_extra_flags = new_flags
+        # Check for --system-prompt in extra_flags and move it to a temp file too
+        new_flags = []
+        i = 0
+        while i < len(processed_extra_flags):
+            flag = processed_extra_flags[i]
+            if flag == "--system-prompt" and i + 1 < len(processed_extra_flags):
+                # Next item is the system prompt text - move it to a temp file
+                system_prompt_text = processed_extra_flags[i + 1]
+                fd, path = tempfile.mkstemp(suffix=".md", prefix="llm_light_sys_")
+                temp_system_prompt_file = path
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(system_prompt_text)
+                safe_sys_path = Path(temp_system_prompt_file).as_posix()
+                # --system-prompt-file, not `--system-prompt @path`: the
+                # CLI takes the latter literally, so the skeleton never
+                # reached the model (verified with claude 2.1.310).
+                new_flags.append("--system-prompt-file")
+                new_flags.append(safe_sys_path)
+                i += 2
+            else:
+                new_flags.append(flag)
+                i += 1
+        processed_extra_flags = new_flags
 
         # No --bare on any OS: it never reads OAuth credentials, so subscription
         # users get "Not logged in" (verified with claude 2.1.310 even with
