@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import queue
 import sys
@@ -28,12 +29,9 @@ import llm_light.state as state
 # _load_embedding_model sees the mock instead of doing a real import.
 SentenceTransformer = None
 
-try:
-    from tqdm import tqdm
-    _TQDM_AVAILABLE = True
-except ImportError:
-    _TQDM_AVAILABLE = False
-    tqdm = None
+# None until a first download draws its bar: importing tqdm costs about 60 ms at startup.
+tqdm = None
+_TQDM_AVAILABLE = importlib.util.find_spec("tqdm") is not None
 
 _RUN_HEAD_LINES   = 20
 _RUN_TAIL_LINES   = 80
@@ -153,7 +151,10 @@ def _load_embedding_model(model_name: str, quiet: bool = False):
     if _TQDM_AVAILABLE:
         print(f"\n{_T_RAG} Downloading {_ANSI_BOLD}{model_name}{_ANSI_RESET} ({model_size_mb} MB)...")
 
-        with tqdm(
+        _bar = tqdm
+        if _bar is None:
+            from tqdm import tqdm as _bar
+        with _bar(
             total=100,
             desc=f"  {model_name}",
             unit="%",
