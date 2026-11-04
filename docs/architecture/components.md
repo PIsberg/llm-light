@@ -188,7 +188,7 @@ On Windows both this and the `shell` tool run through `user_shell.command_argv`:
 
 ## Repeating a question
 
-`/loop` runs in the prompt thread and sends each turn through `main._ask`, as the prompt and `/run` do, so a turn gets the queued `!command` output, its `@file` contents read afresh, the budget prompt and the login offer. `chat()` handles Ctrl+C and API errors itself and returns False, which is how the loop knows to stop. An interval waits with `time.sleep`, because `Event.wait` on Windows does not notice Ctrl+C until it ends, and is capped at `LOOP_MAX` turns like a count, so a loop left running has a spending limit even without `/budget`.
+`/loop` runs in the prompt thread and sends each turn through `main._ask`, as the prompt and `/run` do, so a turn gets the queued `!command` output, its `@file` contents read afresh, the budget prompt and the login offer. `chat()` handles Ctrl+C and API errors itself and returns False, which is how the loop knows to stop. An interval waits with `time.sleep`, because `Event.wait` on Windows does not notice Ctrl+C until it ends, and is capped at `LOOP_MAX` turns like a count, so a loop left running has a spending limit even without `/budget`. `--until` runs its command before each turn and queues a failure's output for that turn. An exit of 126, 127 or 9009, or a timeout, stops the loop instead of counting as "not yet": a mistyped check could never pass, and would spend all 20 turns.
 
 ## Permission modes
 
