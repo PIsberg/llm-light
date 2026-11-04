@@ -53,6 +53,9 @@ python3 llm_light.py --proxy http://127.0.0.1:8080 --proxy-ca ~/.llm-fw/ca.crt
 git diff | python3 llm_light.py -p --output-format json "review this"
 python3 llm_light.py -c -p "and then?"
 
+# Check the install, login and tools, even with no login
+python3 llm_light.py --doctor
+
 # Pin the model instead of routing; print the version
 python3 llm_light.py --model opus
 python3 llm_light.py --version
@@ -70,7 +73,7 @@ pytest
 - **Permission modes** (`permissions.py`): `default`, `acceptEdits` (`-y`), `plan` and `bypassPermissions` (`--dangerously-skip-permissions`, alias `--yolo`). The mode, not an `auto_apply` argument, decides whether edits apply unasked, so `shift+tab` can change it mid-session. Bypass is offered only when a startup flag allowed it. Default-mode requests must stay byte-identical: the plan and bypass notes go in the question, never in the cached system prompt or `TOOLS`. See [docs/architecture/components.md](docs/architecture/components.md#permission-modes).
 - **`/allow`, `/disallow`** (`commands.py`): change `config.ALLOWED_COMMANDS` mid-session and remember the prefix in `session.allowed_file()`, under `SESSION_DIR`, never in the project: a file a cloned repo controls must not grant commands. Entries are re-validated when loaded.
 - **`/loop`** (`main._loop_command`): `/loop <n> <question>` or `/loop <interval> <question>`, at most `LOOP_MAX` turns. `chat()` swallows Ctrl+C and API errors and returns False, so test the stop rules through the real `chat()` (`tests/unit/test_loop.py`), not a mock that raises.
-- **Session commands** (`commands.py`): `/copy`, `/model`, `/export`, `/status`, `/diff`, `/rewind`, `/vim`, `!command`, `!!command` and `@file`; `/resume` is in `session.py`. Custom commands come from `~/.llm_light/commands/<name>.md` only (`config.USER_COMMANDS_DIR`), never the project's directory, which a cloned repo controls. `!command` output and `@file` contents reach `chat()` as `context`, sent after the question; routing and retrieval see the typed question only.
+- **Session commands** (`commands.py`): `/copy`, `/model`, `/effort`, `/export`, `/status`, `/diff`, `/rewind`, `/init`, `/review`, `/memory`, `/vim`, `!command`, `!!command` and `@file`; `/doctor` and `/context` are in `doctor.py`; `/resume` is in `session.py`. Custom commands come from `~/.llm_light/commands/<name>.md` only (`config.USER_COMMANDS_DIR`), never the project's directory, which a cloned repo controls. `!command` output and `@file` contents reach `chat()` as `context`, sent after the question; routing and retrieval see the typed question only.
 
 Run from the root of the project you want to query. Exits with an error if no authentication is found, unless `--test-mode` is used; `--help` works without one. The check is `providers.active().require_auth()`, called by `main()` after the arguments are parsed, not at import.
 

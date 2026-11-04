@@ -22,7 +22,7 @@ from collections import deque
 from pathlib import Path
 
 import llm_light.state as state
-from llm_light import commands, headless, permissions, providers, proxy, session
+from llm_light import commands, doctor, headless, permissions, providers, proxy, session
 from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, TOP_TIER, USD_BUDGET
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
 from llm_light.ui import (
@@ -46,11 +46,16 @@ def Observer():
 _COMMANDS = [
     ("/help",       "show commands and keys"),
     ("/clear",      "start a new conversation"),
-    ("/compact",   "summarise the conversation so far, to send fewer tokens"),
+    ("/compact [focus]", "summarise the conversation so far, to send fewer tokens"),
+    ("/context",    "what the next turn would send, by part"),
     ("/copy [n]",   "copy the latest reply (or the n-th latest) to the clipboard"),
     ("/cost",       "token usage and cost for this session"),
     ("/diff",       "show the uncommitted changes"),
+    ("/doctor",     "check the install, login and tools"),
+    ("/effort [level]", "show the effort, pin one (low, medium, high, max) or auto"),
     ("/export [file]", "save the conversation to a text file"),
+    ("/init",       "write or improve this project's CLAUDE.md or AGENTS.md"),
+    ("/memory",     "open this project's instructions in your editor"),
     ("/model [name]", "show the model, pin one (opus, sonnet, haiku, fable) or auto"),
     ("/permissions [mode]", "show or set the permission mode"),
     ("/allow [prefix]", "let the agent run commands starting with this; lists them without one"),
@@ -60,6 +65,7 @@ _COMMANDS = [
     ("/budget <$>", "cap session spend; routing drops to the cheapest model at the cap"),
     ("/status",     "version, provider, model, permissions, shell and index"),
     ("/resume",     "switch to one of this project's earlier conversations"),
+    ("/review [ref]", "review the uncommitted changes, or those against a ref"),
     ("/rewind",     "go back to before an earlier turn: its files and the conversation"),
     ("/undo",       "revert the last commit Claude made"),
     ("/vim",        "switch the prompt between vi and emacs keys"),
@@ -68,14 +74,24 @@ _COMMANDS = [
 ]
 
 
+# Built-ins that only ask the model something. A user's own command of the same name wins:
+# "review" is a name people already use, and it must not vanish in an upgrade.
+_REPLACEABLE = frozenset({"/init", "/review"})
+
+
 def _reserved_names() -> set:
-    return {cmd.split()[0] for cmd, _ in _COMMANDS} | {"/quit"}
+    return ({cmd.split()[0] for cmd, _ in _COMMANDS} - _REPLACEABLE) | {"/quit"}
+
+
+def _replaced(name: str) -> bool:
+    return name in _REPLACEABLE and name in commands.custom_commands(_reserved_names())
 
 
 def _all_commands() -> list:
     """The built-in commands, then the user's own (~/.llm_light/commands/*.md)."""
     custom = commands.custom_commands(_reserved_names())
-    return _COMMANDS + [(f"{name} [args]", info["description"]) for name, info in custom.items()]
+    return ([c for c in _COMMANDS if c[0].split()[0] not in custom]
+            + [(f"{name} [args]", info["description"]) for name, info in custom.items()])
 
 
 _KEYS = [
@@ -132,6 +148,7 @@ except ImportError:
 _COMMAND_VALUES = {
     "/model": (*commands.MODEL_ALIASES, "auto"),
     "/permissions": permissions.MODES,
+    "/effort": (*commands.EFFORTS, "auto"),
 }
 
 _SEP = "  ·  "
@@ -387,18 +404,6 @@ def _ask(query, auto_apply=False, mentions=True) -> bool:
     return done
 
 
-def _on_windows() -> bool:
-    return os.name == "nt"
-
-
-def _ensure_editor():
-    """prompt_toolkit looks for $VISUAL, $EDITOR and then Unix paths: Windows has none.
-    A full path, with forward slashes because prompt_toolkit runs it through shlex."""
-    if _on_windows() and not (os.environ.get("VISUAL") or os.environ.get("EDITOR")):
-        root = os.environ.get("SystemRoot", "C:/Windows").replace("\\", "/")
-        os.environ["EDITOR"] = f"{root}/System32/notepad.exe"
-
-
 def _prompt_bindings():
     """The prompt's own keys: alt+enter, \\+enter, ctrl+g, shift+tab and ctrl+c."""
     from prompt_toolkit.application import get_app
@@ -419,7 +424,7 @@ def _prompt_bindings():
 
     @bindings.add("c-g", filter=~is_searching)
     def _edit_in_editor(event):
-        _ensure_editor()
+        commands.ensure_editor()
         event.current_buffer.open_in_editor()
 
     # Not while the completion menu is open, where it steps back a choice.
@@ -504,7 +509,7 @@ def start_chat(auto_apply=False, resume=False, pick=False):
         def get_status_bar():
             return HTML(_status_text())
 
-        CACHE_DIR.mkdir(exist_ok=True)
+        _config.ensure_cache_dir(CACHE_DIR)
         _session = _PromptSession(
             history=_FileHistory(str(CACHE_DIR / "history.txt")),
             auto_suggest=_AutoSuggest(),
@@ -568,6 +573,28 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             if name == "/model":
                 print(f"  {_T_SYS}  {commands.model_command(arg)}")
                 continue
+            if name == "/effort":
+                print(f"  {_T_SYS}  {commands.effort_command(arg)}")
+                continue
+            if query == "/doctor":
+                doctor.run()
+                continue
+            if query == "/context":
+                doctor.print_context()
+                continue
+            if query == "/memory":
+                print(f"  {_T_SYS}  {commands.memory_command(choose)}")
+                continue
+            if query == "/init" and not _replaced("/init"):
+                _ask(commands.init_prompt(), auto_apply=auto_apply, mentions=False)
+                continue
+            if name == "/review" and not _replaced("/review"):
+                question, line = commands.review_prompt(arg)
+                print(f"  {_T_SYS}  {line}")
+                if question:
+                    # mentions=False: an "@" in a diff is not the user attaching a file.
+                    _ask(question, auto_apply=auto_apply, mentions=False)
+                continue
             if query == "/vim":
                 print(f"  {_T_SYS}  {commands.vim_command()}")
                 continue
@@ -595,10 +622,10 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                 session.clear()
                 print(f"  {_T_SYS}  Conversation cleared.")
                 continue
-            if query == "/compact":
+            if name == "/compact":
                 try:
                     with ToolExecutionManager("Summarising the conversation"):
-                        turns = compact_history()
+                        turns = compact_history(arg) if arg else compact_history()
                 except KeyboardInterrupt:
                     print(f"  {_T_SYS}  Cancelled; the conversation is unchanged.")
                     continue
@@ -880,6 +907,9 @@ def main():
     parser.add_argument("--test-mode", choices=["small", "medium", "large", "extra-large"],
                         help="Run in test mode with a synthetic codebase and mocked API.")
     parser.add_argument("-v", "--version", action="version", version=f"llm_light {commands.version()}")
+    parser.add_argument("--doctor", action="store_true",
+                        help="Check the install, login and tools, then exit: 1 if something is broken. "
+                             "Starts no program and sends nothing.")
     parser.add_argument("-y", "--yes", action="store_true",
                         help="Apply edits without asking: the acceptEdits permission mode.")
     parser.add_argument("--permission-mode", choices=permissions.MODES,
@@ -971,6 +1001,8 @@ def main():
     for notice in _config.legacy_notices():
         print(f"  {_T_SYS}  {notice}", file=sys.stderr)
     provider = providers.select(args.provider)
+    if args.doctor:  # before the login check: a broken login is why people run it
+        raise SystemExit(doctor.run())
     provider.require_auth()
     if proxy.active():
         print(f"  {_T_SYS}  {provider.name} traffic goes through the proxy {proxy.display()}"

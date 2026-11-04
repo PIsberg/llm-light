@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from llm_light import proxy
+from llm_light.providers import base
 from llm_light.providers.base import USAGE, Provider, ProviderError, json_events, transcript
 from llm_light.providers.runner import empty_temp_dir, run_cli
 
@@ -255,6 +256,13 @@ class GeminiProvider(Provider):
 
     def header(self):
         return (_LABEL, "agy CLI")
+
+    def diagnose(self) -> list:
+        path = shutil.which(BINARY)
+        if not path:
+            return [(base.PROBLEM, _MISSING)]
+        return [(base.OK, f"agy: {path}"),
+                (base.NOTE, "agy sign-in: not checked; a missing one shows on the first question")]
 
     def require_auth(self) -> None:
         from llm_light.ui import _T_ERR

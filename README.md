@@ -264,11 +264,16 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 |---|---|
 | `/help` | Commands and keys |
 | `/clear` | Start a new conversation; the old one stays available to `/resume`; the next question also picks the model again, which the session then keeps (`LLM_LIGHT_ROUTE_ONCE=0` picks it per question) |
-| `/compact` | Replace the conversation so far with a summary, so later turns send fewer tokens |
+| `/compact [focus]` | Replace the conversation so far with a summary, so later turns send fewer tokens; a focus says what to keep in detail |
+| `/context` | What the next turn would send, by part, as an estimate. The agent's own prompt, tools and reads come on top of it on a subscription |
 | `/copy [n]` | Copy the latest reply, or the n-th latest, to the clipboard, code blocks included. Uses `clip` on Windows, `pbcopy` on macOS and `wl-copy`, `xclip` or `xsel` on Linux; without one (over SSH, say) it sends an OSC 52 escape, which many terminals copy locally |
 | `/cost` | Token usage and cost for this session, and lifetime savings |
 | `/diff` | The uncommitted changes under the current directory, one diff per file, and the untracked files |
+| `/doctor` | Check the install, login and tools. It starts no program and sends nothing. `--doctor` runs it from the command line, even when the login is what is broken, and exits 1 on a problem |
+| `/effort [level]` | Show the effort, or pin `low`, `medium`, `high` or `max` for every question; `auto` returns to routing. It also sets how much code retrieval sends. Claude only |
 | `/export [file]` | Save the conversation as plain text; without a name, to `llm_light-conversation-<date>-<time>.txt` in the project (a `.txt`, so the skeleton does not pick it up) |
+| `/init` | Ask the model to write or improve this project's `CLAUDE.md` (`AGENTS.md` for Gemini and Codex), as a normal turn, so edits ask as usual |
+| `/memory` | Open that file in `$VISUAL` or `$EDITOR`; it goes out with every question |
 | `/model [name]` | Show the model; `opus`, `sonnet`, `haiku`, `fable` or a full model id pins every question to it, `auto` returns to routing. Claude only: Gemini and Codex pick their own |
 | `/permissions [mode]` | Show the permission mode, or set one (see above) |
 | `/run <cmd>` | Run a shell command and ask Claude about its output. As with `!`, the output shows as it arrives, the command has no stdin, `ctrl+c` stops it and everything it started, and it is killed after 120 s (`LLM_LIGHT_RUN_TIMEOUT`) |
@@ -279,6 +284,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/budget <$>` | Cap the session's spend; at the cap, questions go to the cheapest model. `/budget off` removes it |
 | `/status` | Version, project, provider and access, model, permission mode, what the shell may run, index state and where the conversation is saved |
 | `/resume` | Switch to one of this project's saved conversations, picked from a list with their date, turn count and first question. The conversation you leave is kept |
+| `/review [ref]` | Review the uncommitted changes, or those against a ref, as a normal turn that is told not to edit. Up to 50,000 characters of diff are sent, and untracked files are named. Your own `~/.llm_light/commands/review.md` replaces it, and likewise `init.md` for `/init` |
 | `/rewind` | Go back to before an earlier turn of this run: picks the turn from a menu, truncates the conversation to before it and resets the files to the commit HEAD was at then (`git reset --keep`). Refuses, changing nothing, if a commit since is not a `Claude:` one or a file it would reset has local edits. Edits the agent left uncommitted are not restored; compaction and `/clear` drop the earlier turns from the menu |
 | `/undo` | Undo the last `Claude:` commit. Keeps uncommitted work; refuses if the last commit is yours or its files have local edits |
 | `/vim` | Switch the prompt between vi and emacs editing keys |

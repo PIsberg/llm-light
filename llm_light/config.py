@@ -251,6 +251,21 @@ USER_COMMANDS_DIR = Path(env_get("COMMANDS_DIR") or Path.home() / ".llm_light" /
 
 # Disk cache — stored in a hidden dir so _is_skipped() ignores it automatically
 CACHE_DIR      = Path(".llm_light_cache")
+
+
+def ensure_cache_dir(path=None) -> None:
+    """Create the project's cache directory, ignored by git from the inside: it would
+    otherwise show in every `git status` and be swept up by `git add -A`."""
+    path = CACHE_DIR if path is None else path
+    path.mkdir(exist_ok=True)
+    try:
+        ignore = path / ".gitignore"
+        if not ignore.exists():
+            ignore.write_text("*\n", encoding="utf-8")
+    except OSError:
+        pass  # it only keeps git quiet, so a read-only tree can still run
+
+
 CACHE_INDEX    = CACHE_DIR / "index.npz"   # numpy + JSON; never a pickle (see indexer._decode_index)
 CACHE_MANIFEST = CACHE_DIR / "manifest.json"
 

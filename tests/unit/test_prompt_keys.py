@@ -51,8 +51,8 @@ def test_an_editor_is_chosen_on_windows_when_none_is_set(monkeypatch):
     monkeypatch.delenv("VISUAL", raising=False)
     monkeypatch.delenv("EDITOR", raising=False)
     monkeypatch.setenv("SystemRoot", "D:\\Win")
-    with patch.object(m, "_on_windows", return_value=True):
-        m._ensure_editor()
+    with patch.object(commands, "_on_windows", return_value=True):
+        commands.ensure_editor()
     editor = os.environ["EDITOR"]
     monkeypatch.delenv("EDITOR")
     assert editor == "D:/Win/System32/notepad.exe"  # prompt_toolkit runs it through shlex
@@ -60,7 +60,7 @@ def test_an_editor_is_chosen_on_windows_when_none_is_set(monkeypatch):
 
 def test_a_set_editor_is_left_alone(monkeypatch):
     monkeypatch.setenv("EDITOR", "my-editor")
-    m._ensure_editor()
+    commands.ensure_editor()
     assert os.environ["EDITOR"] == "my-editor"
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from llm_light import proxy
+from llm_light.providers import base
 from llm_light.providers.base import USAGE, Provider, ProviderError, json_events, transcript
 from llm_light.providers.runner import empty_temp_dir, run_cli
 
@@ -124,6 +125,16 @@ class CodexProvider(Provider):
 
     def header(self):
         return (_LABEL, "codex CLI")
+
+    def diagnose(self) -> list:
+        path = shutil.which(BINARY)
+        if not path:
+            return [(base.PROBLEM, "codex CLI not found: npm install -g @openai/codex")]
+        home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+        signed_in = (home / "auth.json").exists()
+        return [(base.OK, f"codex CLI: {path}"),
+                (base.OK, "codex sign-in: found") if signed_in
+                else (base.PROBLEM, "codex sign-in: none found; run codex login")]
 
     def require_auth(self) -> None:
         from llm_light.ui import _T_ERR

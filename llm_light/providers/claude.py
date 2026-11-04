@@ -132,6 +132,16 @@ def _report_denied_commands(denials) -> None:
           f" or LLM_LIGHT_ALLOW_COMMANDS{_ANSI_RESET}", flush=True)
 
 
+def _find_cli() -> str | None:
+    return shutil.which("claude")
+
+
+def _effort_flags() -> list:
+    """/effort pins it on the CLI too. A routed turn adds nothing, so its command line
+    stays as it was."""
+    return ["--effort", state.pinned_effort] if state.pinned_effort else []
+
+
 def _project_has_notebooks() -> bool:
     from llm_light.skeleton import _get_cached_paths
     return any(path.suffix == ".ipynb" for path in _get_cached_paths())
@@ -479,6 +489,7 @@ def _make_cli_subprocess_call(
             command += ["--allowedTools", ",".join(f"{tool}({prefix}:*)" for tool, prefix in rules)]
         if model:
             command += ["--model", model]
+        command += _effort_flags()
         if processed_extra_flags:
             command += processed_extra_flags
         if resume:
@@ -925,6 +936,25 @@ class ClaudeProvider(Provider):
 
     def model_label(self, routed_model: str) -> str:
         return routed_model
+
+    def diagnose(self) -> list:
+        from llm_light.ui import access_label
+        found = []
+        if config.API_KEY:
+            found.append((base.OK, f"Access: {access_label(config.API_KEY_SOURCE) or 'API key'}"))
+        elif config.AUTH_TOKEN:
+            found.append((base.OK, f"Access: {access_label(config.API_KEY_SOURCE) or 'Claude subscription'}"))
+        else:
+            found.append((base.PROBLEM, "Access: no credentials found; run claude auth login, "
+                                        "or set ANTHROPIC_API_KEY"))
+        path = _find_cli()
+        if path:
+            found.append((base.OK, f"claude CLI: {path}"))
+        elif not config.API_KEY:
+            found.append((base.PROBLEM, "claude CLI not found: a subscription turn needs it"))
+        else:
+            found.append((base.NOTE, "claude CLI not found: only a subscription needs it"))
+        return found
 
     def require_auth(self) -> None:
         """Exit if no credential was found. main() calls it once the arguments

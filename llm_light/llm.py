@@ -311,6 +311,8 @@ def _finalize_route(model, effort, max_tokens) -> tuple[str, str, int]:
         return label, effort, max_tokens
     budget = state.session_budget
     over_budget = budget is not None and state.session_cost >= budget
+    if state.pinned_effort:
+        effort = state.pinned_effort
     if over_budget:
         effort, model, max_tokens = "low", MODEL_HAIKU, 2_048
     elif state.pinned_model:
@@ -429,7 +431,7 @@ def _accumulate_compression_stats(info: dict, model=None) -> None:
         state.session_tokens["compress_post"] += info["tokens_after"]
     state.save_global_stats()
 
-def _summarize_turns(messages: list) -> tuple:
+def _summarize_turns(messages: list, focus: str = "") -> tuple:
     lines = []
     for msg in messages:
         role = msg["role"].capitalize()
@@ -443,13 +445,14 @@ def _summarize_turns(messages: list) -> tuple:
         "Capture: what was asked, decisions reached, files edited and what changed, "
         "key facts established about the codebase.\n"
         "Output only the summary — no preamble.\n\n"
-        f"<turns>\n{dialogue}\n</turns>"
+        + (f"Pay particular attention to: {focus}\n\n" if focus else "")
+        + f"<turns>\n{dialogue}\n</turns>"
     )
 
     return providers.active().summarize(instructions)
 
-def compact_history() -> int:
-    """Replace the whole conversation with a summary of it (/compact).
+def compact_history(focus: str = "") -> int:
+    """Replace the whole conversation with a summary of it (/compact [focus]).
 
     Returns how many turns were summarised; 0 means there was nothing to do.
     """
@@ -457,7 +460,7 @@ def compact_history() -> int:
     if not history:
         return 0
     turns = (len(history) + 1) // 2
-    summary_text, usage = _summarize_turns(list(history))
+    summary_text, usage = _summarize_turns(list(history), focus) if focus else _summarize_turns(list(history))
     _record_usage(usage, SUMMARY_MODEL)
     state.checkpoints.clear()  # the summary replaces the turns they point into
     state.cli_session = None   # and the CLI session still holds them
