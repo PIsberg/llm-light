@@ -1684,7 +1684,7 @@ class TestCliPromptOnStdin(unittest.TestCase):
         "print(json.dumps({'type': 'result', 'subtype': 'success', 'result': 'ok', 'usage': {}}), flush=True)\n"
     )
 
-    def _run(self, prompt, by_stdin):
+    def _run(self, prompt, extra_flags=None):
         """Through the shipped call with a real child in place of the CLI."""
         import shutil as _shutil
         import subprocess as _sp
@@ -1703,11 +1703,10 @@ class TestCliPromptOnStdin(unittest.TestCase):
             seen.update(cmd=cmd, stdin=kwargs.get("stdin"))
             return real_popen([_sys.executable, script, received], **kwargs)
 
-        with patch.object(_claude_mod, "_short_command_line", return_value=by_stdin), \
-             patch("llm_light.llm.subprocess.Popen", side_effect=fake_popen), \
+        with patch("llm_light.llm.subprocess.Popen", side_effect=fake_popen), \
              patch("shutil.which", return_value=_sys.executable), \
              patch("sys.stdout", io.StringIO()):
-            text, _usage, _sid = _claude_mod._make_cli_subprocess_call(prompt, render=False)
+            text, _usage, _sid = _claude_mod._make_cli_subprocess_call(prompt, render=False, extra_flags=extra_flags)
         self.assertEqual(text, "ok")
         with open(received, "rb") as fh:
             seen["received"] = fh.read()
@@ -1716,12 +1715,12 @@ class TestCliPromptOnStdin(unittest.TestCase):
     def test_a_long_prompt_reaches_the_cli_whole_on_stdin(self):
         print("\n  ▶ TestCliPromptOnStdin.test_a_long_prompt_reaches_the_cli_whole_on_stdin")
         prompt = "USER: " + "\n".join(f"line {i} åäö 日本語" for i in range(20_000)) + "\nZEBRA at the end"
-        seen = self._run(prompt, by_stdin=True)
+        seen = self._run(prompt)
         self.assertEqual(seen["received"], prompt.encode("utf-8"))
 
     def test_the_prompt_is_not_on_the_command_line_and_no_file_is_mentioned(self):
         print("\n  ▶ TestCliPromptOnStdin.test_the_prompt_is_not_on_the_command_line_and_no_file_is_mentioned")
-        cmd = self._run("USER: hello-marker", by_stdin=True)["cmd"]
+        cmd = self._run("USER: hello-marker")["cmd"]
         self.assertIn("-p", cmd)
         self.assertFalse(any("hello-marker" in part or "@" in part for part in cmd), cmd)
         # The next argument is a flag, so -p takes no prompt and reads stdin.
@@ -1731,17 +1730,17 @@ class TestCliPromptOnStdin(unittest.TestCase):
         print("\n  ▶ TestCliPromptOnStdin.test_the_prompt_file_is_removed_afterwards")
         import tempfile as _tf
         before = set(os.listdir(_tf.gettempdir()))
-        self._run("USER: hi", by_stdin=True)
+        self._run("USER: hi")
         left = {n for n in set(os.listdir(_tf.gettempdir())) - before if n.startswith("llm_light_ctx_")}
         self.assertEqual(left, set())
 
-    def test_elsewhere_the_prompt_stays_an_argument_and_stdin_is_closed(self):
-        print("\n  ▶ TestCliPromptOnStdin.test_elsewhere_the_prompt_stays_an_argument_and_stdin_is_closed")
-        import subprocess as _sp
-        seen = self._run("USER: hello-marker", by_stdin=False)
-        self.assertEqual(seen["cmd"][seen["cmd"].index("-p") + 1], "USER: hello-marker")
-        self.assertEqual(seen["stdin"], _sp.DEVNULL)
-        self.assertEqual(seen["received"], b"")
+    def test_a_long_system_prompt_stays_off_the_command_line(self):
+        # Linux refuses one argument over 131,072 bytes, and the skeleton can be large.
+        print("\n  ▶ TestCliPromptOnStdin.test_a_long_system_prompt_stays_off_the_command_line")
+        cmd = self._run("USER: hi", extra_flags=["--system-prompt", "S" * 200_000])["cmd"]
+        self.assertNotIn("--system-prompt", cmd)
+        self.assertLess(sum(len(part) for part in cmd), 8_000)
+        self.assertIn("--system-prompt-file", cmd)
 
 
 class TestCliProcessIsStopped(unittest.TestCase):

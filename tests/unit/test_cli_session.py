@@ -75,8 +75,7 @@ class _CliCase(unittest.TestCase):
                 return real_popen(cmd, *args, **kwargs)
             return real_popen([sys.executable, script, self.log, *cmd[1:]], *args, **kwargs)
 
-        for p in (patch.object(claude, "_short_command_line", return_value=True),
-                  patch("subprocess.Popen", side_effect=popen),
+        for p in (patch("subprocess.Popen", side_effect=popen),
                   patch("shutil.which", return_value=sys.executable),
                   patch.object(config, "AUTH_MODE", "OAUTH"),
                   patch.object(claude, "AUTH_MODE", "OAUTH"),
@@ -113,16 +112,6 @@ class TestResume(_CliCase):
         self.assertIn("second question", call["prompt"])
         self.assertNotIn("first question", call["prompt"])
         self.assertNotIn("reply 0", call["prompt"])
-
-    def test_with_the_prompt_as_an_argument_a_resume_sends_only_the_new_message(self):
-        # Linux and macOS: every other test here forces the stdin route Windows takes.
-        with patch.object(claude, "_short_command_line", return_value=False):
-            self.turn("first question")
-            self.turn("second question", history=[("user", "first question"), ("assistant", "reply 0")])
-        args = self.calls()[1]["args"]
-        self.assertEqual(args[args.index("--resume") + 1], "sess-0")
-        self.assertEqual(args[args.index("-p") + 1], "USER: second question")
-        self.assertNotIn("first question", " ".join(args))
 
     def test_a_resumed_turn_still_gets_the_current_skeleton(self):
         # By default the CLI records the first system prompt and resends that record
