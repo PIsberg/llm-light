@@ -19,6 +19,8 @@ This diagram shows the main components and their relationships within LLM Light.
 | `retrieval.py` | RAG engine, performs similarity search and chunk selection |
 | `callgraph.py` | In-memory call graph over the chunk store (`name(` matched against chunk symbols), used by `fetch_chunk` to list callers and callees |
 | `tools.py` | API-mode tools: `read_file`, `fetch_chunk`, `grep`, `list_files`, and `shell` (allowlisted commands only; any command in bypass mode, none in plan mode) |
+| `settings.py` | `~/.llm_light/settings.json` and `/config`. Home only, and it cannot hold `bypassPermissions`. A flag beats a setting |
+| `completions.py` | `--completion <shell>`, built from the argument parser |
 | `doctor.py` | `/doctor` and `--doctor`, which only look, so they run no program (the repository check looks for `.git`, not `git rev-parse`) and send nothing; each provider adds its own lines through `Provider.diagnose()`. Also `/context` |
 | `headless.py` | `-p --output-format json\|stream-json` and `-c -p`: points stdout at stderr for the turn and writes only the answer to the real stdout, from the events `ResponseView` sends to `state.event_sink` |
 | `user_shell.py` | Which shell runs `!command`, `/run` and the API-mode `shell` tool: Git Bash on Windows when installed, else `cmd.exe`; `sh` elsewhere |

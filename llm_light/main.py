@@ -22,12 +22,12 @@ from collections import deque
 from pathlib import Path
 
 import llm_light.state as state
-from llm_light import commands, doctor, headless, permissions, providers, proxy, session
+from llm_light import commands, completions, doctor, headless, permissions, providers, proxy, session, settings
 from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, TOP_TIER, USD_BUDGET
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
 from llm_light.ui import (
     _ANSI_BOLD, _ANSI_RESET, _ANSI_CYAN, _ANSI_DIM, _ANSI_GREEN, _ANSI_RED, _T_SYS, _T_ERR,
-    _UNICODE, access_label, choose, current_notice, notify, print_session_summary, print_session_footer, print_startup_header,
+    _UNICODE, access_label, choose, current_notice, notify, turn_finished, print_session_summary, print_session_footer, print_startup_header,
     ToolExecutionManager, usage_unavailable,
 )
 from llm_light.llm import full_refresh, chat, one_shot, continue_turn, warm_cache, compact_history
@@ -47,6 +47,7 @@ _COMMANDS = [
     ("/help",       "show commands and keys"),
     ("/clear",      "start a new conversation"),
     ("/compact [focus]", "summarise the conversation so far, to send fewer tokens"),
+    ("/config [key value]", "show the saved settings, or save one"),
     ("/context",    "what the next turn would send, by part"),
     ("/copy [n]",   "copy the latest reply (or the n-th latest) to the clipboard"),
     ("/cost",       "token usage and cost for this session"),
@@ -149,6 +150,7 @@ _COMMAND_VALUES = {
     "/model": (*commands.MODEL_ALIASES, "auto"),
     "/permissions": permissions.MODES,
     "/effort": (*commands.EFFORTS, "auto"),
+    "/config": tuple(settings._CHOICES),
 }
 
 _SEP = "  ·  "
@@ -391,6 +393,7 @@ def _ask(query, auto_apply=False, mentions=True) -> bool:
             print(f"  {_T_SYS}  Attached {', '.join(attached)}")
     context = "\n\n".join(c for c in (commands.take_pending(), mentioned) if c)
     extra = {"context": context} if context else {}
+    started = time.monotonic()
     try:
         done = chat(query, auto_apply=auto_apply, use_index=use_index, **extra)
     except NotLoggedIn:
@@ -401,6 +404,7 @@ def _ask(query, auto_apply=False, mentions=True) -> bool:
         providers.active().offer_login(_retry)
         return False
     session.save()
+    turn_finished(time.monotonic() - started)
     return done
 
 
@@ -586,6 +590,9 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                 continue
             if name == "/model":
                 print(f"  {_T_SYS}  {commands.model_command(arg)}")
+                continue
+            if name == "/config":
+                print(f"  {_T_SYS}  {settings.config_command(arg)}")
                 continue
             if name == "/effort":
                 print(f"  {_T_SYS}  {commands.effort_command(arg)}")
@@ -914,7 +921,7 @@ def _configure_proxy(parser, args) -> None:
         parser.error(f"{exc}{hint}")
 
 
-def main():
+def _build_parser():
     import argparse
     parser = argparse.ArgumentParser(description="LLM Light RAG Chat")
     parser.add_argument("--test-mode", choices=["small", "medium", "large", "extra-large"],
@@ -969,8 +976,30 @@ def main():
     parser.add_argument("--llm-fw", action="store_true",
                         help="Go through a local llm-fw firewall: --proxy " + proxy.LLM_FW_URL
                              + " --proxy-ca ~/.llm-fw/ca.crt, unless those are given.")
+    parser.add_argument("-C", "--cd", metavar="DIR",
+                        help="Run in this directory instead of the current one.")
+    parser.add_argument("--append-system-prompt", metavar="TEXT",
+                        help="Add this to the system prompt for this run. It is part of the cached "
+                             "prefix, so a turn with different text writes that prefix again.")
+    parser.add_argument("--completion", choices=completions.SHELLS,
+                        help="Print a tab-completion script for this shell, and exit.")
     parser.add_argument("query", nargs="*", help="Optional query for one-shot mode.")
+    return parser
+
+
+def main():
+    parser = _build_parser()
     args, unknown = parser.parse_known_args()
+    if args.completion:
+        print(completions.script(args.completion, parser), end="")
+        raise SystemExit(0)
+    if args.cd:
+        try:
+            os.chdir(args.cd)
+        except OSError as e:
+            parser.error(f"-C {args.cd}: {e.strerror or e}")
+    if args.append_system_prompt:
+        state.extra_system = args.append_system_prompt
 
     import llm_light.config as _config
     for prefix in args.allow_command:
@@ -1030,6 +1059,12 @@ def main():
     if state.pinned_model and not provider.has(TOP_TIER):
         print(f"  {_T_SYS}  --model ignored: {provider.name} picks its own model.", file=sys.stderr)
         state.pinned_model = None
+    set_by_flag = set()
+    if args.permission_mode or args.skip_permissions or args.yes:
+        set_by_flag.add("permission_mode")
+    if args.model:
+        set_by_flag.add("model")
+    settings.apply_at_startup(provider, skip=set_by_flag)
     if interactive:
         start_chat(auto_apply=args.yes, resume=args.resume, pick=args.pick)
         return

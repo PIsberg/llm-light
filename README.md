@@ -241,6 +241,16 @@ llm_light.py -c -p "and then?"                       # continue the saved conver
 
 If a question is given and stdin is a pipe, llm_light waits 3 seconds for the first data, then goes on without it, so a script with an idle inherited stdin does not hang. Once data starts it reads to the end, for up to 10 minutes, and keeps the first and last 25,000 characters, so the error at the end of a long build survives. The text is fenced and labelled as data, not instructions, but treat it like any other untrusted input: in `acceptEdits` or a subscription turn the agent can still act on what it reads. `NO_COLOR` turns off colour.
 
+#### Shell completion
+
+```bash
+eval "$(llm-light --completion bash)"     # or zsh, in ~/.bashrc or ~/.zshrc
+llm-light --completion fish | source
+llm-light --completion powershell | Out-String | Invoke-Expression
+```
+
+Also for scripts: `-C <dir>` runs in another directory, and `--append-system-prompt "..."` adds to the system prompt for that run.
+
 #### Permission modes
 
 What llm_light may do without asking is set by a permission mode, named after Claude Code's. `shift+tab` at the prompt cycles through them, `/permissions <mode>` sets one, and the toolbar shows any mode other than the default.
@@ -265,6 +275,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/help` | Commands and keys |
 | `/clear` | Start a new conversation; the old one stays available to `/resume`; the next question also picks the model again, which the session then keeps (`LLM_LIGHT_ROUTE_ONCE=0` picks it per question) |
 | `/compact [focus]` | Replace the conversation so far with a summary, so later turns send fewer tokens; a focus says what to keep in detail |
+| `/config [key value]` | Show the saved settings, or save one: `vim`, `theme` (`dark`, `light`), `notify` (`off`, `bell`), `permission_mode`, `model`, `effort`. They live in `~/.llm_light/settings.json`, and a flag beats them. A file in the project is never read, and `bypassPermissions` cannot be saved |
 | `/context` | What the next turn would send, by part, as an estimate. The agent's own prompt, tools and reads come on top of it on a subscription |
 | `/copy [n]` | Copy the latest reply, or the n-th latest, to the clipboard, code blocks included. Uses `clip` on Windows, `pbcopy` on macOS and `wl-copy`, `xclip` or `xsel` on Linux; without one (over SSH, say) it sends an OSC 52 escape, which many terminals copy locally |
 | `/cost` | Token usage and cost for this session, and lifetime savings |
