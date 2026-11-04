@@ -932,7 +932,7 @@ def _run_tool_rounds(kwargs, messages, usage, texts, view):
 class ClaudeProvider(Provider):
     name = "claude"
     capabilities = frozenset({base.CACHING, base.EFFORT, base.TOP_TIER,
-                              base.USD_BUDGET, base.USAGE, base.AGENT, base.SHELL})
+                              base.USD_BUDGET, base.USAGE, base.AGENT, base.SHELL, base.IMAGES})
 
     def model_label(self, routed_model: str) -> str:
         return routed_model

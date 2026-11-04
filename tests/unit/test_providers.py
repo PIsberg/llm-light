@@ -105,9 +105,9 @@ def test_us4_get_claude_works_without_the_other_provider_modules(monkeypatch):
     assert providers.get("claude").name == "claude"
 
 
-def test_fr005_claude_capabilities_are_the_seven_constants():
+def test_fr005_claude_has_every_capability_constant():
     expected = {base.CACHING, base.EFFORT, base.TOP_TIER, base.USD_BUDGET,
-                base.USAGE, base.AGENT, base.SHELL}
+                base.USAGE, base.AGENT, base.SHELL, base.IMAGES}
     p = providers.get("claude")
     assert set(p.capabilities) == expected
     assert all(p.has(c) for c in expected)
