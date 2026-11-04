@@ -239,7 +239,7 @@ llm_light.py -c -p "and then?"                       # continue the saved conver
 
 `json` prints one object when the turn ends, with `result`, `is_error`, `error`, `subtype` (`success`, `error` or `interrupted`), `model`, `duration_ms`, `num_turns`, `usage` and `total_cost_usd`, the field names `claude -p` uses. `usage` and `total_cost_usd` are `null` for a provider that does not report them, never 0. `stream-json` prints a `system` init line, then `text` and `tool` events, then that same object. Progress and the turn's stats go to stderr. The process exits 0 on success, 1 on a failed turn (including an edit that still has syntax errors after 3 attempts) and 130 on Ctrl+C.
 
-If a question is given and stdin is a pipe, llm_light waits 3 seconds for the first data, then goes on without it, so a script with an idle inherited stdin does not hang. Once data starts it reads to the end, up to 50,000 characters. `NO_COLOR` turns off colour.
+If a question is given and stdin is a pipe, llm_light waits 3 seconds for the first data, then goes on without it, so a script with an idle inherited stdin does not hang. Once data starts it reads to the end, for up to 10 minutes, and keeps the first and last 25,000 characters, so the error at the end of a long build survives. The text is fenced and labelled as data, not instructions, but treat it like any other untrusted input: in `acceptEdits` or a subscription turn the agent can still act on what it reads. `NO_COLOR` turns off colour.
 
 #### Permission modes
 
