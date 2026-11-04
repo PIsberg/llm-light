@@ -6,10 +6,20 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ### Added
 
+- **`/allow` and `/disallow` change what the agent may run, without a restart.** The agent's shell could only be set by `--allow-command` at startup, so finding out mid-task that it could not run your tests meant quitting. `/allow python -m pytest` applies from the next turn, also in a resumed CLI session, and is remembered for this project outside the repo, so a cloned repo cannot grant itself commands. Saved prefixes are named at each start. Checked live on the subscription with claude 2.1.317: after `/allow` the agent ran the command, and after `/disallow` a command that leaves a marker file did not run.
+- **`/loop` repeats a question.** `/loop 3 <question>` asks up to 20 times in a row; `/loop 5m <question>` asks again 5 minutes after each turn ends, up to 20 turns. It takes `@file` mentions, queued `!command` output and your own `/commands`. Ctrl+C, a failed turn or a reached `/budget` stops it.
 - **Send the model traffic through a proxy, such as the llm-fw firewall.** `--proxy URL` and `--proxy-ca PATH` (or `LLM_LIGHT_PROXY` and `LLM_LIGHT_PROXY_CA`) route the Anthropic client and the `claude`, `codex` and `agy` CLIs through an HTTPS proxy and trust its CA on top of the public roots; `--llm-fw` uses a local llm-fw's defaults. Embedding-model downloads, git and agent commands keep their own connection. `--proxy` wins over an `HTTPS_PROXY` already in the environment, which `llm-fw setup` sets. Without `--proxy-ca` the Anthropic client keeps its default trust, the OS store. `certifi` is now a declared dependency (it was already installed through `requests`).
 - **Your own slash commands (#135).** Each `~/.llm_light/commands/<name>.md` becomes `/<name>`: its body is sent as the question, with `$ARGUMENTS` replaced by what you type after the name. They show in `/help` and the `/` menu (an optional frontmatter `description:` describes them). A repository's own `.llm_light/commands/` is not read, since it would be prompt text a cloned repo controls.
 - **`/resume` and `--resume` pick an earlier conversation (#136).** `/clear` now keeps the conversation it ends instead of deleting it; `/resume` (or `--resume` at startup) lists this project's saved conversations with their date, turn count and first question, and switches to the one you pick. The newest 10 per project and provider are kept, still in `~/.llm_light_sessions`. `--continue` still resumes the latest.
 - **`/rewind` goes back to before an earlier turn (#134).** It lists this run's turns; picking one truncates the conversation to before it and resets the files to the commit HEAD was at then, with `git reset --keep`. Like `/undo` it refuses, changing nothing, when a commit since is not a `Claude:` one or a file it would reset has local edits. Edits the agent left uncommitted are not restored.
+
+### Fixed
+
+- **Ctrl+C during `!command` or `/run` no longer ends the session.** It quit llm_light; it now stops the command and everything it started, and returns to the prompt. Checked with a real console Ctrl+C on Windows: `main` exited, this returned to the prompt within 0.25 s.
+- **`!command` and `/run` show output as it arrives, and cannot hang the prompt.** The output only appeared when the command ended. On Windows a timeout killed only the shell, so a 1 s timeout on a 30 s command took 30 s and a chatty command never timed out. A command waiting for input hung with nothing on screen; stdin is now closed. A background child holding the pipe no longer holds up the prompt.
+- **`/run` offers to log in when the login has expired**, as a typed question does, instead of ending the session with a traceback.
+- **`/help` shows command arguments.** Rich read `[n]`, `[file]`, `[name]` and `[mode]` as markup and dropped them, so it listed a bare `/copy`, `/export`, `/model` and `/permissions`.
+- **Ctrl+C at the prompt clears what you typed.** It quit and lost the text. On an empty prompt it still quits.
 
 ### Changed
 

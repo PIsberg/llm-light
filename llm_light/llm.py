@@ -726,7 +726,11 @@ def _report_plan(planned, file=None):
 def chat(query, auto_apply=False, use_index=True, context=""):
     """One interactive turn. `context` (attached files, !command output) goes
     after the question; routing and retrieval see the typed question only, so
-    an attached file cannot push a short question to the top tier."""
+    an attached file cannot push a short question to the top tier.
+
+    Returns True when the turn completed, False when it was interrupted or failed.
+    Both of those are reported here and swallowed, so a caller that goes on to
+    another turn (/loop) can only learn of them from the result."""
     routed_model, effort, max_tok = _finalize_route(*route_query(query))
     token_budget = _RETRIEVAL_BUDGET[effort]
     from llm_light.commands import checkpoint
@@ -884,21 +888,23 @@ def chat(query, auto_apply=False, use_index=True, context=""):
                 print_stats(usage, label=f"Turn {turns}", model=routed_model)
             else:
                 print(f"  {_ANSI_DIM}{usage_unavailable(providers.active().name)}{_ANSI_RESET}")
-            break
-        else:
-            state.cli_session = None  # every attempt failed, so no turn went in the history
+            return True
+        state.cli_session = None  # every attempt failed, so no turn went in the history
+        return False
 
     except KeyboardInterrupt:
         state.cli_session = None  # the session may hold a turn the history does not
         note = (" The agent was stopped; files it already changed are left"
                 " uncommitted in the working tree.") if _agent_oauth() else ""
         print(f"\n  {_T_ERR}  Interrupted.{note}")
+        return False
     except NotLoggedIn:
         # Re-raise so main.py can handle the interactive login trigger
         raise
     except Exception as e:
         state.cli_session = None  # as above
         print(f"\n[Error] API call failed: {e}")
+        return False
 
 # How long a one-shot OAuth run waits for the index before asking without it.
 # A warm cache loads in a few seconds; a cold build takes minutes.

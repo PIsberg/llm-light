@@ -3898,7 +3898,7 @@ class TestRunCommandException(unittest.TestCase):
 
     def test_exception_returns_error_message(self):
         from llm_light import _run_command
-        with patch("subprocess.run", side_effect=OSError("bad command")):
+        with patch("subprocess.Popen", side_effect=OSError("bad command")):
             result = _run_command("nonexistent_cmd")
         self.assertIn("Failed to start process", result)
 

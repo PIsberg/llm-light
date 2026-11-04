@@ -14,8 +14,10 @@ if os.name == 'nt':
     except Exception:
         pass
 
+import re
 import threading
 import signal
+import time
 from pathlib import Path
 from watchdog.observers import Observer
 
@@ -36,14 +38,17 @@ from llm_light.compressor import start_background_load as _start_llmlingua_load
 _COMMANDS = [
     ("/help",       "show commands and keys"),
     ("/clear",      "start a new conversation"),
-    ("/compact",    "summarise the conversation so far, to send fewer tokens"),
+    ("/compact",   "summarise the conversation so far, to send fewer tokens"),
     ("/copy [n]",   "copy the latest reply (or the n-th latest) to the clipboard"),
     ("/cost",       "token usage and cost for this session"),
     ("/diff",       "show the uncommitted changes"),
     ("/export [file]", "save the conversation to a text file"),
     ("/model [name]", "show the model, pin one (opus, sonnet, haiku, fable) or auto"),
     ("/permissions [mode]", "show or set the permission mode"),
+    ("/allow [prefix]", "let the agent run commands starting with this; lists them without one"),
+    ("/disallow <prefix>", "take a command prefix back"),
     ("/run <cmd>",  "run a shell command and ask Claude about its output"),
+    ("/loop <n|interval> <question>", "ask again n times, or every 30s, 5m or 1h; ctrl+c stops"),
     ("/budget <$>", "cap session spend; routing drops to the cheapest model at the cap"),
     ("/status",     "version, provider, model, permissions, shell and index"),
     ("/resume",     "switch to one of this project's earlier conversations"),
@@ -70,7 +75,7 @@ _KEYS = [
     ("shift+tab",   "cycle the permission mode"),
     ("!<cmd>",      "run a command; its output goes with your next message"),
     ("@<path>",     "attach a project file to your message (tab completes)"),
-    ("ctrl+c",      "cancel the running turn; at the prompt, quit"),
+    ("ctrl+c",      "cancel the running turn or command; at the prompt, clear the line, then quit"),
     ("↑ / ↓" if _UNICODE else "up / down", "previous prompts"),
 ]
 
@@ -216,17 +221,19 @@ def _print_help():
     try:
         from rich.table import Table
         from rich.console import Console
+        from rich.text import Text
     except ImportError:
         Table = None
     if Table is not None:
         tbl = Table(box=None, padding=(0, 2), show_header=False)
         tbl.add_column(style="cyan", no_wrap=True)
         tbl.add_column(style="dim")
+        # Text, not str: Rich reads "[prefix]" in a str as a markup tag and drops it.
         for cmd, desc in _all_commands():
-            tbl.add_row(cmd, desc)
+            tbl.add_row(Text(cmd), Text(desc))
         tbl.add_row("", "")
         for key, desc in _KEYS:
-            tbl.add_row(key, desc)
+            tbl.add_row(Text(key), Text(desc))
         con = Console(file=sys.stdout)
         con.print()
         con.print(tbl)
@@ -317,6 +324,70 @@ def _resume_picker() -> None:
     print(f"  {_T_SYS}  {session.resume(entries[int(picked)]['path'])}")
 
 
+def _ask(query, auto_apply=False, mentions=True) -> bool:
+    """Send one question as a turn, with queued !command output and any @file contents
+    after it, and save the conversation. Returns whether the turn completed.
+
+    The prompt, /run and /loop all come through here, so they treat the budget prompt,
+    attachments and a missing login the same way.
+    """
+    if (state.session_budget is not None and not state.budget_asked
+            and state.session_cost >= state.session_budget):
+        state.budget_asked = True
+        if choose(f"Session budget ${state.session_budget:.2f} reached "
+                  f"(spent ${state.session_cost:.2f}).",
+                  [("go", "Continue on the cheapest model"),
+                   ("stop", "Skip this question")]) == "stop":
+            return False
+    use_index = _index_ready_for_query()
+    mentioned = ""
+    if mentions:
+        mentioned, attached, problems = commands.expand_mentions(query)
+        for problem in problems:
+            print(f"  {_T_SYS}  Not attached: {problem}")
+        if attached:
+            print(f"  {_T_SYS}  Attached {', '.join(attached)}")
+    context = "\n\n".join(c for c in (commands.take_pending(), mentioned) if c)
+    extra = {"context": context} if context else {}
+    try:
+        done = chat(query, auto_apply=auto_apply, use_index=use_index, **extra)
+    except NotLoggedIn:
+        def _retry(query=query, auto_apply=auto_apply, use_index=use_index, extra=extra):
+            full_refresh()
+            chat(query, auto_apply=auto_apply, use_index=use_index, **extra)
+            session.save()
+        providers.active().offer_login(_retry)
+        return False
+    session.save()
+    return done
+
+
+def _prompt_bindings():
+    """The prompt's own keys: alt+enter, shift+tab and ctrl+c."""
+    from prompt_toolkit.application import get_app
+    from prompt_toolkit.filters import Condition, has_completions
+
+    bindings = _KeyBindings()
+
+    @bindings.add("escape", "enter")  # alt+enter on most terminals
+    def _newline(event):
+        event.current_buffer.insert_text("\n")
+
+    # Not while the completion menu is open, where it steps back a choice.
+    @bindings.add("s-tab", filter=~has_completions)
+    def _cycle_mode(event):
+        permissions.cycle()
+        event.app.invalidate()  # redraw the toolbar's mode marker
+
+    # Only with text typed: on an empty prompt prompt_toolkit raises KeyboardInterrupt,
+    # which quits. Quitting on the first press threw away a long question being written.
+    @bindings.add("c-c", filter=Condition(lambda: bool(get_app().current_buffer.text)))
+    def _clear_line(event):
+        event.current_buffer.reset()
+
+    return bindings
+
+
 def start_chat(auto_apply=False, resume=False, pick=False):
     print_startup_header(*(providers.active().header() or (MODEL, access_label(API_KEY_SOURCE))))
     # -y is the acceptEdits mode; from here the mode decides, so shift+tab
@@ -326,6 +397,12 @@ def start_chat(auto_apply=False, resume=False, pick=False):
     auto_apply = False
     if permissions.bypass():
         print(f"  {_bypass_warning()}")
+    import llm_light.config as _config
+    if (not _config.ALLOWED_COMMANDS and providers.active().has(SHELL)
+            and permissions.mode() in (permissions.DEFAULT, permissions.ACCEPT_EDITS)):
+        # With an empty list the agent has no shell tool at all, so it cannot say why.
+        print(f"  {_T_SYS}  The agent runs no commands yet: /allow <prefix> lets it, "
+              "for example /allow python -m pytest.")
     if pick:
         _resume_picker()
     elif resume:
@@ -368,27 +445,13 @@ def start_chat(auto_apply=False, resume=False, pick=False):
         def get_status_bar():
             return HTML(_status_text())
 
-        bindings = _KeyBindings()
-
-        @bindings.add("escape", "enter")  # alt+enter on most terminals
-        def _newline(event):
-            event.current_buffer.insert_text("\n")
-
-        from prompt_toolkit.filters import has_completions
-
-        # Not while the completion menu is open, where it steps back a choice.
-        @bindings.add("s-tab", filter=~has_completions)
-        def _cycle_mode(event):
-            permissions.cycle()
-            event.app.invalidate()  # redraw the toolbar's mode marker
-
         CACHE_DIR.mkdir(exist_ok=True)
         _session = _PromptSession(
             history=_FileHistory(str(CACHE_DIR / "history.txt")),
             auto_suggest=_AutoSuggest(),
             completer=_SlashCompleter(),
             complete_while_typing=True,
-            key_bindings=bindings,
+            key_bindings=_prompt_bindings(),
             bottom_toolbar=get_status_bar,
             refresh_interval=1.0,  # the toolbar shows when indexing ends
             prompt_continuation="  ",
@@ -499,13 +562,26 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                     print(f"{_T_ERR} Usage: /run <shell command>\n")
                     continue
                 from llm_light.executor import _run_command
-                transcript = _run_command(cmd)
-                chat(f"I ran the following command and got this output. Please help me understand or fix any issues:\n\n```\n{transcript}\n```",
-                     auto_apply=auto_apply, use_index=_index_ready_for_query())
-                session.save()
+                try:
+                    transcript = _run_command(cmd)
+                except KeyboardInterrupt:
+                    print(f"  {_T_SYS}  Stopped. Nothing was sent.")
+                    continue
+                # mentions=False: an "@" in a command's output is not the user attaching a file.
+                _ask(f"I ran the following command and got this output. Please help me understand or fix any issues:\n\n```\n{transcript}\n```",
+                     auto_apply=auto_apply, mentions=False)
+                continue
+            if name == "/allow":
+                print(f"  {_T_SYS}  {commands.allow_command(arg)}")
+                continue
+            if name == "/disallow":
+                print(f"  {_T_SYS}  {commands.disallow_command(arg)}")
                 continue
             if query == "/budget" or query.startswith("/budget "):
                 print(f"  {_T_SYS}  {_budget_command(query[7:].strip())}")
+                continue
+            if name == "/loop":
+                _loop_command(arg, auto_apply=auto_apply)
                 continue
             if query == "/resume":
                 _resume_picker()
@@ -553,32 +629,7 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                 print(f"  {_T_ERR}  Unknown command {query}. /help lists them.")
                 continue
 
-            # Standard Chat Query
-            if (state.session_budget is not None and not state.budget_asked
-                    and state.session_cost >= state.session_budget):
-                state.budget_asked = True
-                if choose(f"Session budget ${state.session_budget:.2f} reached "
-                          f"(spent ${state.session_cost:.2f}).",
-                          [("go", "Continue on the cheapest model"),
-                           ("stop", "Skip this question")]) == "stop":
-                    continue
-            use_index = _index_ready_for_query()
-            # Queued !command output and @file contents go after the question.
-            mentioned, attached, problems = commands.expand_mentions(query)
-            for problem in problems:
-                print(f"  {_T_SYS}  Not attached: {problem}")
-            if attached:
-                print(f"  {_T_SYS}  Attached {', '.join(attached)}")
-            context = "\n\n".join(c for c in (commands.take_pending(), mentioned) if c)
-            extra = {"context": context} if context else {}
-            try:
-                chat(query, auto_apply=auto_apply, use_index=use_index, **extra)
-                session.save()
-            except NotLoggedIn:
-                def _retry(query=query, auto_apply=auto_apply, use_index=use_index, extra=extra):
-                    full_refresh()
-                    chat(query, auto_apply=auto_apply, use_index=use_index, **extra)
-                providers.active().offer_login(_retry)
+            _ask(query, auto_apply=auto_apply)
     except KeyboardInterrupt:
         pass
     finally:
@@ -590,6 +641,72 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             except Exception as e:
                 print(f"{_T_ERR} Error stopping file watcher: {e}", file=sys.stderr)
         print_session_footer()
+
+
+LOOP_MAX = 20
+_LOOP_INTERVAL = re.compile(r"([1-9][0-9]*)([smh])")
+_INTERVAL_SECS = {"s": 1, "m": 60, "h": 3600}
+
+
+def _parse_loop(arg: str) -> tuple | None:
+    """(turns, seconds between turns, question) from `<n> <question>` or
+    `<interval> <question>`; None when it is neither."""
+    first, _, question = arg.partition(" ")
+    question = question.strip()
+    if not question:
+        return None
+    interval = _LOOP_INTERVAL.fullmatch(first)
+    if interval:
+        return LOOP_MAX, int(interval.group(1)) * _INTERVAL_SECS[interval.group(2)], question
+    if re.fullmatch(r"[0-9]+", first) and 1 <= int(first) <= LOOP_MAX:
+        return int(first), 0, question
+    return None
+
+
+def _loop_command(arg: str, auto_apply) -> None:
+    """/loop <n> <question>, or /loop <interval> <question>: ask again, one turn each.
+
+    Runs in the prompt thread, so each turn goes through chat() as usual (routing,
+    budget, permissions, auto-commit) and nothing can be typed until it ends. Ctrl+C,
+    a failed turn or a reached session budget stops it. An interval is capped at
+    LOOP_MAX turns too, so a loop left running cannot spend without limit; it waits
+    the interval after each turn ends rather than starting turns on a fixed clock.
+    """
+    parsed = _parse_loop(arg)
+    if parsed is None:
+        print(f"{_T_ERR} Usage: /loop <1-{LOOP_MAX}> <question>, or /loop <interval> <question> "
+              "with an interval such as 30s, 5m or 1h\n")
+        return
+    count, wait, question = parsed
+    if question.startswith("/"):
+        reserved = _reserved_names()
+        custom = commands.expand_custom(question, reserved)
+        if custom is None and (question.split()[0] in reserved or " " not in question):
+            print(f"{_T_ERR} /loop repeats a question or one of your own commands; "
+                  f"{question.split()[0]} is neither.\n")
+            return
+        question = custom if custom is not None else question
+    done = 0
+    try:
+        for i in range(1, count + 1):
+            if state.session_budget is not None and state.session_cost >= state.session_budget:
+                print(f"  {_T_SYS}  Session budget reached; loop stopped after {done} of {count}.")
+                return
+            print(f"  {_T_SYS}  Loop {i}/{count}")
+            if not _ask(question, auto_apply=auto_apply):
+                print(f"  {_T_SYS}  Loop stopped after {done} of {count}.")
+                return
+            done += 1
+            if wait and i < count:
+                print(f"  {_T_SYS}  Next run in {arg.split()[0]}; ctrl+c stops the loop.", flush=True)
+                time.sleep(wait)  # not Event.wait: on Windows that ignores Ctrl+C until it ends
+    except KeyboardInterrupt:
+        print(f"  {_T_SYS}  Loop stopped after {done} of {count}.")
+        return
+    except Exception as e:
+        print(f"  {_T_ERR}  Loop stopped after {done} of {count}: {e}")
+        return
+    print(f"  {_T_SYS}  Loop finished: {done} turn{'' if done == 1 else 's'}.")
 
 
 def _configure_proxy(parser, args) -> None:
@@ -662,6 +779,7 @@ def main():
     for prefix in args.allow_command:
         if _config.command_rule(prefix)[1] and prefix.strip() not in _config.ALLOWED_COMMANDS:
             _config.ALLOWED_COMMANDS.append(prefix.strip())
+    saved_commands = commands.load_saved_allowed()
 
     _configure_proxy(parser, args)
 
@@ -701,6 +819,10 @@ def main():
     if proxy.active():
         print(f"  {_T_SYS}  {provider.name} traffic goes through the proxy {proxy.display()}"
               + (f", trusting {proxy.ca_cert()}" if proxy.ca_cert() else ""), file=sys.stderr)
+    if saved_commands:
+        # Named at every start: a saved permission should not be one you forget you gave.
+        print(f"  {_T_SYS}  Allowed in this project by /allow: {'; '.join(saved_commands)}. "
+              "/disallow <prefix> removes one.", file=sys.stderr)
     if _config.ALLOWED_COMMANDS and not provider.has(SHELL):
         print(f"  {_T_SYS}  shell access is disabled for {provider.name}: its agent cannot run commands. "
               "--allow-command only lets llm_light run the affected tests.", file=sys.stderr)
