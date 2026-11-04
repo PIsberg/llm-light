@@ -19,6 +19,7 @@ This diagram shows the main components and their relationships within LLM Light.
 | `retrieval.py` | RAG engine, performs similarity search and chunk selection |
 | `callgraph.py` | In-memory call graph over the chunk store (`name(` matched against chunk symbols), used by `fetch_chunk` to list callers and callees |
 | `tools.py` | API-mode tools: `read_file`, `fetch_chunk`, `grep`, `list_files`, and `shell` (allowlisted commands only; any command in bypass mode, none in plan mode) |
+| `user_shell.py` | Which shell runs `!command`, `/run` and the API-mode `shell` tool: Git Bash on Windows when installed, else `cmd.exe`; `sh` elsewhere |
 | `cli_shell_guard.py` | `PreToolUse` hook for the OAuth CLI agent: blocks a Bash or PowerShell command that chains, pipes, redirects or substitutes (issue #70); holds the refused characters `tools.py` uses too |
 | `affected_tests.py` | After an auto-commit, runs the test files that mention the edited modules, if a pytest command is allowed |
 | `editor.py` | Code editor, parses and applies SEARCH/REPLACE blocks |
@@ -178,6 +179,8 @@ In API mode the same prefixes gate the `shell` tool in `tools.py`. A command mus
 ## Commands the user runs
 
 `!command` and `/run` go through `executor._run_command`, which needs no allowlist because the user typed the command. A thread queues the output lines and the main thread prints them, so they appear as they arrive and neither a blocking read nor a chatty child can stop Ctrl+C or the timeout (`LLM_LIGHT_RUN_TIMEOUT`, 120 s) from being noticed. Both kill the whole process tree (`kill_process_tree`): on Windows, killing only the `cmd.exe` of `shell=True` left its child holding the pipe, so a 1 s timeout took 30 s. Ctrl+C is re-raised, so the caller returns to the prompt; it used to end the session. Stdin is closed, because nothing on screen would say a command is waiting for input. Once the command has exited, reading stops after `_RUN_DRAIN_SECS` even if a background child still holds the pipe, and that child is left running.
+
+On Windows both this and the `shell` tool run through `user_shell.command_argv`: Git Bash when Git for Windows is installed (from its install locations, then a `git.exe` in a known layout on an absolute PATH entry outside the project; never `bash` on PATH, which is WSL's), else `cmd.exe`; `LLM_LIGHT_SHELL` overrides it. So a line means the same typed after `!` as in the agent's Bash tool. Under `cmd.exe` the `shell` tool refuses `%` too, the counterpart of the `$` the list already refuses. `/status` names the shell in use.
 
 ## Repeating a question
 

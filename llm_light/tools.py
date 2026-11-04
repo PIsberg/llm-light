@@ -338,7 +338,7 @@ def _shell(root, tool_input):
     Plan mode refuses every command. Bypass mode (--dangerously-skip-permissions)
     runs any command through the shell as written, chaining included."""
     import subprocess
-    from llm_light import permissions
+    from llm_light import permissions, user_shell
     raw_command = _str_arg(tool_input, "command")
     if permissions.plan():
         raise _ToolError("plan mode is on: no command runs. Describe the command "
@@ -358,10 +358,13 @@ def _shell(root, tool_input):
                 f"{command!r} is not allowed. The user can permit it by typing "
                 "/allow <prefix> at the prompt, or with --allow-command '<prefix>' at startup.")
         _refuse_chars(command, forbidden_chars(tool))
+        if tool == "Bash" and user_shell.name() == "cmd.exe":
+            # cmd.exe's %VAR% is what $VAR is to sh, which the list already refuses.
+            _refuse_chars(command, frozenset("%"))
     if tool == "PowerShell":
         argv, use_shell = ["powershell", "-NoProfile", "-NonInteractive", "-Command", command], False
     else:
-        argv, use_shell = command, True
+        argv, use_shell = user_shell.command_argv(command)
     timeout = _shell_timeout()
     try:
         proc = subprocess.Popen(
