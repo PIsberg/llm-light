@@ -4,8 +4,6 @@ import sys
 import types
 from pathlib import Path
 
-from watchdog.observers import Observer
-
 from . import config, editor, executor, indexer, linter, llm, main, parsing, retrieval, skeleton, state, ui
 
 try:
@@ -33,7 +31,7 @@ Path.unlink = _safe_unlink
 def _refresh_exports():
     export_dict = {
         "Path": Path,
-        "Observer": Observer,
+        "Observer": main.Observer,
         "SentenceTransformer": executor.SentenceTransformer,
         "client": getattr(_claude_provider, "client", None),
         "print_stats": ui.print_stats,

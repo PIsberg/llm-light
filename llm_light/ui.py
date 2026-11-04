@@ -12,9 +12,7 @@ import llm_light.state as state
 
 try:
     from rich.console import Console as _RichConsole
-    from rich.markdown import Markdown as _RichMarkdown
     from rich.status import Status as _RichStatus
-    from rich.syntax import Syntax as _RichSyntax
     from rich.panel import Panel as _RichPanel
     from rich.markup import escape as _escape_markup
     _RICH_AVAILABLE = True
@@ -432,6 +430,7 @@ def show_diff(path, new_content, old_content=None):
 
     if not old_content:
         if _RICH_AVAILABLE:
+            from rich.syntax import Syntax as _RichSyntax
             # Use a per-call Console pointing at the current sys.stdout so that
             # output respects any sys.stdout patches active during tests.
             _con = _RichConsole(file=sys.stdout)
@@ -478,6 +477,7 @@ def show_unified_diff(path, diff_text, max_lines=80):
     lines = lines[:max_lines]
     more = f"{hidden} more lines" if hidden > 0 else None
     if _RICH_AVAILABLE:
+        from rich.syntax import Syntax as _RichSyntax
         _con = _RichConsole(file=sys.stdout)
         _con.print(
             _RichPanel(
@@ -734,17 +734,9 @@ def _split_committable(text: str) -> tuple[str, str]:
 
 
 if _RICH_AVAILABLE:
-    from rich.markdown import Heading as _RichHeading
     from rich.segment import Segment as _Segment
     from rich.style import Style as _Style
     from rich.text import Text as _Text
-
-    class _LeftHeading(_RichHeading):
-        # rich centres h1, which reads oddly in a chat transcript.
-        LEVEL_ALIGN = {**_RichHeading.LEVEL_ALIGN, "h1": "left"}
-
-    class _ReplyMarkdown(_RichMarkdown):
-        elements = {**_RichMarkdown.elements, "heading_open": _LeftHeading}
 
     class _Gutter:
         """Indent a renderable by two columns, with an optional marker in the
@@ -781,8 +773,25 @@ if _RICH_AVAILABLE:
                 yield _Segment.line()
 
 
+_reply_markdown_class = None
+
+
 def _reply_markdown(text):
-    return _ReplyMarkdown(text)
+    """The reply as markdown. rich.markdown loads here: with markdown_it it costs about
+    100 ms at startup, and the prompt needs neither."""
+    global _reply_markdown_class
+    if _reply_markdown_class is None:
+        from rich.markdown import Heading, Markdown
+
+        class _LeftHeading(Heading):
+            # rich centres h1, which reads oddly in a chat transcript.
+            LEVEL_ALIGN = {**Heading.LEVEL_ALIGN, "h1": "left"}
+
+        class _ReplyMarkdown(Markdown):
+            elements = {**Markdown.elements, "heading_open": _LeftHeading}
+
+        _reply_markdown_class = _ReplyMarkdown
+    return _reply_markdown_class(text)
 
 
 _SPINNER_DOTS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏" if _UNICODE else r"-\|/"
@@ -998,7 +1007,7 @@ def _print_reply(text):
     """Render Claude's reply — rich Markdown when available, plain text otherwise."""
     if _RICH_AVAILABLE:
         console.print()
-        console.print(_RichMarkdown(text))
+        console.print(_reply_markdown(text))
         console.print()
     else:
         print(f"\n{text}\n")

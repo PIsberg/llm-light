@@ -1,6 +1,5 @@
 import re
 
-import numpy as np
 from pathlib import Path
 
 from llm_light.config import (
@@ -124,6 +123,7 @@ def _dedup_retrieved_context(top_pairs):
 
 
 def _adaptive_select_pairs(ids, scores, budget, k):
+    import numpy as np
     ranked = [(ids[i], float(scores[i])) for i in np.argsort(-scores) if scores[i] >= MIN_SCORE]
     if not ranked:
         return []
@@ -134,6 +134,7 @@ def _adaptive_select_pairs(ids, scores, budget, k):
 
 
 def _zscore(scores):
+    import numpy as np
     sd = float(scores.std())
     return (scores - scores.mean()) / sd if sd > 0 else np.zeros_like(scores)
 
@@ -180,6 +181,7 @@ def _is_test_chunk(chunk_id: str) -> bool:
 def _exclude_test_chunks(fused, ids, query):
     """Fused scores with test chunks set to -inf, so they are never selected.
     Questions that mention tests keep every chunk. Returns a new array."""
+    import numpy as np
     if _TEST_QUESTION.search(query):
         return fused
     mask = np.array([_is_test_chunk(cid) for cid in ids], dtype=bool)
@@ -215,6 +217,7 @@ def _modified_paths():
 def _boost_modified_chunks(fused, ids):
     """Raise the fused score of chunks in files being worked on, by
     WORKTREE_BOOST z-score units. Returns a new array; -inf stays -inf."""
+    import numpy as np
     from llm_light import config
     boost = config.WORKTREE_BOOST
     if not boost:
@@ -246,6 +249,7 @@ def _same_or_inside(chunk_file, git_path):
 def _hybrid_select_pairs(ids, fused, budget, k, gap=None):
     """Chunks within HYBRID_SCORE_GAP of the top fused score, then the usual
     budget and file-diversity selection."""
+    import numpy as np
     gap = HYBRID_SCORE_GAP if gap is None else gap
     order = np.argsort(-fused)
     top = float(fused[order[0]])
@@ -397,6 +401,7 @@ def record_retrieval(query, model, effort, token_budget, hits,
 
 
 def _retrieve_hybrid(query, budget, k, effort):
+    import numpy as np
     with state.lock:
         if not state.chunk_store:
             return "", []
@@ -432,6 +437,7 @@ def _retrieve_hybrid(query, budget, k, effort):
 
 
 def retrieve(query, token_budget=None, effort="medium"):
+    import numpy as np
     budget = token_budget or TARGET_RETRIEVED_TOKENS
     base_k = state.TOP_K or 4
     k = max(2, round(base_k * budget / TARGET_RETRIEVED_TOKENS))

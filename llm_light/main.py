@@ -19,7 +19,6 @@ import threading
 import signal
 import time
 from pathlib import Path
-from watchdog.observers import Observer
 
 import llm_light.state as state
 from llm_light import commands, permissions, providers, proxy, session
@@ -27,12 +26,20 @@ from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, 
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
 from llm_light.ui import (
     _ANSI_BOLD, _ANSI_RESET, _ANSI_CYAN, _ANSI_DIM, _ANSI_GREEN, _ANSI_RED, _T_SYS, _T_ERR,
-    _UNICODE, access_label, choose, current_notice, print_session_summary, print_session_footer, print_startup_header,
+    _UNICODE, access_label, choose, current_notice, notify, print_session_summary, print_session_footer, print_startup_header,
     ToolExecutionManager, usage_unavailable,
 )
 from llm_light.llm import full_refresh, chat, one_shot, warm_cache, compact_history
 from llm_light.indexer import SourceHandler
 from llm_light.compressor import start_background_load as _start_llmlingua_load
+
+
+
+def Observer():
+    """watchdog's Observer, imported when the session starts one: about 100 ms on Windows."""
+    from watchdog.observers import Observer as _Observer
+    return _Observer()
+
 
 # The interactive commands, in the order /help and the "/" menu show them.
 _COMMANDS = [
@@ -427,14 +434,24 @@ def start_chat(auto_apply=False, resume=False, pick=False):
     if not isinstance(_refresh_thread.is_alive(), bool):
         _bg_refresh()
 
-    # Watchdog can start immediately — it doesn't need the index to be ready.
+    # The watcher needs no index, and neither its import nor a recursive schedule over
+    # a large tree should hold up the prompt. A background thread must not print.
     observer = None
-    try:
-        observer = Observer()
-        observer.schedule(SourceHandler(), path=".", recursive=True)
-        observer.start()
-    except Exception as e:
-        print(f"{_T_ERR} Failed to start file watcher: {e}", file=sys.stderr)
+
+    def _start_watcher():
+        nonlocal observer
+        try:
+            started = Observer()
+            started.schedule(SourceHandler(), path=".", recursive=True)
+            started.start()
+            observer = started
+        except Exception as e:
+            notify(f"File watcher did not start: {e}", error=True)
+
+    _watcher_thread = threading.Thread(target=_start_watcher, daemon=True, name="llm-light-watcher")
+    _watcher_thread.start()
+    if not isinstance(_watcher_thread.is_alive(), bool):  # threading.Thread mocked in a test
+        _start_watcher()
 
     if AUTH_MODE == "API_KEY" and providers.active().has(CACHING):
         threading.Thread(target=heartbeat, daemon=True).start()
@@ -634,6 +651,7 @@ def start_chat(auto_apply=False, resume=False, pick=False):
         pass
     finally:
         state.stop_event.set()
+        _watcher_thread.join(timeout=5)  # a quick exit may beat its start
         if observer is not None:
             try:
                 observer.stop()
