@@ -387,10 +387,16 @@ def _ask(query, auto_apply=False, mentions=True) -> bool:
     return done
 
 
+def _on_windows() -> bool:
+    return os.name == "nt"
+
+
 def _ensure_editor():
-    """prompt_toolkit looks for $VISUAL, $EDITOR and then Unix paths: Windows has none."""
-    if os.name == "nt" and not (os.environ.get("VISUAL") or os.environ.get("EDITOR")):
-        os.environ["EDITOR"] = "notepad"
+    """prompt_toolkit looks for $VISUAL, $EDITOR and then Unix paths: Windows has none.
+    A full path, with forward slashes because prompt_toolkit runs it through shlex."""
+    if _on_windows() and not (os.environ.get("VISUAL") or os.environ.get("EDITOR")):
+        root = os.environ.get("SystemRoot", "C:/Windows").replace("\\", "/")
+        os.environ["EDITOR"] = f"{root}/System32/notepad.exe"
 
 
 def _prompt_bindings():
