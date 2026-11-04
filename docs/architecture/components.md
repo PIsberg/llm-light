@@ -19,6 +19,7 @@ This diagram shows the main components and their relationships within LLM Light.
 | `retrieval.py` | RAG engine, performs similarity search and chunk selection |
 | `callgraph.py` | In-memory call graph over the chunk store (`name(` matched against chunk symbols), used by `fetch_chunk` to list callers and callees |
 | `tools.py` | API-mode tools: `read_file`, `fetch_chunk`, `grep`, `list_files`, and `shell` (allowlisted commands only; any command in bypass mode, none in plan mode) |
+| `headless.py` | `-p --output-format json\|stream-json` and `-c -p`: points stdout at stderr for the turn and writes only the answer to the real stdout, from the events `ResponseView` sends to `state.event_sink` |
 | `user_shell.py` | Which shell runs `!command`, `/run` and the API-mode `shell` tool: Git Bash on Windows when installed, else `cmd.exe`; `sh` elsewhere |
 | `cli_shell_guard.py` | `PreToolUse` hook for the OAuth CLI agent: blocks a Bash or PowerShell command that chains, pipes, redirects or substitutes (issue #70); holds the refused characters `tools.py` uses too |
 | `affected_tests.py` | After an auto-commit, runs the test files that mention the edited modules, if a pytest command is allowed |

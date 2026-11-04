@@ -36,6 +36,10 @@ _ANSI_BOLD    = "\033[1m"
 _ANSI_DIM     = "\033[2m"
 _ANSI_RESET   = "\033[0m"
 
+if os.environ.get("NO_COLOR"):  # https://no-color.org; rich and prompt_toolkit read it too
+    _ANSI_RED = _ANSI_GREEN = _ANSI_YELLOW = _ANSI_BLUE = _ANSI_MAGENTA = ""
+    _ANSI_CYAN = _ANSI_BOLD = _ANSI_DIM = _ANSI_RESET = ""
+
 # Detect Unicode capability (falls back to ASCII on legacy Windows consoles)
 def _stdout_is_utf8() -> bool:
     try:
@@ -811,8 +815,9 @@ class ResponseView:
     def __init__(self, label="Thinking", console=None, animate=True):
         # animate=False: no spinner and no redrawn tail, blocks only.
         self.label = label
-        self._animate = animate
-        if console is None and _RICH_AVAILABLE and _isatty(sys.stdout):
+        self._sink = state.event_sink  # a script is reading: see headless.py
+        self._animate = animate and self._sink is None
+        if self._sink is None and console is None and _RICH_AVAILABLE and _isatty(sys.stdout):
             console = _RichConsole(file=sys.stdout, theme=_REPLY_THEME)
         self._console = console
         self._live = None
@@ -863,6 +868,9 @@ class ResponseView:
     def text(self, delta: str):
         if not delta:
             return
+        if self._sink is not None:
+            self._sink({"type": "text", "text": delta})
+            return
         if self._console is None:
             self._stop_heartbeat()
             if not self._in_segment and self._wrote_plain:
@@ -880,6 +888,9 @@ class ResponseView:
 
     def tool(self, label: str):
         """A tool call: finish the text so far and show the call on its own line."""
+        if self._sink is not None:
+            self._sink({"type": "tool", "label": label})
+            return
         line = f"{_SYM_TOOL} {label}"
         if self._console is None:
             self._stop_heartbeat()

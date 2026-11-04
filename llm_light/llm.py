@@ -912,6 +912,21 @@ _ONE_SHOT_INDEX_WAIT_SECS = 20
 
 
 def one_shot(prompt, auto_apply=False, context=""):
+    return _with_index(lambda use_index: _one_shot_turn(prompt, auto_apply, use_index=use_index, **_extra(context)))
+
+
+def continue_turn(prompt, auto_apply=False, context=""):
+    """`-c -p`: one turn on this project's saved conversation, saved again afterwards.
+    Returns whether the turn completed."""
+    from llm_light import session
+    print(f"{_T_SYS} {session.restore()}", file=sys.stderr)
+    done = _with_index(lambda use_index: chat(prompt, auto_apply=auto_apply, use_index=use_index, **_extra(context)))
+    session.save()
+    return done
+
+
+def _with_index(turn):
+    """Prepare the skeleton and index for a process that runs one turn, then run it."""
     print(f"{_T_SYS} Building context...", file=sys.stderr)
     _update_skeleton()
 
@@ -920,8 +935,7 @@ def one_shot(prompt, auto_apply=False, context=""):
         # dense="skip": one-shot exits before a background pass could finish;
         # dense vectors already cached are still used.
         index_files(dense="skip")
-        _one_shot_turn(prompt, auto_apply, use_index=True, **_extra(context))
-        return
+        return turn(True)
 
     # The CLI agent can Read/Grep the repo itself, so a cold build (minutes
     # of CPU embedding) must not hold up the answer. It keeps running and is
@@ -945,7 +959,7 @@ def one_shot(prompt, auto_apply=False, context=""):
     elif index_error:
         print(f"  {_T_ERR}  Indexing failed ({index_error[0]}); continuing without retrieval", file=sys.stderr)
     try:
-        _one_shot_turn(prompt, auto_apply, use_index=use_index, **_extra(context))
+        return turn(use_index)
     finally:
         if index_thread.is_alive():
             print(f"  {_T_RAG}  {_ANSI_DIM}finishing the index so the next run can use it…{_ANSI_RESET}",
@@ -1012,6 +1026,9 @@ def _one_shot_turn(prompt, auto_apply, use_index, context=""):
                     # full input for them again.
                     continue
 
+            from llm_light.commands import record_reply
+            record_reply(reply)
+
             explanation = _ANY_BLOCK.sub("", reply).strip() if edits else reply
             if explanation and not was_streamed:
                 print(f"\n{_ANSI_CYAN}{_ANSI_BOLD}{_SYM_RESP}{_ANSI_RESET} ", end="", flush=True)
@@ -1032,7 +1049,10 @@ def _one_shot_turn(prompt, auto_apply, use_index, context=""):
             else:
                 print(f"  {_ANSI_DIM}{usage_unavailable(providers.active().name)}{_ANSI_RESET}",
                       file=sys.stderr)
-            break
+            return True
+
+        # A script must be able to tell: this used to exit 0 with no edit applied.
+        raise SystemExit(f"{_T_ERR} Gave up after 3 attempts with syntax errors: " + "; ".join(lint_errs))
 
     except Exception as e:
         raise SystemExit(f"{_T_ERR} API call failed: {e}")
