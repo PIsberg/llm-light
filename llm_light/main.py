@@ -62,7 +62,7 @@ _COMMANDS = [
     ("/allow [prefix]", "let the agent run commands starting with this; lists them without one"),
     ("/disallow <prefix>", "take a command prefix back"),
     ("/run <cmd>",  "run a shell command and ask Claude about its output"),
-    ("/loop <n|interval> <question>", "ask again n times, or every 30s, 5m or 1h; ctrl+c stops"),
+    ("/loop <n|interval> <question>", "ask again n times, or every 30s, 5m or 1h; --until \"<cmd>\" stops when it passes; ctrl+c stops"),
     ("/budget <$>", "cap session spend; routing drops to the cheapest model at the cap"),
     ("/status",     "version, provider, model, permissions, shell and index"),
     ("/resume",     "switch to one of this project's earlier conversations"),
@@ -770,6 +770,42 @@ _LOOP_INTERVAL = re.compile(r"([1-9][0-9]*)([smh])")
 _INTERVAL_SECS = {"s": 1, "m": 60, "h": 3600}
 
 
+_LOOP_UNTIL = re.compile(r"""(\S+)\s+--until\s+("[^"]*"|'[^']*'|\S+)\s+(.+)""", re.DOTALL)
+# The shell could not find or start it: POSIX shells, then cmd.exe.
+_CANNOT_RUN = frozenset({126, 127, 9009})
+
+
+def _split_until(arg: str) -> tuple:
+    """(the arguments without --until, its command). The command is None when there is no
+    --until, and "" when one is there but malformed."""
+    if " --until" not in f" {arg}":
+        return arg, None
+    match = _LOOP_UNTIL.fullmatch(arg.strip())
+    if not match:
+        return arg, ""
+    command = match.group(2)
+    if command[0] in "\"'":  # the outer pair only: the command may end in a quote of its own
+        command = command[1:-1]
+    return f"{match.group(1)} {match.group(3)}", command.strip()
+
+
+def _until_passed(command: str) -> bool | None:
+    """Run the --until check. True when it passed, False when it did not, with its output
+    queued for the next turn, and None when it says nothing: it could not run or timed
+    out. Going on then would spend every remaining turn on a check that cannot pass."""
+    from llm_light import executor
+    transcript, code = executor.run_command_status(command)
+    if code == 0:
+        return True
+    if code is None or code in _CANNOT_RUN:
+        reason = "timed out" if code is None else f"could not run (exit {code})"
+        print(f"  {_T_ERR}  The --until command {reason}, so the loop stopped: {command}")
+        return None
+    with state.lock:
+        state.pending_context.append(f"The check `{command}` is still failing:\n```\n{transcript}\n```")
+    return False
+
+
 def _parse_loop(arg: str) -> tuple | None:
     """(turns, seconds between turns, question) from `<n> <question>` or
     `<interval> <question>`; None when it is neither."""
@@ -794,10 +830,12 @@ def _loop_command(arg: str, auto_apply) -> None:
     LOOP_MAX turns too, so a loop left running cannot spend without limit; it waits
     the interval after each turn ends rather than starting turns on a fixed clock.
     """
-    parsed = _parse_loop(arg)
+    arg, until = _split_until(arg)
+    parsed = None if until == "" else _parse_loop(arg)
     if parsed is None:
         print(f"{_T_ERR} Usage: /loop <1-{LOOP_MAX}> <question>, or /loop <interval> <question> "
-              "with an interval such as 30s, 5m or 1h\n")
+              "with an interval such as 30s, 5m or 1h. --until \"<command>\" after either "
+              "stops the loop when that command exits 0.\n")
         return
     count, wait, question = parsed
     if question.startswith("/"):
@@ -809,11 +847,23 @@ def _loop_command(arg: str, auto_apply) -> None:
             return
         question = custom if custom is not None else question
     done = 0
+
+    def _turns() -> str:
+        return f"{done} turn{'' if done == 1 else 's'}"
+
     try:
         for i in range(1, count + 1):
             if state.session_budget is not None and state.session_cost >= state.session_budget:
                 print(f"  {_T_SYS}  Session budget reached; loop stopped after {done} of {count}.")
                 return
+            if until:
+                # Before the turn: a check that already passes spends nothing.
+                passed = _until_passed(until)
+                if passed is None:
+                    return
+                if passed:
+                    print(f"  {_T_SYS}  `{until}` passed; loop finished after {_turns()}.")
+                    return
             print(f"  {_T_SYS}  Loop {i}/{count}")
             if not _ask(question, auto_apply=auto_apply):
                 print(f"  {_T_SYS}  Loop stopped after {done} of {count}.")
@@ -828,7 +878,20 @@ def _loop_command(arg: str, auto_apply) -> None:
     except Exception as e:
         print(f"  {_T_ERR}  Loop stopped after {done} of {count}: {e}")
         return
-    print(f"  {_T_SYS}  Loop finished: {done} turn{'' if done == 1 else 's'}.")
+    if until:
+        try:
+            passed = _until_passed(until)
+        except KeyboardInterrupt:
+            print(f"  {_T_SYS}  Loop stopped after {done} of {count}.")
+            return
+        with state.lock:
+            state.pending_context.clear()  # nothing is coming to read the last failure
+        if passed:
+            print(f"  {_T_SYS}  `{until}` passed; loop finished after {_turns()}.")
+        elif passed is False:
+            print(f"  {_T_SYS}  `{until}` still fails after {_turns()}; the loop has run out.")
+        return
+    print(f"  {_T_SYS}  Loop finished: {_turns()}.")
 
 
 STDIN_WAIT_SECS = 3.0

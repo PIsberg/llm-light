@@ -250,6 +250,12 @@ def _run_command(cmd: str) -> str:
     arrives, and return the transcript for the model. Its stdin is closed: nothing on
     screen would say a command is waiting for input. KeyboardInterrupt stops the whole
     process tree and is re-raised, so the caller can return to the prompt."""
+    return run_command_status(cmd)[0]
+
+
+def run_command_status(cmd: str) -> tuple:
+    """_run_command, returning (transcript, exit code). The code is None when the command
+    timed out or could not start."""
     import subprocess
     from llm_light.providers.runner import new_session
     from llm_light import user_shell
@@ -270,7 +276,7 @@ def _run_command(cmd: str) -> str:
     except Exception as exc:
         msg = f"[Run] Failed to start process: {exc}"
         print(f"{_T_ERR} {msg}")
-        return msg
+        return msg, None
 
     raw, exit_code, timed_out = _show_output(proc, _RUN_TIMEOUT_SECS)
     print(f"{_ANSI_DIM}{'-'*60}{_ANSI_RESET}")
@@ -296,7 +302,7 @@ def _run_command(cmd: str) -> str:
 
     status_line = (f"[TIMEOUT after {_RUN_TIMEOUT_SECS}s]"
                    if timed_out else f"(exit {exit_code})")
-    return f"$ {cmd}\n{status_line}\n{trimmed}"
+    return f"$ {cmd}\n{status_line}\n{trimmed}", exit_code
 
 def auto_tune(source_files, chunks=None, quiet=False, load_model=True):
     n = len(source_files)

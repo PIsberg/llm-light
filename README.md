@@ -291,6 +291,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/allow [prefix]` | Let the agent run commands starting with this, from the next turn and in later sessions in this project. Without a prefix, lists them. A prefix holding a character the shell refuses, or `,`, `(`, `)` or `*`, is rejected |
 | `/disallow <prefix>` | Take a prefix back, now and for later sessions |
 | `/loop <n> <question>` | Ask the same question up to 20 times in a row, one turn each |
+| `/loop <n or interval> --until "<cmd>" <question>` | Stop as soon as the command exits 0. It runs before each turn, so a check that already passes spends nothing, and its failing output goes with the next turn: `/loop 5 --until "python -m pytest -q" fix the failing tests`. It runs like `!`, so no allowlist applies. A command that cannot run or times out stops the loop, since it could never pass |
 | `/loop <interval> <question>` | Ask again every `30s`, `5m` or `1h`, counted from the end of the last turn, up to 20 turns. The question may be one of your own `/commands`. `ctrl+c`, a failed turn or a reached `/budget` stops either form. Nothing can be typed while it runs, and in `default` mode a turn that edits still stops to ask |
 | `/budget <$>` | Cap the session's spend; at the cap, questions go to the cheapest model. `/budget off` removes it |
 | `/status` | Version, project, provider and access, model, permission mode, what the shell may run, index state and where the conversation is saved |
