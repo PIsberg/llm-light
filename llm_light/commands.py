@@ -455,6 +455,7 @@ def status_lines() -> list:
     else:
         shell = "off (/allow <prefix> enables a command)"
 
+    from llm_light import user_shell
     index = (f"{len(state.chunk_store):,} chunks" if state.indexing_done.is_set()
              else "building")
     turns = state.turn_count
@@ -465,6 +466,7 @@ def status_lines() -> list:
         f"Model         {model}",
         f"Permissions   {mode}: {permissions.DESCRIPTIONS[mode]}",
         f"Shell         {shell}",
+        f"Command shell {user_shell.name()}",
         f"Index         {index}",
         f"Conversation  {turns} turn{'' if turns == 1 else 's'}, saved to {session.session_file()}",
     ]

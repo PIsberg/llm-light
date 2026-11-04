@@ -15,6 +15,7 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ### Fixed
 
+- **On Windows, `!command`, `/run` and the API-mode `shell` tool now run in Git Bash, like the agent (#193).** They ran in `cmd.exe`, so one line could work for the agent and fail when typed: `echo $((40+2))` printed itself instead of 42. Without Git for Windows they stay on `cmd.exe`, where the `shell` tool refuses `%` as it refuses `$`. `LLM_LIGHT_SHELL=cmd` keeps `cmd.exe`, so `cmd` built-ins such as `type` need it, or `cmd /c type x`, and `/status` shows the shell in use.
 - **Ctrl+C during `!command` or `/run` no longer ends the session.** It quit llm_light; it now stops the command and everything it started, and returns to the prompt. Checked with a real console Ctrl+C on Windows: `main` exited, this returned to the prompt within 0.25 s.
 - **`!command` and `/run` show output as it arrives, and cannot hang the prompt.** The output only appeared when the command ended. On Windows a timeout killed only the shell, so a 1 s timeout on a 30 s command took 30 s and a chatty command never timed out. A command waiting for input hung with nothing on screen; stdin is now closed. A background child holding the pipe no longer holds up the prompt.
 - **`/run` offers to log in when the login has expired**, as a typed question does, instead of ending the session with a traceback.

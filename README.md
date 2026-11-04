@@ -268,7 +268,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/why` | How the last query was routed and what was retrieved |
 | `/<name> [args]` | Your own command: `~/.llm_light/commands/<name>.md` (or `$LLM_LIGHT_COMMANDS_DIR`). Its body is sent as the question, with `$ARGUMENTS` replaced by what you type after the name (without the placeholder, that text goes after the body). An optional `---` frontmatter `description:` shows in `/help` and the `/` menu. Names are lowercase letters, digits, `-` and `_`; a built-in name wins. A repository's own `.llm_light/commands/` is not read: it would be prompt text a cloned repo controls |
 | `/exit`, `exit`, `quit` | Quit; prints a one-line session summary |
-| `!<cmd>` | Run a command yourself, from the project root; its output is shown and sent with your next message. No allowlist applies, since you typed it |
+| `!<cmd>` | Run a command yourself, from the project root; its output is shown and sent with your next message. No allowlist applies, since you typed it. On Windows it runs in Git Bash when Git for Windows is installed, as the agent's commands do, else `cmd.exe` (`LLM_LIGHT_SHELL=cmd` keeps `cmd.exe`) |
 | `@<path>` | Attach a project file to the message (`tab` completes the path). Up to 50,000 characters per file; a file outside the project, a directory or a binary file is not attached, and a line says why. Routing and retrieval still see only what you typed |
 | Typing `/` | Menu of commands with descriptions |
 | `shift+tab` | Cycle the permission mode |

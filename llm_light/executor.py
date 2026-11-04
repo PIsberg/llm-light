@@ -229,8 +229,8 @@ def _show_output(proc, timeout) -> tuple:
         raise
     if not timed_out:
         return "".join(captured), proc.returncode, False
-    # kill_process_tree, not proc.kill(): with shell=True that ends only the shell,
-    # and on Windows its child keeps the pipe open and goes on running.
+    # kill_process_tree, not proc.kill(): that ends only the shell, and on
+    # Windows its child keeps the pipe open and goes on running.
     kill_process_tree(proc)
     stop_at = time.monotonic() + _RUN_DRAIN_SECS
     while time.monotonic() < stop_at:
@@ -251,12 +251,14 @@ def _run_command(cmd: str) -> str:
     process tree and is re-raised, so the caller can return to the prompt."""
     import subprocess
     from llm_light.providers.runner import new_session
+    from llm_light import user_shell
     _T_RUN = f"{_ANSI_YELLOW}[Run]{_ANSI_RESET}"
     print(f"\n{_T_RUN} {_ANSI_DIM}$ {cmd}{_ANSI_RESET}")
     print(f"{_ANSI_DIM}{'-'*60}{_ANSI_RESET}")
+    argv, use_shell = user_shell.command_argv(cmd)
     try:
         proc = subprocess.Popen(
-            cmd, shell=True, stdin=subprocess.DEVNULL,
+            argv, shell=use_shell, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
             # A piped Python buffers its stdout, which would hold back all its output.
