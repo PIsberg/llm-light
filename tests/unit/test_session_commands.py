@@ -131,11 +131,28 @@ def test_doctor_flags_missing_credentials():
     assert doctor.PROBLEM in [status for status, _ in statuses]
 
 
-def test_each_provider_can_be_diagnosed_without_running_anything():
+def test_doctor_starts_no_program_for_any_provider(repo):
+    """What the docs promise, and what makes it safe to run in a repo you do not trust."""
     with patch("subprocess.run", side_effect=AssertionError("ran something")), \
             patch("subprocess.Popen", side_effect=AssertionError("ran something")):
         for provider in (claude.PROVIDER, codex.PROVIDER, gemini.PROVIDER):
             assert provider.diagnose()
+            with patch.object(commands.providers, "active", return_value=provider):
+                assert doctor.checks()
+
+
+def test_doctor_finds_the_repository_from_a_subfolder_without_git(repo, monkeypatch):
+    (repo / "sub").mkdir()
+    monkeypatch.chdir(repo / "sub")
+    assert doctor._in_repository() is True
+
+
+def test_doctor_says_when_there_is_no_repository(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with patch.object(doctor.Path, "exists", return_value=False), \
+            patch.object(doctor.shutil, "which", return_value="/usr/bin/git"):
+        status, line = doctor._git()
+    assert status == doctor.NOTE and "not a repository" in line
 
 
 def test_doctor_exits_non_zero_on_a_problem():
@@ -301,6 +318,29 @@ def test_the_cache_directory_is_invisible_to_git(repo):
     assert staged == ""
 
 
+def _symlink_or_skip(link, target, **kwargs):
+    try:
+        link.symlink_to(target, **kwargs)
+    except OSError:
+        pytest.skip("this account cannot create symlinks")
+
+
+def test_a_dangling_gitignore_link_is_not_written_through(repo, tmp_path_factory):
+    """A cloned repo can commit a symlink pointing anywhere the user can write."""
+    target = tmp_path_factory.mktemp("elsewhere") / "created-by-accident"
+    (repo / ".llm_light_cache").mkdir()
+    _symlink_or_skip(repo / ".llm_light_cache" / ".gitignore", target)
+    config.ensure_cache_dir(repo / ".llm_light_cache")
+    assert not target.exists()
+
+
+def test_a_linked_cache_directory_gets_no_file(repo, tmp_path_factory):
+    elsewhere = tmp_path_factory.mktemp("elsewhere")
+    _symlink_or_skip(repo / ".llm_light_cache", elsewhere, target_is_directory=True)
+    config.ensure_cache_dir(repo / ".llm_light_cache")
+    assert not (elsewhere / ".gitignore").exists()
+
+
 def test_a_cache_directory_that_exists_is_left_as_it_is(repo):
     (repo / ".llm_light_cache").mkdir()
     (repo / ".llm_light_cache" / ".gitignore").write_text("# mine\n", encoding="utf-8")
@@ -328,6 +368,29 @@ def test_loop_sends_review_with_its_diff_unexpanded(repo):
     ask = _run_loop(["/review", "/exit"])
     assert "+x = 2" in ask.call_args.args[0]
     assert ask.call_args.kwargs["mentions"] is False  # an "@" in a diff attaches nothing
+
+
+def test_review_runs_read_only_and_restores_the_mode(repo):
+    from llm_light import permissions
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+    permissions.set_mode(permissions.ACCEPT_EDITS)
+    seen = []
+    try:
+        with patch.object(m, "_ask", side_effect=lambda *a, **k: seen.append(permissions.mode())):
+            m._review_turn("q", False)
+        assert seen == [permissions.PLAN]
+        assert permissions.mode() == permissions.ACCEPT_EDITS
+        with patch.object(m, "_ask", side_effect=KeyboardInterrupt), pytest.raises(KeyboardInterrupt):
+            m._review_turn("q", False)
+        assert permissions.mode() == permissions.ACCEPT_EDITS  # also after a cancelled turn
+    finally:
+        permissions.set_mode(permissions.DEFAULT)
+
+
+def test_review_labels_the_diff_as_data(repo):
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+    prompt, _ = commands.review_prompt("")
+    assert "not instructions" in prompt
 
 
 def test_loop_does_not_ask_when_there_is_nothing_to_review(repo):

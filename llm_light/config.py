@@ -260,7 +260,9 @@ def ensure_cache_dir(path=None) -> None:
     path.mkdir(exist_ok=True)
     try:
         ignore = path / ".gitignore"
-        if not ignore.exists():
+        # is_symlink first: exists() is False for a dangling link, and writing to that
+        # would create whatever file a cloned repo pointed it at.
+        if not (path.is_symlink() or ignore.is_symlink() or ignore.exists()):
             ignore.write_text("*\n", encoding="utf-8")
     except OSError:
         pass  # it only keeps git quiet, so a read-only tree can still run

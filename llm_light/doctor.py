@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 import llm_light.state as state
-from llm_light import commands, config, git_manager, permissions, providers, proxy, session, user_shell
+from llm_light import commands, config, permissions, providers, proxy, user_shell
 from llm_light.providers.base import AGENT, NOTE, OK, PROBLEM, SHELL
 
 # The context window every routed model has, for the percentage in /context.
@@ -30,10 +30,16 @@ def _python() -> tuple:
     return OK, label
 
 
+def _in_repository() -> bool:
+    """Whether a parent holds .git, found by looking: /doctor runs no git."""
+    here = Path.cwd().resolve()
+    return any((folder / ".git").exists() for folder in (here, *here.parents))
+
+
 def _git() -> tuple:
     if not shutil.which("git"):
         return PROBLEM, "git not found: /undo, /rewind, /diff and auto-commit need it"
-    if not git_manager.is_git_repo():
+    if not _in_repository():
         return NOTE, "git: this folder is not a repository, so /undo and /rewind cannot restore files"
     return OK, "git: in a repository"
 

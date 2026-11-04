@@ -404,6 +404,20 @@ def _ask(query, auto_apply=False, mentions=True) -> bool:
     return done
 
 
+def _review_turn(question: str, auto_apply) -> bool:
+    """A /review turn, read-only whatever the session's mode: the diff may be someone else's
+    pull request, so being told not to edit is not enough. The mode comes back afterwards.
+    mentions=False: an "@" in a diff is not the user attaching a file."""
+    mode = permissions.mode()
+    with state.lock:
+        state.permission_mode = permissions.PLAN
+    try:
+        return _ask(question, auto_apply=auto_apply, mentions=False)
+    finally:
+        with state.lock:
+            state.permission_mode = mode
+
+
 def _prompt_bindings():
     """The prompt's own keys: alt+enter, \\+enter, ctrl+g, shift+tab and ctrl+c."""
     from prompt_toolkit.application import get_app
@@ -592,8 +606,7 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                 question, line = commands.review_prompt(arg)
                 print(f"  {_T_SYS}  {line}")
                 if question:
-                    # mentions=False: an "@" in a diff is not the user attaching a file.
-                    _ask(question, auto_apply=auto_apply, mentions=False)
+                    _review_turn(question, auto_apply)
                 continue
             if query == "/vim":
                 print(f"  {_T_SYS}  {commands.vim_command()}")

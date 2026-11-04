@@ -284,7 +284,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/budget <$>` | Cap the session's spend; at the cap, questions go to the cheapest model. `/budget off` removes it |
 | `/status` | Version, project, provider and access, model, permission mode, what the shell may run, index state and where the conversation is saved |
 | `/resume` | Switch to one of this project's saved conversations, picked from a list with their date, turn count and first question. The conversation you leave is kept |
-| `/review [ref]` | Review the uncommitted changes, or those against a ref, as a normal turn that is told not to edit. Up to 50,000 characters of diff are sent, and untracked files are named. Your own `~/.llm_light/commands/review.md` replaces it, and likewise `init.md` for `/init` |
+| `/review [ref]` | Review the uncommitted changes, or those against a ref, as a turn in plan mode whatever the session's mode, so it cannot edit or run a command. Up to 50,000 characters of diff are sent, and untracked files are named. Your own `~/.llm_light/commands/review.md` replaces it, and likewise `init.md` for `/init` |
 | `/rewind` | Go back to before an earlier turn of this run: picks the turn from a menu, truncates the conversation to before it and resets the files to the commit HEAD was at then (`git reset --keep`). Refuses, changing nothing, if a commit since is not a `Claude:` one or a file it would reset has local edits. Edits the agent left uncommitted are not restored; compaction and `/clear` drop the earlier turns from the menu |
 | `/undo` | Undo the last `Claude:` commit. Keeps uncommitted work; refuses if the last commit is yours or its files have local edits |
 | `/vim` | Switch the prompt between vi and emacs editing keys |
