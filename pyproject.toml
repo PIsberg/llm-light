@@ -45,7 +45,7 @@ dependencies = [
 llmlingua = ["llmlingua>=0.2.2"]
 dev = [
     "build>=1.6.1",
-    "hypothesis>=6.170.12",
+    "hypothesis>=6.170.14",
     "pytest>=9.2.0",
 ]
 
