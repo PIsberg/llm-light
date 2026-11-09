@@ -61,6 +61,24 @@ def _optional(module: str, label: str, without: str) -> tuple:
     return OK, f"{label}: installed"
 
 
+def _mcp(provider) -> tuple:
+    """Reads ~/.llm_light/mcp.json; starts no server."""
+    from llm_light import mcp_servers
+    from llm_light.providers.base import MCP
+    servers, problems = mcp_servers.load()
+    if problems:
+        more = f" ({len(problems) - 1} more)" if len(problems) > 1 else ""
+        return PROBLEM, f"MCP servers: {problems[0]}{more}"
+    if not servers:
+        return NOTE, f"MCP servers: none; add them to {mcp_servers.config_file()}"
+    names = ", ".join(servers)
+    if not provider.has(MCP):
+        return NOTE, f"MCP servers: {names}; not used, since {provider.name} runs without tools"
+    if config.AUTH_MODE == "API_KEY" and importlib.util.find_spec("mcp") is None:
+        return PROBLEM, f"MCP servers: {names}; the mcp package is not installed: {mcp_servers.INSTALL_HINT}"
+    return OK, f"MCP servers: {names}"
+
+
 def _index() -> tuple:
     from llm_light.config import INDEXABLE_EXTENSIONS
     cache = config.CACHE_DIR
@@ -103,6 +121,7 @@ def checks() -> list:
         allowed = config.ALLOWED_COMMANDS
         found.append((OK if allowed else NOTE,
                       "Agent commands: " + ("; ".join(allowed) if allowed else "none; /allow <prefix> adds one")))
+    found.append(_mcp(provider))
     found.append((OK, f"Permission mode: {permissions.mode()}"))
     if proxy.active():
         found.append((OK, f"Proxy: {proxy.display()}"))
@@ -139,14 +158,14 @@ def _agent_adds_its_own() -> bool:
 
 def context_rows() -> list:
     """(what, estimated tokens) for what the next turn would send, before retrieval."""
-    from llm_light.tools import TOOLS
+    from llm_light.tools import all_tools
     with state.lock:
         skeleton = state.skeleton_context or ""
         history = list(state.conversation_history)
         pending = list(state.pending_context)
     rows = [("Skeleton", _tokens(config.SYSTEM_PROMPT + skeleton))]
     if _sends_own_tools():
-        rows.append(("Tool definitions", _tokens(json.dumps(TOOLS))))
+        rows.append(("Tool definitions", _tokens(json.dumps(all_tools()))))
     rows.append(("Conversation", sum(_tokens(commands._history_text(m.get("content", ""))) for m in history)))
     if pending:
         rows.append(("Queued output", sum(_tokens(p) for p in pending)))

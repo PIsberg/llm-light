@@ -43,6 +43,8 @@ dependencies = [
 
 [project.optional-dependencies]
 llmlingua = ["llmlingua>=0.2.2"]
+# Only API-key mode needs it: a subscription's claude CLI agent runs MCP servers itself.
+mcp = ["mcp>=2.3.0"]
 dev = [
     "build>=1.6.1",
     "hypothesis>=6.170.14",

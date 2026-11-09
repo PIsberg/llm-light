@@ -17,6 +17,7 @@ import os
 import re
 from pathlib import Path
 
+from llm_light import mcp_servers
 from llm_light.cli_shell_guard import SHELL_FORBIDDEN, forbidden_chars
 from llm_light.config import SKIP_DIRS, env_get
 from llm_light.providers.runner import kill_process_tree, new_session
@@ -137,6 +138,14 @@ class _ToolError(Exception):
     """A problem to report back to the model as an error result."""
 
 
+def all_tools():
+    """TOOLS, then the connected MCP servers' tools (mcp_servers.py). Without any, TOOLS
+    itself, so a request is byte-identical to one sent before MCP support: tools render
+    first in the cached prefix. The MCP list is fixed once the servers start."""
+    extra = mcp_servers.tool_definitions()
+    return TOOLS + extra if extra else TOOLS
+
+
 def run_tool(name, tool_input, root=None):
     """Run one tool call. Returns (output_text, is_error); never raises."""
     root = Path(root or os.getcwd()).resolve()
@@ -153,11 +162,22 @@ def run_tool(name, tool_input, root=None):
             return _grep(root, tool_input), False
         if name == "list_files":
             return _list_files(root, tool_input), False
+        if name.startswith(mcp_servers.PREFIX):
+            return _mcp(name, tool_input)
         raise _ToolError(f"unknown tool {name!r}")
     except _ToolError as e:
         return f"Error: {e}", True
     except Exception as e:  # unexpected I/O problems still go back to the model
         return f"Error: {type(e).__name__}: {e}", True
+
+
+def _mcp(name, tool_input):
+    from llm_light import permissions
+    if permissions.plan():
+        # An MCP tool can change things outside the repo; the CLI agent gets no
+        # servers in plan mode either.
+        raise _ToolError("plan mode is on: no MCP tool runs. Describe the call in your plan instead.")
+    return mcp_servers.call(name, tool_input)
 
 
 def _str_arg(tool_input, key, required=True):

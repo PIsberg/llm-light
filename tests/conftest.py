@@ -33,6 +33,8 @@ os.environ["LLM_LIGHT_SESSION_DIR"] = _tempfile.mkdtemp(prefix="llm_light_sessio
 os.environ["LLM_LIGHT_COMMANDS_DIR"] = _tempfile.mkdtemp(prefix="llm_light_commands_")
 # And their settings, which would change the model, mode and keys under test.
 os.environ["LLM_LIGHT_SETTINGS_FILE"] = os.path.join(_tempfile.mkdtemp(prefix="llm_light_settings_"), "settings.json")
+# And their MCP servers (~/.llm_light/mcp.json), which main() would start.
+os.environ["LLM_LIGHT_MCP_CONFIG"] = os.path.join(_tempfile.mkdtemp(prefix="llm_light_mcp_"), "mcp.json")
 # A developer's own --proxy setting (e.g. llm-fw) must not route the suite.
 for _var in ("LLM_LIGHT_PROXY", "LLM_LIGHT_PROXY_CA"):
     os.environ.pop(_var, None)
