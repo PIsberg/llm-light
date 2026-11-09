@@ -398,3 +398,43 @@ def test_doctor_flags_api_key_mode_without_the_package(mcp_file):
     with patch.object(config, "AUTH_MODE", "API_KEY"), patch("importlib.util.find_spec", return_value=None):
         [(status, line)] = _doctor_mcp_line()
     assert status == PROBLEM and "llm-light-cli[mcp]" in line
+
+
+# --- secrets in error text --------------------------------------------------------------
+
+def _failing_manager(monkeypatch, exc):
+    """A manager with one http server whose call raises `exc`, on a real event loop."""
+    import asyncio
+    import threading
+    monkeypatch.setenv("MCP_TEST_SECRET", "hdr-s3cret-value")
+    entry = {"type": "http", "url": "https://user:pw-s3cret@example.test/mcp?key=q-s3cret",
+             "headers": {"Authorization": "Bearer ${MCP_TEST_SECRET}"}}
+    manager = mcp_servers._Manager()
+    manager.loop = asyncio.new_event_loop()
+    manager.thread = threading.Thread(target=manager.loop.run_forever, daemon=True)
+    manager.thread.start()
+    srv = mcp_servers._Server("remote", entry)
+
+    async def call_tool(*args, **kwargs):
+        raise exc
+    srv.client = SimpleNamespace(call_tool=call_tool)
+    manager.servers = {"remote": srv}
+    manager.routes = {"mcp__remote__t": (srv, "t")}
+    return manager, srv
+
+
+@pytest.mark.parametrize("secret", ["hdr-s3cret-value", "q-s3cret", "pw-s3cret"])
+def test_a_failed_call_does_not_tell_the_model_a_secret(monkeypatch, secret):
+    # An HTTP error quotes the URL and sometimes the request headers; the model reads
+    # the error, and the turn may go to a log or a proxy.
+    exc = RuntimeError("401 for https://user:pw-s3cret@example.test/mcp?key=q-s3cret "
+                       "with Authorization: Bearer hdr-s3cret-value")
+    manager, srv = _failing_manager(monkeypatch, exc)
+    try:
+        text, is_error = manager.call("mcp__remote__t", {})
+        srv.client, srv.error = None, mcp_servers._redact(str(exc), srv.entry)
+        status = "\n".join(manager.status_lines())
+    finally:
+        manager.loop.call_soon_threadsafe(manager.loop.stop)
+    assert is_error and "401" in text
+    assert secret not in text and secret not in status

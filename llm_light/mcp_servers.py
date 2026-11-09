@@ -216,6 +216,29 @@ def _describe(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
+def _secrets(entry: dict) -> list:
+    """Values in an entry that may be credentials: env and header values, a URL's query
+    and password, after ${VAR} expansion. Longest first, so a value inside another is
+    not left half-masked."""
+    from urllib.parse import urlsplit
+    entry = _expanded(entry)
+    found = list(entry.get("env", {}).values()) + list(entry.get("headers", {}).values())
+    for value in list(entry.get("headers", {}).values()):
+        found += value.split()  # "Bearer <token>": the token alone may be quoted
+    if entry.get("url"):
+        parts = urlsplit(entry["url"])
+        found += [parts.query, parts.password or ""]
+    return sorted({v for v in found if len(v) >= 4}, key=len, reverse=True)
+
+
+def _redact(text: str, entry: dict) -> str:
+    """`text` with the entry's secret values replaced by ***. An error goes to the model
+    and to the screen; an HTTP error can quote the URL and the request headers."""
+    for secret in _secrets(entry):
+        text = text.replace(secret, "***")
+    return text
+
+
 def _log_path(name: str) -> Path:
     return Path(config.SESSION_DIR) / "mcp" / f"{name}.log"
 
@@ -307,7 +330,7 @@ class _Manager:
             raise
         except BaseException as e:  # noqa: BLE001  anyio raises exception groups
             if srv.error is None:
-                srv.error = _describe(e)
+                srv.error = _redact(_describe(e), srv.entry)
         finally:
             srv.client = None
             srv.ready.set()
@@ -371,7 +394,7 @@ class _Manager:
             future.cancel()
             if isinstance(e, (KeyboardInterrupt, SystemExit)):
                 raise
-            return f"Error: {name} failed: {_describe(e)}", True
+            return f"Error: {name} failed: {_redact(_describe(e), srv.entry)}", True
         return result_text(result)
 
     def status_lines(self) -> list:
