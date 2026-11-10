@@ -21,6 +21,8 @@ DEFERRED = (
     "anthropic",            # the first API request
     "torch",
     "sentence_transformers",
+    "prompt_toolkit",       # the interactive prompt; -p, --version and --help never show one (#200)
+    "asyncio",              # MCP servers in API-key mode
 )
 
 
@@ -40,3 +42,15 @@ def test_watcher_class_still_resolves_on_demand():
     """Deferred, not lost: the name tests and the session use still gives the real class."""
     loaded = _loaded_after("import llm_light.main as m\nm.Observer().stop()")
     assert "watchdog.observers" in loaded
+
+
+def test_the_prompt_names_still_resolve_on_demand():
+    """Deferred, not lost: the completer and the prompt classes load when called."""
+    loaded = _loaded_after("\n".join([
+        "import llm_light.main as m",
+        "from prompt_toolkit.document import Document",
+        "assert [c.text for c in m._SlashCompleter().get_completions(Document('/hel'), None)] == ['/help']",
+        "assert m._PROMPTTK_AVAILABLE is True",
+        "m._KeyBindings(); m._AutoSuggest(); m._pt_style({'a': 'bold'})",
+    ]))
+    assert "prompt_toolkit" in loaded

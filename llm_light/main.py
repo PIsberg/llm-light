@@ -113,25 +113,51 @@ _KEYS = [
     ("↑ / ↓" if _UNICODE else "up / down", "previous prompts"),
 ]
 
-try:
-    from prompt_toolkit import PromptSession as _PromptSession
-    from prompt_toolkit.history import FileHistory as _FileHistory
-    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory as _AutoSuggest
-    from prompt_toolkit.completion import Completer as _Completer, Completion as _Completion
-    from prompt_toolkit.key_binding import KeyBindings as _KeyBindings
-    from prompt_toolkit.styles import Style as _PTStyle
-    _PROMPTTK_AVAILABLE = True
+# prompt_toolkit is imported when the interactive prompt is built, not here: it cost
+# about 230 ms of every start, and -p, --version and --help never show a prompt (#200).
+# The names stay module globals so tests can patch them, as Observer above.
+import importlib.util as _importlib_util
 
-    class _SlashCompleter(_Completer):
-        """The "/" menu: command names with what they do, while typing one;
-        and project paths after an "@"."""
+_PROMPTTK_AVAILABLE = _importlib_util.find_spec("prompt_toolkit") is not None
 
+
+def _PromptSession(**kwargs):
+    from prompt_toolkit import PromptSession
+    return PromptSession(**kwargs)
+
+
+def _FileHistory(path):
+    from prompt_toolkit.history import FileHistory
+    return FileHistory(path)
+
+
+def _AutoSuggest():
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    return AutoSuggestFromHistory()
+
+
+def _KeyBindings():
+    from prompt_toolkit.key_binding import KeyBindings
+    return KeyBindings()
+
+
+def _pt_style(rules: dict):
+    from prompt_toolkit.styles import Style
+    return Style.from_dict(rules)
+
+
+def _SlashCompleter():
+    """The "/" menu: command names with what they do, while typing one;
+    and project paths after an "@"."""
+    from prompt_toolkit.completion import Completer, Completion
+
+    class SlashCompleter(Completer):
         def get_completions(self, document, complete_event):
             text = document.text_before_cursor
             word = document.get_word_before_cursor(WORD=True)
             if word.startswith("@"):
                 for path in commands.mention_completions(word):
-                    yield _Completion(path, start_position=-len(word))
+                    yield Completion(path, start_position=-len(word))
                 return
             if not text.startswith("/"):
                 return
@@ -139,14 +165,14 @@ try:
                 command, _, partial = text.partition(" ")
                 for value in _COMMAND_VALUES.get(command, ()):
                     if value.startswith(partial) and " " not in partial:
-                        yield _Completion(value, start_position=-len(partial))
+                        yield Completion(value, start_position=-len(partial))
                 return
             for cmd, desc in _all_commands():
                 name = cmd.split()[0]
                 if name.startswith(text):
-                    yield _Completion(name, start_position=-len(text), display_meta=desc)
-except ImportError:
-    _PROMPTTK_AVAILABLE = False
+                    yield Completion(name, start_position=-len(text), display_meta=desc)
+
+    return SlashCompleter()
 
 
 # What a command's argument can be, for tab completion.
@@ -550,7 +576,7 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             bottom_toolbar=get_status_bar,
             refresh_interval=1.0,  # the toolbar shows when indexing ends
             prompt_continuation="  ",
-            style=_PTStyle.from_dict({
+            style=_pt_style({
                 "bottom-toolbar": "noreverse #888888",
                 "prompt": "ansicyan bold",
                 "completion-menu.completion": "bg:#303030 #dddddd",
