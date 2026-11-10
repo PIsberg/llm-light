@@ -249,6 +249,12 @@ SESSION_KEEP = 10
 # a cloned repo controls. LLM_LIGHT_COMMANDS_DIR moves it; the tests use a temp dir.
 USER_COMMANDS_DIR = Path(env_get("COMMANDS_DIR") or Path.home() / ".llm_light" / "commands")
 
+# MCP servers (mcp_servers.py) come from ~/.llm_light/mcp.json only, read when used so
+# LLM_LIGHT_MCP_CONFIG can move it; never the project's .mcp.json, which a cloned repo
+# controls. Seconds to wait for a server to start and list its tools, and for one call.
+MCP_START_TIMEOUT = 60
+MCP_CALL_TIMEOUT = 120
+
 # Disk cache — stored in a hidden dir so _is_skipped() ignores it automatically
 CACHE_DIR      = Path(".llm_light_cache")
 

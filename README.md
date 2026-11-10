@@ -88,6 +88,7 @@ Optional extras:
 
 ```bash
 pipx install "llm-light-cli[llmlingua]"
+pipx install "llm-light-cli[mcp]"        # MCP servers with an API key (see below)
 ```
 
 LLMLingua compresses retrieved context only when it is at least `LLM_LIGHT_LLMLINGUA_MIN_TOKENS` tokens long (default `800`). The retrieval budgets are 1 500 to 9 000 tokens, so a full retrieval always qualifies; lower the value only if small retrievals should be compressed too. The first compression loads a model (about 280 MB) on CPU, which takes around 10 seconds.
@@ -214,6 +215,23 @@ That is short for `--proxy http://127.0.0.1:8080 --proxy-ca ~/.llm-fw/ca.crt`. F
     ```
 *   **Sinkhole mode** needs none of this: llm-fw redirects the API hosts at the OS level, so only the CA trust matters.
 
+#### MCP servers
+Give the agent the tools of your MCP servers (documentation lookup, an issue tracker, a database) by listing them in `~/.llm_light/mcp.json`, in the shape of Claude Code's `.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "docs":   { "command": "npx", "args": ["-y", "some-mcp-server"], "env": { "TOKEN": "${DOCS_TOKEN}" } },
+    "issues": { "type": "http", "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ${ISSUES_TOKEN}" } }
+  }
+}
+```
+*   **Which file**: only that one (`LLM_LIGHT_MCP_CONFIG` moves it). A project's own `.mcp.json` is never read, so a cloned repo cannot start programs or add tools. A server name is 1 to 32 letters, digits, `_` or `-`; `type` is `stdio` (the default, with `command`, `args`, `env`), `http` or `sse` (with `url`, `headers`). `${VAR}` and `${VAR:-default}` expand from your environment. Other keys are ignored, and an entry that does not fit is skipped with a message at startup.
+*   **On a subscription** the `claude` agent starts the servers itself, on every turn, and may call any of their tools. A stdio server sees your real home directory, though the agent runs with an empty one.
+*   **With an API key** llm_light connects once at startup and offers each tool as `mcp__<server>__<tool>` after its own. It needs the `mcp` package: `pipx install "llm-light-cli[mcp]"`, or `pipx inject llm-light-cli mcp`. The startup line names each server's tools and what their definitions add to every request; they are cached with the rest of the prompt. The list is fixed for the session: a server that adds tools later needs a restart, and one that stops answers each call with an error. A server's stderr goes to `~/.llm_light_sessions/mcp/<name>.log`. A result is text: images and binary resources are named, not sent, and output is capped at 40,000 characters.
+*   **Plan mode** runs no MCP tool, since one can change things outside the repo.
+*   **Gemini and Codex** run without tools, so they ignore the file and say so.
+*   `/mcp` shows the servers and their tools; `/doctor` checks the file without starting anything.
+
 Run the script from the root of your project — it will immediately build the skeleton, chunk your files, and auto-tune the embedding model.
 
 ---
@@ -284,6 +302,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/effort [level]` | Show the effort, or pin `low`, `medium`, `high` or `max` for every question; `auto` returns to routing. It also sets how much code retrieval sends. Claude only |
 | `/export [file]` | Save the conversation as plain text; without a name, to `llm_light-conversation-<date>-<time>.txt` in the project (a `.txt`, so the skeleton does not pick it up) |
 | `/init` | Ask the model to write or improve this project's `CLAUDE.md` (`AGENTS.md` for Gemini and Codex), as a normal turn, so edits ask as usual |
+| `/mcp` | The MCP servers from `~/.llm_light/mcp.json`: with an API key, whether each connected and its tools; on a subscription, the servers the agent starts each turn (see [MCP servers](#mcp-servers)) |
 | `/memory` | Open that file in `$VISUAL` or `$EDITOR`; it goes out with every question |
 | `/model [name]` | Show the model; `opus`, `sonnet`, `haiku`, `fable` or a full model id pins every question to it, `auto` returns to routing. Claude only: Gemini and Codex pick their own |
 | `/permissions [mode]` | Show the permission mode, or set one (see above) |

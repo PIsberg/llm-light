@@ -26,7 +26,7 @@ Which of these are required to merge is a repository setting, not something the 
 Runs on Python 3.12 on `ubuntu-latest`. Steps, in order:
 
 1. **Harden the runner**, then **checkout** and **set up Python 3.12**.
-2. **Install dependencies.** `pip install -r requirements.txt` plus `pytest` and `pytest-timeout`, so the suite runs on the dependencies the installers give a user (#72). `datasets` is not installed: only the live SWE-bench mode of `benchmark_retrieval.py` needs it, and CI runs the offline fixture.
+2. **Install dependencies.** `pip install -r requirements.txt` plus `pytest` and `pytest-timeout`, so the suite runs on the dependencies the installers give a user (#72), and `mcp`, the optional `llm-light-cli[mcp]` extra, which `tests/integration/test_mcp_stdio.py` needs to run a real MCP server. `datasets` is not installed: only the live SWE-bench mode of `benchmark_retrieval.py` needs it, and CI runs the offline fixture.
 3. **Run unit tests.** Three commands:
    - `tests/unit/test_editor.py` first, with a 60 s per-test timeout. It runs before `MockManager` patches `Path`.
    - `tests/unit/test_config.py`, same reason, same timeout.

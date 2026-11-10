@@ -2,8 +2,8 @@
 import json
 from typing import Iterator
 
-CACHING, EFFORT, TOP_TIER, USD_BUDGET, USAGE, AGENT, SHELL, IMAGES = (
-    "caching", "effort", "top_tier", "usd_budget", "usage", "agent", "shell", "images")
+CACHING, EFFORT, TOP_TIER, USD_BUDGET, USAGE, AGENT, SHELL, IMAGES, MCP = (
+    "caching", "effort", "top_tier", "usd_budget", "usage", "agent", "shell", "images", "mcp")
 
 
 # /doctor's verdict on one check: fine, worth knowing, or broken.
@@ -49,6 +49,11 @@ class Provider:
 
     def warm(self, quiet: bool = False) -> None:
         return None
+
+    def start_mcp(self, servers: dict) -> list:
+        """Make the MCP servers from mcp_servers.configured() usable; returns lines for the
+        user. Only a provider with the MCP capability is asked."""
+        return []
 
     def turn_done(self) -> None:
         """chat() finished a turn, its edits and commits included."""

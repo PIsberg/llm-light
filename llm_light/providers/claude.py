@@ -18,7 +18,7 @@ from llm_light.ui import (
     _SYM_RESP, _SYM_TOOL, print_stats, _Spinner, calculate_cost, _print_reply, usage_unavailable, ResponseView, NullView, notify, choose,
 )
 import llm_light.state as state
-from llm_light import providers, proxy
+from llm_light import mcp_servers, providers, proxy
 from llm_light.providers import base
 from llm_light.providers.base import NotLoggedIn, Provider, transcript
 from llm_light.providers.runner import kill_process_tree as _kill_process_tree
@@ -379,6 +379,19 @@ def _make_cli_subprocess_call(
         settings_path = Path(isolated_home) / "llm_light_settings.json"
         settings_path.write_text(json.dumps(settings), encoding="utf-8")
 
+        # The user's MCP servers (~/.llm_light/mcp.json), for agent turns outside plan
+        # mode. A -p run denies every MCP call without an allow rule (claude 2.1.321:
+        # permission_denials named the tool), so each server gets mcp__<name>.
+        mcp_args, mcp_rules = [], []
+        servers = mcp_servers.configured() if tools and not permissions.plan() else {}
+        if servers:
+            mcp_path = Path(isolated_home) / "llm_light_mcp.json"
+            mcp_path.write_text(json.dumps(mcp_servers.cli_config(servers)), encoding="utf-8")
+            os.chmod(mcp_path, 0o600)  # its env and headers may hold tokens
+            mcp_args = ["--mcp-config", mcp_path.as_posix()]
+            if not permissions.bypass():
+                mcp_rules = mcp_servers.allow_rules(servers)
+
         # On Windows, ensure critical path variables are present for the Bun-based CLI to find its profile
         if current_os == 'nt':
             # Note: USERPROFILE was just overridden above to isolated_home.
@@ -480,13 +493,15 @@ def _make_cli_subprocess_call(
             # already carries (skeleton._in_prompt).
             "--setting-sources", "user",
             "--strict-mcp-config",
+            *mcp_args,
             "--settings", settings_path.as_posix(),
             *(["--disallowed-tools", disallowed] if disallowed else []),
         ]
         command += ["--tools", _agent_tools() if tools else ""]
-        if allow_rules:
-            rules = [config.command_rule(c) for c in config.ALLOWED_COMMANDS]
-            command += ["--allowedTools", ",".join(f"{tool}({prefix}:*)" for tool, prefix in rules)]
+        rules = [f"{tool}({prefix}:*)" for tool, prefix in map(config.command_rule, config.ALLOWED_COMMANDS)
+                 ] if allow_rules else []
+        if rules or mcp_rules:
+            command += ["--allowedTools", ",".join(rules + mcp_rules)]
         if model:
             command += ["--model", model]
         command += _effort_flags()
@@ -873,7 +888,7 @@ def _api_tool_loop(create_kwargs):
     the reply text. Returns (reply_text, usage, streamed=True).
     """
     from llm_light import tools
-    kwargs = dict(create_kwargs, tools=tools.TOOLS)
+    kwargs = dict(create_kwargs, tools=tools.all_tools())
     messages = list(create_kwargs["messages"])
     usage = _TurnUsage()
     texts = []
@@ -931,8 +946,8 @@ def _run_tool_rounds(kwargs, messages, usage, texts, view):
 
 class ClaudeProvider(Provider):
     name = "claude"
-    capabilities = frozenset({base.CACHING, base.EFFORT, base.TOP_TIER,
-                              base.USD_BUDGET, base.USAGE, base.AGENT, base.SHELL, base.IMAGES})
+    capabilities = frozenset({base.CACHING, base.EFFORT, base.TOP_TIER, base.USD_BUDGET,
+                              base.USAGE, base.AGENT, base.SHELL, base.IMAGES, base.MCP})
 
     def model_label(self, routed_model: str) -> str:
         return routed_model
@@ -1006,6 +1021,13 @@ class ClaudeProvider(Provider):
                 raise
             raise base.ProviderError(text) from e
 
+    def start_mcp(self, servers: dict) -> list:
+        """A subscription's CLI agent starts the servers itself each turn; with an API key
+        llm_light connects now, before the first turn fixes the tool list."""
+        if config.AUTH_MODE == "OAUTH":
+            return mcp_servers.cli_status_lines(servers)
+        return mcp_servers.start(servers)
+
     def turn_done(self) -> None:
         """Files the agent or an edit changed this turn are ones the session knows about."""
         if state.cli_session:
@@ -1035,7 +1057,7 @@ class ClaudeProvider(Provider):
                 max_tokens=0,
                 # Tools render before the system prompt in the cache prefix; warm
                 # with the same list the turns send, or this warms nothing they use.
-                tools=_tools.TOOLS,
+                tools=_tools.all_tools(),
                 system=_build_system_blocks(skeleton),
                 messages=[{"role": "user", "content": "ok"}],
                 # Effort is rendered into the prompt; warm at the level turns send.
