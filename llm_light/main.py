@@ -1070,10 +1070,8 @@ def _web_note(provider) -> str | None:
 def _add_dir_note(provider) -> str | None:
     """What to say at startup when --add-dir was given where it has no effect."""
     import llm_light.config as _config
-    if not _config.EXTRA_DIRS or (AUTH_MODE == "OAUTH" and provider.has(AGENT)):
+    if not _config.EXTRA_DIRS or provider.has(AGENT):
         return None
-    if provider.has(AGENT):
-        return "--add-dir needs a Claude subscription: with an API key the tools read the project only."
     return f"--add-dir has no effect with {provider.name}: llm_light gives its agent no file tools."
 
 
@@ -1121,8 +1119,8 @@ def _build_parser():
                              "pages in every permission mode, not only with "
                              "--dangerously-skip-permissions. Also LLM_LIGHT_WEB=1.")
     parser.add_argument("--add-dir", action="append", default=[], metavar="DIR",
-                        help="Let the Claude CLI agent (subscription mode) read DIR, outside the "
-                             "project, but not write there. Repeatable; /add-dir adds one in a session.")
+                        help="Let the agent read DIR, outside the project, but not write there. "
+                             "Repeatable; /add-dir adds one in a session.")
     parser.add_argument("-c", "--continue", dest="resume", action="store_true",
                         help="Resume this project's previous conversation. With a question or -p, "
                              "answer it there and exit.")

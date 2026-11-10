@@ -1,4 +1,4 @@
-"""--add-dir and /add-dir: the subscription agent may read, but not write, directories
+"""--add-dir and /add-dir: the agent may read, but not write, directories
 outside the project, such as a sibling repository.
 
 Writes stay inside the project, where llm_light shows the diff and commits it so /undo
@@ -6,11 +6,12 @@ works; an edit in another directory would bypass both.
 """
 
 import io
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from llm_light import commands, config, llm, main, permissions
+from llm_light import commands, config, llm, main, permissions, tools
 from llm_light.providers import claude as _claude_mod
 
 
@@ -169,9 +170,26 @@ def test_question_is_unchanged_without_extra_dirs(project):
         assert llm._question_text("q", "") == "Question:\nq"
 
 
-def test_api_key_question_has_no_note(project, other):
-    # Its own tools cannot reach the directory (yet), so naming it would only mislead.
+def test_api_key_question_says_how_to_reach_the_directories(project, other):
+    # llm_light's own tools take project-relative paths, so the model has to be told that an
+    # absolute path, or a grep glob that starts with the directory, reaches it.
     commands.add_dir(str(other))
+    with patch.object(llm, "_agent_oauth", return_value=False):
+        text = llm._question_text("q", "")
+    shown = other.resolve().as_posix()
+    assert shown in text and "read-only" in text and f"'{shown}/*'" in text
+
+
+def test_api_key_question_is_unchanged_without_extra_dirs(project):
+    with patch.object(llm, "_agent_oauth", return_value=False):
+        assert llm._question_text("q", "") == "Question:\nq"
+
+
+@pytest.mark.parametrize("name", ["gemini", "codex"])
+def test_no_note_for_a_provider_without_file_tools(project, other, monkeypatch, name):
+    from llm_light import providers
+    commands.add_dir(str(other))
+    monkeypatch.setattr(providers, "active", lambda: providers.get(name))
     with patch.object(llm, "_agent_oauth", return_value=False):
         assert llm._question_text("q", "") == "Question:\nq"
 
@@ -186,7 +204,8 @@ def test_flag_is_parsed():
 
 @pytest.mark.parametrize("auth_mode, provider, works", [
     ("OAUTH", "claude", True),
-    ("API_KEY", "claude", False),
+    ("API_KEY", "claude", True),
+    ("API_KEY", "codex", False),
     ("OAUTH", "codex", False),
 ])
 def test_startup_note_where_it_has_no_effect(project, other, monkeypatch, auth_mode, provider, works):
@@ -197,3 +216,81 @@ def test_startup_note_where_it_has_no_effect(project, other, monkeypatch, auth_m
     assert (note is None) is works
     if note:
         assert "--add-dir" in note
+
+
+# --- API-key tools --------------------------------------------------------------------------
+
+@pytest.fixture
+def shared(project, other):
+    (project / "app.py").write_text("from shared import helper\n", encoding="utf-8")
+    (other / "lib").mkdir()
+    (other / "lib" / "helper.py").write_text("PLANTED = 'kumquat-7'\n", encoding="utf-8")
+    (other / ".git").mkdir()
+    (other / ".git" / "config").write_text("PLANTED in git internals\n", encoding="utf-8")
+    (other.parent / "secret.txt").write_text("PLANTED kept-out-9\n", encoding="utf-8")
+    return other
+
+
+def _tool(project, name, tool_input):
+    return tools.run_tool(name, tool_input, root=project)
+
+
+def test_read_file_reaches_an_added_directory_by_absolute_path(project, shared):
+    path = (shared / "lib" / "helper.py").resolve().as_posix()
+    assert _tool(project, "read_file", {"path": path})[1] is True  # not added yet
+    commands.add_dir(str(shared))
+    out, is_error = _tool(project, "read_file", {"path": path})
+    assert not is_error and "kumquat-7" in out
+
+
+def test_read_file_still_refuses_what_is_outside_both(project, shared):
+    commands.add_dir(str(shared))
+    for path in ((shared.parent / "secret.txt").resolve().as_posix(),
+                 (shared / ".." / "secret.txt").as_posix()):
+        out, is_error = _tool(project, "read_file", {"path": path})
+        assert is_error and "outside" in out and "kept-out-9" not in out
+
+
+def test_list_files_in_an_added_directory_gives_absolute_paths(project, shared):
+    commands.add_dir(str(shared))
+    out, is_error = _tool(project, "list_files", {"path": str(shared)})
+    assert not is_error
+    assert out.splitlines() == [(shared / "lib" / "helper.py").resolve().as_posix()]
+
+
+def test_grep_searches_an_added_directory_when_the_glob_starts_with_it(project, shared):
+    commands.add_dir(str(shared))
+    root = shared.resolve().as_posix()
+    out, _ = _tool(project, "grep", {"pattern": "PLANTED", "glob": root + "/*"})
+    assert out == f"{root}/lib/helper.py:1: PLANTED = 'kumquat-7'"
+    # The directory alone, or written with the platform's separator, names it too.
+    for glob in (root, str(shared.resolve()) + os.sep + "*.py"):
+        assert "kumquat-7" in _tool(project, "grep", {"pattern": "kumquat", "glob": glob})[0]
+
+
+def test_grep_without_such_a_glob_stays_in_the_project(project, shared):
+    commands.add_dir(str(shared))
+    out, _ = _tool(project, "grep", {"pattern": "PLANTED|shared"})
+    assert out == "app.py:1: from shared import helper"
+
+
+def test_project_paths_stay_relative(project, shared):
+    commands.add_dir(str(shared))
+    assert _tool(project, "list_files", {})[0] == "app.py"
+    assert _tool(project, "read_file", {"path": "app.py"})[0] == "1\tfrom shared import helper"
+
+
+def test_a_symlink_out_of_an_added_directory_is_not_followed(project, shared):
+    # The project's own tools refuse the same thing (test_tools.py); an added directory is
+    # a second root and gets the same check against itself.
+    link = shared / "lib" / "innocent.txt"
+    try:
+        os.symlink(shared.parent / "secret.txt", link)
+    except (OSError, NotImplementedError) as e:
+        pytest.skip(f"cannot create symlinks here: {e}")
+    commands.add_dir(str(shared))
+    root = shared.resolve().as_posix()
+    assert "kept-out-9" not in _tool(project, "grep", {"pattern": "kept-out", "glob": root + "/*"})[0]
+    assert "innocent" not in _tool(project, "list_files", {"path": root})[0]
+    out, is_error = _tool(project, "read_file", {"path": link.as_posix()})
+    assert is_error and "kept-out-9" not in out
