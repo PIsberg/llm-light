@@ -353,6 +353,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | Typing `/` | Menu of commands with descriptions |
 | `shift+tab` | Cycle the permission mode |
 | `alt+enter`, `\`+`enter` | New line in the prompt (`enter` sends) |
+| `alt+v` | Paste an image from the clipboard, such as a screenshot: it is saved as `.llm_light_cache/pastes/paste-<time>.png` (git and the index ignore that folder; the newest 20 are kept) and `@` that path goes in the prompt, so it is attached like `@shot.png`. `ctrl+v` does the same where the terminal passes it on; Windows Terminal turns it into a text paste. Uses PowerShell on Windows, `osascript` on macOS and `wl-paste` or `xclip` on Linux; with none of those, or no image on the clipboard, it says so |
 | `ctrl+g` | Edit the prompt in `$VISUAL` or `$EDITOR` (Notepad on Windows if neither is set) |
 | `ctrl+r` | Search earlier prompts |
 | `ctrl+l` | Clear the screen |

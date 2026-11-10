@@ -6,6 +6,7 @@ description: Lets an agent find, change and test llm_light, an interactive CLI t
 You are working on `llm_light`, a Python CLI. It sends a cached project skeleton and the code chunks each question retrieves to Claude, and applies the SEARCH/REPLACE edits Claude returns. Change the package with the tests as the guard, and measure any change that affects tokens before you keep it.
 
 - `llm_light/`: the package, one module per responsibility. Module roles and the data flow are in [docs/architecture/components.md](docs/architecture/components.md).
+- `llm_light/clipboard.py`: `alt+v`/`ctrl+v` at the prompt: saves the clipboard image in the project's cache directory with the platform's own clipboard program and returns its path for an `@` mention.
 - `llm_light/instructions.py`: the user's own instructions from `~/.llm_light/instructions.md`, added to the system text of every request for every provider.
 - `llm_light/hooks.py`: the user's hooks from `~/.llm_light/hooks.json`, passed to the claude CLI agent on a subscription and run by llm_light around its tools and edits with an API key. Tests: `tests/unit/test_hooks.py`, which runs real hook processes.
 - `llm_light/mcp_servers.py`: the user's MCP servers from `~/.llm_light/mcp.json`, passed to the claude CLI agent on a subscription and connected through the optional `mcp` SDK with an API key. Tests: `tests/unit/test_mcp_servers.py` and `tests/integration/test_mcp_stdio.py`, which runs the real stdio server in `tests/fixtures/mcp_nonce_server.py` and needs `mcp` installed (CI installs it).
