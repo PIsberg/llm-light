@@ -26,7 +26,6 @@ Two ways a server is used, both with the `claude` provider only:
 Plan mode uses no server: an MCP tool can change things outside the repo.
 """
 
-import asyncio
 import atexit
 import concurrent.futures
 import copy
@@ -280,6 +279,7 @@ class _Manager:
             for srv in self.servers.values():
                 srv.error = "the mcp package is not installed"
             return [f"MCP servers not started: the mcp package is not installed. {INSTALL_HINT}"]
+        import asyncio  # here, not at the top: 40 ms of every start, and only API-key MCP needs it
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self.loop.run_forever, name="llm_light-mcp", daemon=True)
         self.thread.start()
@@ -293,6 +293,7 @@ class _Manager:
         return self.status_lines()
 
     async def _boot(self, timeout):
+        import asyncio
         self._closing = asyncio.Event()
         for srv in self.servers.values():
             srv.ready = asyncio.Event()
@@ -306,6 +307,7 @@ class _Manager:
                 srv.task.cancel()
 
     async def _serve(self, srv):
+        import asyncio
         from contextlib import AsyncExitStack
         from mcp import Client
         from mcp_types import Implementation
@@ -383,6 +385,7 @@ class _Manager:
         client = srv.client
         if client is None:
             return f"Error: the MCP server {srv.name!r} is not connected: {srv.error or 'stopped'}", True
+        import asyncio
         future = asyncio.run_coroutine_threadsafe(
             client.call_tool(tool, arguments, read_timeout_seconds=config.MCP_CALL_TIMEOUT), self.loop)
         try:
@@ -414,6 +417,7 @@ class _Manager:
     def stop(self) -> None:
         if self.loop is None:
             return
+        import asyncio
         loop, self.loop = self.loop, None
 
         async def close():
