@@ -544,7 +544,10 @@ def _build_system_blocks(skeleton):
     # forces unnecessary cache writes on idle conversations. The 1h variant
     # costs 2x on write but reads stay at $0.30/M for an hour, which dominates
     # for any session with idle gaps over 5 min.
-    system = f"{SYSTEM_PROMPT}\n\n{state.extra_system}" if state.extra_system else SYSTEM_PROMPT
+    # The user's own instructions, then --append-system-prompt; neither, and the text
+    # is SYSTEM_PROMPT alone, as it was.
+    from llm_light import instructions
+    system = "\n\n".join(part for part in (SYSTEM_PROMPT, instructions.text(), state.extra_system) if part)
     blocks = [
         {"type": "text", "text": system},
         {"type": "text", "text": skeleton,

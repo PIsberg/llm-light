@@ -674,10 +674,15 @@ def editor_argv() -> list | None:
     return None
 
 
-def memory_command(choose) -> str:
+def memory_command(choose, arg: str = "") -> str:
     """`/memory`: open this project's instruction file in the editor. `choose(question,
     options)` picks when both exist. They reach the model through the skeleton, and the
-    file watcher rebuilds that when one is saved."""
+    file watcher rebuilds that when one is saved. `/memory user` opens the user's own
+    file for every project (instructions.py) instead."""
+    if arg.strip().lower() == "user":
+        return _edit_user_instructions()
+    if arg.strip():
+        return "Usage: /memory opens this project's instructions, /memory user your own for every project."
     existing = [name for name in ("CLAUDE.md", "AGENTS.md") if Path(name).is_file()]
     if len(existing) > 1:
         name = choose("Edit which instructions?", [(n, n) for n in existing] + [("cancel", "Cancel")])
@@ -697,6 +702,25 @@ def memory_command(choose) -> str:
     if code != 0:
         return f"{argv[0]} exited with code {code}."
     return f"{name} is sent with every question, so keep it short. Any change applies from the next turn."
+
+
+def _edit_user_instructions() -> str:
+    from llm_light import instructions
+    argv = editor_argv()
+    target = instructions.path()
+    if argv is None:
+        return f"No editor found. Set $EDITOR, or edit {target} yourself."
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_text("", encoding="utf-8")
+        code = subprocess.call(argv + [str(target)])
+    except OSError as e:
+        return f"Could not open {target}: {e}."
+    if code != 0:
+        return f"{argv[0]} exited with code {code}."
+    return (f"{target} goes with every question in every project, so keep it short. "
+            "Any change applies from the next turn.")
 
 
 # --- /vim -------------------------------------------------------------------------

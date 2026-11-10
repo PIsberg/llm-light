@@ -59,7 +59,7 @@ _COMMANDS = [
     ("/hooks",      "your hooks from ~/.llm_light/hooks.json"),
     ("/init",       "write or improve this project's CLAUDE.md or AGENTS.md"),
     ("/mcp",        "the MCP servers from ~/.llm_light/mcp.json and their tools"),
-    ("/memory",     "open this project's instructions in your editor"),
+    ("/memory [user]", "edit this project's instructions; user: your own, for every project"),
     ("/model [name]", "show the model, pin one (opus, sonnet, haiku, fable) or auto"),
     ("/permissions [mode]", "show or set the permission mode"),
     ("/add-dir [path]", "let the agent read a directory outside the project; lists them without one"),
@@ -653,8 +653,8 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                 for line in mcp_servers.command_lines(providers.active()):
                     print(f"  {_T_SYS}  {line}")
                 continue
-            if query == "/memory":
-                print(f"  {_T_SYS}  {commands.memory_command(choose)}")
+            if name == "/memory":
+                print(f"  {_T_SYS}  {commands.memory_command(choose, arg)}")
                 continue
             if query == "/init" and not _replaced("/init"):
                 _ask(commands.init_prompt(), auto_apply=auto_apply, mentions=False)
@@ -1221,7 +1221,8 @@ def main():
     if _config.ALLOWED_COMMANDS and not provider.has(SHELL):
         print(f"  {_T_SYS}  shell access is disabled for {provider.name}: its agent cannot run commands. "
               "--allow-command only lets llm_light run the affected tests.", file=sys.stderr)
-    for note in (_web_note(provider), _add_dir_note(provider)):
+    from llm_light import instructions
+    for note in (_web_note(provider), _add_dir_note(provider), instructions.startup_line()):
         if note:
             print(f"  {_T_SYS}  {note}", file=sys.stderr)
     if state.pinned_model and not provider.has(TOP_TIER):
