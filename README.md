@@ -232,6 +232,9 @@ Run your own command around the agent's work, a formatter after each edit or a p
 *   **With an API key** llm_light runs `PreToolUse` and `PostToolUse` itself, around its tools and after it writes an edit, under Claude Code's tool names (`Read`, `Grep`, `Glob`, `Bash`, `Edit` for a changed file, `Write` for a new one, `mcp__<server>__<tool>`), so one matcher works in both modes. The command gets the event as JSON on stdin and runs from the project root. Exit 2 blocks a `PreToolUse` call and its stderr tells the model why; on `PostToolUse` the stderr goes to the model with the result. Any other failure, or passing `timeout` (default 60 s), is noted and the call goes on. JSON printed on stdout is not read. Edit hooks run before the auto-commit, so the commit holds what a formatter made of the file.
 *   `/hooks` lists them; `/doctor` checks the file without running anything.
 
+#### Your own instructions
+Put instructions you want in every project, such as "answer in British English" or "prefer pytest fixtures to setUp", in `~/.llm_light/instructions.md`; `/memory user` opens it in your editor. It goes with every question, after llm_light's own prompt and before `--append-system-prompt`, for Claude (API key or subscription), Gemini and Codex, and an edit applies from the next turn. Startup names the file when it has text. It is cut at 8,000 characters, since it is sent every time: a one-line file added 40 tokens a request. Only that file is read (`LLM_LIGHT_INSTRUCTIONS` moves it), never one in a project, so a cloned repo cannot add instructions. Your `~/.claude/CLAUDE.md` is still not sent: it is written for Claude Code and names tools llm_light does not have. Without the file, or with an empty one, requests are unchanged.
+
 #### MCP servers
 Give the agent the tools of your MCP servers (documentation lookup, an issue tracker, a database) by listing them in `~/.llm_light/mcp.json`, in the shape of Claude Code's `.mcp.json`:
 ```json
@@ -323,7 +326,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/hooks` | Your hooks from `~/.llm_light/hooks.json`, by event and matcher (see [Hooks](#hooks)) |
 | `/init` | Ask the model to write or improve this project's `CLAUDE.md` (`AGENTS.md` for Gemini and Codex), as a normal turn, so edits ask as usual |
 | `/mcp` | The MCP servers from `~/.llm_light/mcp.json`: with an API key, whether each connected and its tools; on a subscription, the servers the agent starts each turn (see [MCP servers](#mcp-servers)) |
-| `/memory` | Open that file in `$VISUAL` or `$EDITOR`; it goes out with every question |
+| `/memory [user]` | Open that file in `$VISUAL` or `$EDITOR`; it goes out with every question. `/memory user` opens your own instructions instead (see [Your own instructions](#your-own-instructions)) |
 | `/model [name]` | Show the model; `opus`, `sonnet`, `haiku`, `fable` or a full model id pins every question to it, `auto` returns to routing. Claude only: Gemini and Codex pick their own |
 | `/permissions [mode]` | Show the permission mode, or set one (see above) |
 | `/run <cmd>` | Run a shell command and ask Claude about its output. As with `!`, the output shows as it arrives, the command has no stdin, `ctrl+c` stops it and everything it started, and it is killed after 120 s (`LLM_LIGHT_RUN_TIMEOUT`) |

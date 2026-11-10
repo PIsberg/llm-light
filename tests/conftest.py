@@ -37,6 +37,8 @@ os.environ["LLM_LIGHT_SETTINGS_FILE"] = os.path.join(_tempfile.mkdtemp(prefix="l
 os.environ["LLM_LIGHT_MCP_CONFIG"] = os.path.join(_tempfile.mkdtemp(prefix="llm_light_mcp_"), "mcp.json")
 # And their hooks (~/.llm_light/hooks.json), which would run around every tool call.
 os.environ["LLM_LIGHT_HOOKS_CONFIG"] = os.path.join(_tempfile.mkdtemp(prefix="llm_light_hooks_"), "hooks.json")
+# And their own instructions (~/.llm_light/instructions.md), which go into every system prompt.
+os.environ["LLM_LIGHT_INSTRUCTIONS"] = os.path.join(_tempfile.mkdtemp(prefix="llm_light_instr_"), "instructions.md")
 # A developer's own --proxy setting (e.g. llm-fw) must not route the suite.
 for _var in ("LLM_LIGHT_PROXY", "LLM_LIGHT_PROXY_CA"):
     os.environ.pop(_var, None)
