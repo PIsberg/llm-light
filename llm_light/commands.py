@@ -245,6 +245,32 @@ def _allow_note() -> str:
     return ""
 
 
+def add_dir(arg: str) -> str:
+    """`/add-dir [path]`: let the agent read a directory outside the project, from the next
+    turn, for this session. Read-only: writes stay in the project, where they are diffed,
+    committed and undoable."""
+    raw = arg.strip().strip("\"'").strip()
+    if not raw:
+        if config.EXTRA_DIRS:
+            return "Readable outside the project: " + "; ".join(config.EXTRA_DIRS) + "."
+        return ("Only the project is readable. /add-dir <path> lets the agent read another "
+                "directory too, such as a sibling repository.")
+    path = Path(os.path.expanduser(raw)).resolve()
+    project = Path.cwd().resolve()
+    if not path.is_dir():
+        return f"Not added: {path} is not a directory."
+    if path == project or project in path.parents:
+        return f"Not added: {path} is in the project, which the agent can read already."
+    if path.parent == path:
+        return f"Not added: {path} is the root of a drive; name a directory inside it."
+    if any(ch in str(path) for ch in ",()"):
+        return f"Not added: {path} has a comma or a parenthesis, which a permission rule cannot hold."
+    if str(path) not in config.EXTRA_DIRS:
+        config.EXTRA_DIRS.append(str(path))
+    return (f"The agent may read {path} from the next turn, but not write there. "
+            "For this session only.")
+
+
 def allow_command(arg: str) -> str:
     """`/allow [prefix]`: list the allowed prefixes, or add one, for this session and
     for later sessions in this project. Only the user can type it: the agent has no
