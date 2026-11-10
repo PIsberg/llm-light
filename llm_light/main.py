@@ -68,6 +68,7 @@ _COMMANDS = [
     ("/budget <$>", "cap session spend; routing drops to the cheapest model at the cap"),
     ("/status",     "version, provider, model, permissions, shell and index"),
     ("/resume",     "switch to one of this project's earlier conversations"),
+    ("/rename [name]", "name this conversation, to find it with /resume or --resume <name>"),
     ("/review [ref]", "review the uncommitted changes, or those against a ref"),
     ("/rewind",     "go back to before an earlier turn: its files and the conversation"),
     ("/undo",       "revert the last commit Claude made"),
@@ -713,6 +714,9 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             if query == "/resume":
                 _resume_picker()
                 continue
+            if name == "/rename":
+                print(f"  {_T_SYS}  {session.rename(arg)}")
+                continue
             if query == "/rewind":
                 targets = commands.rewind_targets()
                 if not targets:
@@ -1041,8 +1045,10 @@ def _build_parser():
     parser.add_argument("-c", "--continue", dest="resume", action="store_true",
                         help="Resume this project's previous conversation. With a question or -p, "
                              "answer it there and exit.")
-    parser.add_argument("--resume", dest="pick", action="store_true",
-                        help="Pick one of this project's earlier conversations to resume.")
+    parser.add_argument("--resume", dest="pick", nargs="?", const=True, default=False, metavar="NAME",
+                        help="Pick one of this project's earlier conversations to resume, or name it: "
+                             "--resume NAME continues the one /rename called NAME, also with a "
+                             "question or -p.")
     parser.add_argument("--provider", choices=providers.NAMES, default=providers.DEFAULT,
                         help="Which agent answers: " + ", ".join(providers.NAMES) + " (default: %(default)s).")
     parser.add_argument("--proxy", metavar="URL",
@@ -1113,7 +1119,7 @@ def main():
     if args.print_mode and not query_str and sys.stdin.isatty():
         parser.error("-p needs a question: llm_light -p \"...\", or pipe one on stdin")
     interactive = not args.print_mode and not query_str and sys.stdin.isatty()
-    if args.pick and not interactive:
+    if args.pick is True and not interactive:
         parser.error("--resume asks which conversation, so it needs a terminal and no question; "
                      "--continue answers in the latest one")
     if args.output_format and not args.print_mode:
@@ -1121,6 +1127,16 @@ def main():
     for notice in _config.legacy_notices():
         print(f"  {_T_SYS}  {notice}", file=sys.stderr)
     provider = providers.select(args.provider)
+    if isinstance(args.pick, str):
+        # --resume NAME: make that conversation the current one, then go on as --continue.
+        found = session.find(args.pick)
+        if found is None:
+            named = [e["name"] for e in session.conversations() if e["name"]]
+            parser.error(f"--resume {args.pick}: no conversation of this project is called that. "
+                         + ("Named ones: " + ", ".join(named) if named
+                            else "/rename <name> names the current one."))
+        session.resume(found["path"])
+        args.pick, args.resume = False, True
     if args.doctor:  # before the login check: a broken login is why people run it
         raise SystemExit(doctor.run())
     provider.require_auth()

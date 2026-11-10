@@ -8,6 +8,9 @@ conversation that --continue would hand to the model as the user's own.
 /clear moves that file aside as `<name>.saved-<stamp>.json` instead of
 deleting it, keeping the newest config.SESSION_KEEP, and /resume (or
 --resume) swaps one of them back in (#136).
+
+/rename gives the conversation a name, saved in the file; --resume <name> finds it
+without asking, and a named conversation is never pruned (#210).
 """
 
 import hashlib
@@ -22,6 +25,7 @@ import llm_light.state as state
 from llm_light import providers
 
 _ROLES = {"user", "assistant"}
+NAME_MAX = 60
 
 
 def session_file(root: Path | None = None, provider: str | None = None) -> Path:
@@ -54,6 +58,8 @@ def save() -> bool:
             "session_model": state.session_model,
             "conversation_history": history,
         }
+        if state.session_name:
+            data["name"] = state.session_name
     try:
         if not history:
             path.unlink(missing_ok=True)
@@ -79,22 +85,72 @@ def _archives(current: Path) -> list:
     return sorted(current.parent.glob(f"{current.stem}.saved-*.json"), reverse=True)
 
 
+def _read(path: Path):
+    """The saved data at `path` if it is a valid conversation, else None."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if _valid(data) else None
+
+
 def _archive(current: Path) -> None:
-    """Move the current conversation aside and keep the newest SESSION_KEEP."""
+    """Move the current conversation aside and keep the newest SESSION_KEEP unnamed
+    ones. A named one is kept: its name is how the user means to come back to it."""
     if not current.is_file():
         return
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     os.replace(current, current.with_name(f"{current.stem}.saved-{stamp}.json"))
-    for old in _archives(current)[config.SESSION_KEEP:]:
+    unnamed = [p for p in _archives(current) if not (_read(p) or {}).get("name")]
+    for old in unnamed[config.SESSION_KEEP:]:
         old.unlink(missing_ok=True)
 
 
 def clear() -> None:
     """Start a new conversation: the current one becomes an earlier one."""
+    state.session_name = None
     try:
         _archive(session_file())
     except OSError:
         pass
+
+
+def _bad_name(name: str) -> str | None:
+    if len(name) > NAME_MAX:
+        return f"A name is at most {NAME_MAX} characters."
+    if any(ord(c) < 32 or ord(c) == 127 for c in name):
+        return "A name is one line, without tabs or control characters."
+    if name.startswith("-"):
+        return "A name cannot start with -, or --resume would read it as a flag."
+    return None
+
+
+def rename(name: str) -> str:
+    """/rename: name the current conversation, or say its name. Returns a line for the user."""
+    name = name.strip()
+    if not name:
+        return (f"This conversation is called {state.session_name}." if state.session_name
+                else "This conversation is not named. /rename <name> names it.")
+    problem = _bad_name(name)
+    if problem:
+        return problem
+    taken = find(name)
+    if taken is not None and not taken["current"]:
+        return f"Another conversation is already called {taken['name']}; pick another name."
+    state.session_name = name
+    if not save():
+        return "Named, but the conversation could not be saved."
+    with state.lock:
+        started = bool(state.conversation_history)
+    return (f"Named {name}. Return to it with /resume, or llm-light --resume {name}." if started
+            else f"Named {name}; it is saved with the first turn.")
+
+
+def find(name: str):
+    """The saved conversation of this project and provider called `name`, ignoring
+    case, as conversations() lists it; None if there is none."""
+    wanted = name.strip().casefold()
+    return next((e for e in conversations() if e["name"] and e["name"].casefold() == wanted), None)
 
 
 def _first_question(history) -> str:
@@ -113,19 +169,18 @@ def conversations() -> list:
     current = session_file()
     entries = []
     for path in [current] + _archives(current):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if not _valid(data) or not data["conversation_history"]:
+        data = _read(path)
+        if data is None or not data["conversation_history"]:
             continue
         turns = data.get("turn_count", len(data["conversation_history"]) // 2)
         first = _first_question(data["conversation_history"])
         when = str(data.get("saved_at", "")).replace("T", " ")[:16]
         is_current = path == current
-        label = (f"{when or 'undated'}  ·  {turns} turn{'' if turns == 1 else 's'}  ·  {first[:60]}"
+        name = data.get("name") or None
+        label = ((f"{name}  ·  " if name else "")
+                 + f"{when or 'undated'}  ·  {turns} turn{'' if turns == 1 else 's'}  ·  {first[:60]}"
                  + ("  (current)" if is_current else ""))
-        entries.append({"path": path, "label": label, "first": first, "turns": turns,
+        entries.append({"path": path, "label": label, "first": first, "turns": turns, "name": name,
                         "saved_at": data.get("saved_at"), "current": is_current})
     return entries
 
@@ -159,7 +214,8 @@ def _valid(data) -> bool:
                 and isinstance(message.get("content"), (str, list))):
             return False
     return (isinstance(data.get("turn_count", 0), int)
-            and isinstance(data.get("session_model"), (str, type(None))))
+            and isinstance(data.get("session_model"), (str, type(None)))
+            and isinstance(data.get("name"), (str, type(None))))
 
 
 def _other_provider_with_file(own: Path) -> str | None:
@@ -200,6 +256,7 @@ def restore() -> str:
         state.conversation_history[:] = data["conversation_history"]
         state.turn_count = data.get("turn_count", len(data["conversation_history"]) // 2)
         state.session_model = data.get("session_model")
+        state.session_name = data.get("name") or None
     turns = state.turn_count
     when = str(data.get("saved_at", "")).replace("T", " ")[:16]
     return (f"Continuing the conversation from {when or 'an earlier session'} "

@@ -30,7 +30,7 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `SESSION_DIR` | Where `session.py` saves each project's conversation for `--continue`, one file per project named by a hash of its path (`~/.llm_light_sessions`; override with `LLM_LIGHT_SESSION_DIR`). In the home directory so a cloned repo cannot supply a conversation. `/clear` keeps the old one next to it as `<name>.saved-<stamp>.json` for `/resume` |
 | `USER_COMMANDS_DIR` | Where your own slash commands live: `<name>.md` becomes `/<name>` (`~/.llm_light/commands`; override with `LLM_LIGHT_COMMANDS_DIR`). Only this directory is read, never the project's |
 | `MCP_START_TIMEOUT` / `MCP_CALL_TIMEOUT` | API-key mode: seconds a server has to start and list its tools (60), and one tool call has to answer (120). The subscription's agent uses its own |
-| `SESSION_KEEP` | Earlier conversations kept per project and provider after `/clear`, for `/resume` and `--resume` (default 10; the oldest is deleted beyond that) |
+| `SESSION_KEEP` | Earlier conversations kept per project and provider after `/clear`, for `/resume` and `--resume` (default 10; the oldest is deleted beyond that). A conversation named with `/rename` is not counted and never deleted |
 | `HEARTBEAT_SECS` | How often the heartbeat thread wakes (default 30) |
 | `CACHE_TTL_SECS` | Seconds since the last turn or warm before the heartbeat warms the cache again (default 3300, five minutes inside the skeleton's 1-hour TTL) |
 | `MODEL_HAIKU` / `MODEL_SONNET` / `MODEL_OPUS` | Model ID constants used by the router |

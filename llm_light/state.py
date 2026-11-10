@@ -21,6 +21,9 @@ budget_asked = False
 # ROUTE_ONCE (on by default): the model the session's first turn routed to.
 # None until then; /clear resets it.
 session_model = None
+# /rename: the conversation's name, saved with it so --resume <name> finds it (#210).
+# None until named; /clear resets it, restoring a conversation loads its own.
+session_name = None
 provider = None
 # What may happen without asking (llm_light.permissions): "default",
 # "acceptEdits", "plan" or "bypassPermissions". bypass_allowed: started with

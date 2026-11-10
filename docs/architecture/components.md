@@ -31,7 +31,7 @@ This diagram shows the main components and their relationships within LLM Light.
 | `indexer.py` | File watcher, manages incremental indexing and cache |
 | `skeleton.py` | Builds compressed directory tree and markdown documentation |
 | `state.py` | Shared state module for thread-safe access to session data |
-| `session.py` | Saves the conversation, turn count and session model after each interactive turn; `--continue` restores them into `state` (the history list in place, since `_wrap()` re-binds it). `/clear` moves the file aside as `<name>.saved-<stamp>.json` (newest `SESSION_KEEP` kept), and `/resume` or `--resume` swaps one back in |
+| `session.py` | Saves the conversation, turn count and session model after each interactive turn; `--continue` restores them into `state` (the history list in place, since `_wrap()` re-binds it). `/clear` moves the file aside as `<name>.saved-<stamp>.json` (newest `SESSION_KEEP` unnamed ones kept), and `/resume` or `--resume` swaps one back in. `/rename` stores `name` in the file (`state.session_name`; unique per project and provider, ignoring case; one line, at most 60 characters, not starting with `-`), and `main()` turns `--resume NAME` into a swap plus `--continue` before anything else runs, so it also works with `-p` |
 | `config.py` | Configuration constants and dual-mode authentication resolution |
 | `proxy.py` | The HTTPS proxy the model traffic goes through (`--proxy`, `--proxy-ca`, `--llm-fw`; see [Proxy](#proxy)) |
 
