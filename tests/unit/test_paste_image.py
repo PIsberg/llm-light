@@ -22,7 +22,10 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 64
 
 @pytest.fixture
 def project(tmp_path, monkeypatch):
+    """A project directory, with the grabber pinned so the result does not depend on
+    which clipboard program the machine running the tests has (CI's Linux has none)."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(clipboard, "grab_command", lambda platform: (["grabber"], False))
     return tmp_path
 
 
@@ -42,7 +45,9 @@ def _grabbed(data=PNG, code=0):
 
 def test_windows_uses_powershell_in_sta_and_takes_the_path_from_the_environment():
     argv, to_stdout = clipboard.grab_command("win32")
-    assert argv[0].lower().startswith("powershell") and "-STA" in argv
+    assert argv[0].lower().replace("/", "\\").endswith(
+        "\\system32\\windowspowershell\\v1.0\\powershell.exe")
+    assert "-STA" in argv
     # The path never goes into the script, so no character in it can change the command.
     assert "$env:" + clipboard.TARGET_VAR in argv[-1]
     assert not to_stdout
@@ -50,7 +55,7 @@ def test_windows_uses_powershell_in_sta_and_takes_the_path_from_the_environment(
 
 def test_macos_uses_osascript():
     argv, to_stdout = clipboard.grab_command("darwin")
-    assert argv[0] == "osascript" and clipboard.TARGET_VAR in " ".join(argv)
+    assert argv[0] == "/usr/bin/osascript" and clipboard.TARGET_VAR in " ".join(argv)
     assert not to_stdout
 
 
@@ -71,8 +76,7 @@ def test_linux_falls_back_to_xclip(monkeypatch):
 def test_linux_without_a_tool_says_what_to_install(monkeypatch):
     with patch.object(clipboard.shutil, "which", return_value=None):
         assert clipboard.grab_command("linux") is None
-    with patch.object(clipboard.shutil, "which", return_value=None), \
-         patch.object(clipboard.sys, "platform", "linux"):
+    with patch.object(clipboard, "grab_command", return_value=None):
         path, problem = clipboard.paste_image()
     assert path is None and "wl-paste" in problem and "xclip" in problem
 
@@ -148,3 +152,31 @@ def test_without_an_image_the_prompt_is_unchanged():
 
 def test_help_names_the_key():
     assert any("alt+v" in key for key, _ in m._KEYS)
+
+
+# --- a cache directory the checkout controls ----------------------------------------------
+
+@pytest.mark.parametrize("linked", [".llm_light_cache", "pastes"])
+def test_a_linked_cache_or_pastes_folder_is_refused(project, linked):
+    # A cloned repo can ship either as a link elsewhere. Simulated, since creating a real
+    # link needs a privilege on Windows.
+    real = Path.is_symlink
+    with patch.object(Path, "is_symlink", lambda self: self.name == linked or real(self)), \
+         patch.object(clipboard.subprocess, "run") as run:
+        rel, problem = clipboard.paste_image()
+    assert rel is None and "link" in problem
+    run.assert_not_called()
+
+
+def test_pruning_leaves_links_alone(project):
+    real = Path.is_symlink
+    with patch.object(clipboard.subprocess, "run", side_effect=_grabbed()):
+        clipboard.paste_image()
+    kept = project / ".llm_light_cache" / "pastes" / "paste-00000000-000000-link00.png"
+    kept.write_bytes(PNG)
+    with patch.object(Path, "is_symlink", lambda self: self.name == kept.name or real(self)), \
+         patch.object(clipboard.subprocess, "run", side_effect=_grabbed()), \
+         patch.object(clipboard, "KEEP", 1):
+        clipboard.paste_image()
+    assert kept.exists()
+    assert len(list(kept.parent.glob("paste-*.png"))) == 2  # the link and the newest paste

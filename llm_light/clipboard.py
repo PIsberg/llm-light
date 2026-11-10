@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 from llm_light import config
 
@@ -40,10 +41,13 @@ def grab_command(platform: str):
     """(argv, writes_to_stdout) for the program that reads this platform's clipboard
     image, or None when there is none."""
     if platform == "win32":
-        # Clipboard access needs a single-threaded apartment.
-        return ["powershell", "-NoProfile", "-NonInteractive", "-STA", "-Command", _WINDOWS_SCRIPT], False
+        # The Windows PowerShell that ships with the OS, by its full path. Clipboard
+        # access needs a single-threaded apartment (-STA).
+        powershell = os.path.join(os.environ.get("SystemRoot") or r"C:\Windows",
+                                  "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+        return [powershell, "-NoProfile", "-NonInteractive", "-STA", "-Command", _WINDOWS_SCRIPT], False
     if platform == "darwin":
-        argv = ["osascript"]
+        argv = ["/usr/bin/osascript"]
         for line in _MAC_SCRIPT:
             argv += ["-e", line]
         return argv, False
@@ -56,7 +60,10 @@ def grab_command(platform: str):
 
 
 def _prune(folder) -> None:
-    pastes = sorted(folder.glob("paste-*.png"), key=lambda p: (p.stat().st_mtime_ns, p.name))
+    """Remove all but the newest KEEP pastes. Only regular files: a link is left alone,
+    since what it points at is not ours to delete."""
+    pastes = [p for p in folder.glob("paste-*.png") if not p.is_symlink() and p.is_file()]
+    pastes.sort(key=lambda p: (p.stat().st_mtime_ns, p.name))
     for old in pastes[:-KEEP]:
         try:
             old.unlink()
@@ -71,9 +78,15 @@ def paste_image():
     if command is None:
         return None, "No clipboard program found: install wl-paste (Wayland) or xclip (X11)."
     argv, to_stdout = command
-    config.ensure_cache_dir()
     folder = config.CACHE_DIR / "pastes"
+    # The cache directory comes with the checkout, so a repo could ship it, or its pastes
+    # folder, as a link elsewhere: a paste would then land, and pruning delete, outside it.
+    if config.CACHE_DIR.is_symlink() or folder.is_symlink():
+        return None, f"{folder.as_posix()} is a link, so nothing is saved there."
+    config.ensure_cache_dir()
     folder.mkdir(exist_ok=True)
+    if not folder.resolve().is_relative_to(Path.cwd().resolve()):
+        return None, f"{folder.as_posix()} is outside the project, so nothing is saved there."
     stamp = time.strftime("%Y%m%d-%H%M%S")
     target = folder / f"paste-{stamp}-{secrets.token_hex(3)}.png"  # two pastes in one second must not collide
     env = dict(os.environ, **{TARGET_VAR: str(target.resolve())})
