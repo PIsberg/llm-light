@@ -23,6 +23,7 @@ from llm_light.ui import (
 )
 import llm_light.state as state
 from llm_light import providers, permissions
+from llm_light import esc_key
 from llm_light.providers.base import NotLoggedIn, AGENT, EFFORT, SHELL, TOP_TIER, USD_BUDGET, USAGE
 from llm_light.skeleton import build_skeleton, _refresh_tree_only, _assemble_skeleton, _refresh_single_md
 from llm_light.indexer import index_files
@@ -845,7 +846,9 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
 
     try:
         for attempt in range(3):
-            reply, usage, was_streamed = providers.active().complete(create_kwargs)
+            # Esc stops the turn like Ctrl+C, only while the model answers (esc_key.py).
+            with esc_key.listening():
+                reply, usage, was_streamed = providers.active().complete(create_kwargs)
 
             planned, edits = _plan_split(parse_edit_blocks(reply))
 

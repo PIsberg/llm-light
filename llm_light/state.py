@@ -43,6 +43,10 @@ extra_system = ""  # --append-system-prompt
 pinned_effort = None  # /effort: every question runs at this effort instead of the routed one
 vim_mode = False  # /vim: the prompt edits with vi keys
 pending_context = []
+# Keys typed while a turn ran (esc_key.py); the next prompt starts with them.
+typeahead = ""
+# The agent CLI process of the running turn, if any: Esc on Windows kills it (esc_key.py).
+turn_process = None
 # This run's full replies, newest last, for /copy (history keeps them
 # without their code blocks, and compression rewrites it).
 replies = []

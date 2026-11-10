@@ -53,4 +53,5 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `LLM_LIGHT_HOOKS_CONFIG` | Where your hooks are listed (default `~/.llm_light/hooks.json`, the shape of Claude Code's `hooks` setting). Never read from the project. See [architecture/components.md](architecture/components.md#hooks) |
 | `LLM_LIGHT_MCP_CONFIG` | Where the MCP servers are listed (default `~/.llm_light/mcp.json`, the shape of Claude Code's `.mcp.json`). Never read from the project. See [architecture/components.md](architecture/components.md#mcp-servers) |
 | `LLM_LIGHT_SHELL` | Windows only: which shell runs `!command`, `/run` and the API-mode `shell` tool. Default is Git Bash when Git for Windows is installed, else `cmd.exe`. `cmd` forces `cmd.exe`; a path names another bash. On Linux and macOS it is always `sh` |
+| `LLM_LIGHT_ESC` | `0` stops llm_light reading keys during a turn, so Esc no longer cancels one and typed-ahead keys stay in the terminal as before (default on in an interactive terminal; never in `-p`) |
 | `LLM_LIGHT_RUN_TIMEOUT` | Timeout in seconds for the `shell` tool, `!command` and `/run` (default 120; 0 or blank disables the cap) |

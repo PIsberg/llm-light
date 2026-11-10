@@ -22,8 +22,8 @@ from collections import deque
 from pathlib import Path
 
 import llm_light.state as state
-from llm_light import (commands, completions, doctor, headless, hooks, mcp_servers, permissions, providers,
-                       proxy, session, settings)
+from llm_light import (commands, completions, doctor, esc_key, headless, hooks, mcp_servers, permissions,
+                       providers, proxy, session, settings)
 from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, TOP_TIER, USD_BUDGET
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
 from llm_light.ui import (
@@ -562,7 +562,9 @@ def start_chat(auto_apply=False, resume=False, pick=False):
         _prompt = [("", "\n"), ("class:prompt", "❯ " if _UNICODE else "> ")]
 
         def _get_input():
-            return _session.prompt(_prompt, vi_mode=state.vim_mode).strip()
+            # Keys typed during the last turn, which esc_key read instead of the terminal.
+            return _session.prompt(_prompt, vi_mode=state.vim_mode,
+                                   default=esc_key.take_typeahead()).strip()
     else:
         def _get_input():
             with state.lock:
