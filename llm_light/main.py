@@ -1010,6 +1010,17 @@ def _configure_proxy(parser, args) -> None:
         parser.error(f"{exc}{hint}")
 
 
+def _web_note(provider) -> str | None:
+    """What to say at startup when --web was asked for where it has no effect: only the
+    Claude CLI agent (a subscription) has web tools to turn on."""
+    import llm_light.config as _config
+    if not _config.WEB_ACCESS or (AUTH_MODE == "OAUTH" and provider.has(AGENT)):
+        return None
+    if provider.has(AGENT):
+        return "--web needs a Claude subscription: with an API key the model has no web tools."
+    return f"--web has no effect with {provider.name}: llm_light gives its agent no web tools."
+
+
 def _build_parser():
     import argparse
     parser = argparse.ArgumentParser(description="LLM Light RAG Chat")
@@ -1049,6 +1060,10 @@ def _build_parser():
                              "allow a PowerShell command, e.g. \"powershell: Invoke-Pester\"; without a tag "
                              "it is a Bash command. Repeatable. Also "
                              "LLM_LIGHT_ALLOW_COMMANDS=\"a; powershell: b\".")
+    parser.add_argument("--web", action="store_true",
+                        help="Let the Claude CLI agent (subscription mode) search the web and fetch "
+                             "pages in every permission mode, not only with "
+                             "--dangerously-skip-permissions. Also LLM_LIGHT_WEB=1.")
     parser.add_argument("-c", "--continue", dest="resume", action="store_true",
                         help="Resume this project's previous conversation. With a question or -p, "
                              "answer it there and exit.")
@@ -1097,6 +1112,8 @@ def main():
         if _config.command_rule(prefix)[1] and prefix.strip() not in _config.ALLOWED_COMMANDS:
             _config.ALLOWED_COMMANDS.append(prefix.strip())
     saved_commands = commands.load_saved_allowed()
+    if args.web:
+        _config.WEB_ACCESS = True
 
     _configure_proxy(parser, args)
 
@@ -1157,6 +1174,8 @@ def main():
     if _config.ALLOWED_COMMANDS and not provider.has(SHELL):
         print(f"  {_T_SYS}  shell access is disabled for {provider.name}: its agent cannot run commands. "
               "--allow-command only lets llm_light run the affected tests.", file=sys.stderr)
+    if _web_note(provider):
+        print(f"  {_T_SYS}  {_web_note(provider)}", file=sys.stderr)
     if state.pinned_model and not provider.has(TOP_TIER):
         print(f"  {_T_SYS}  --model ignored: {provider.name} picks its own model.", file=sys.stderr)
         state.pinned_model = None
