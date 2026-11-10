@@ -185,6 +185,8 @@ def run_tool(name, tool_input, root=None):
         return f"Error: a PreToolUse hook blocked this call: {why}", True
     output, is_error = _run_tool(name, tool_input, root)
     _, said = hooks.run("PostToolUse", hook_name, hook_input, root, tool_response=output)
+    if why:  # a PreToolUse hook's additionalContext, which goes with the result
+        output += f"\n\nPreToolUse hook: {why}"
     if said:
         output += f"\n\nPostToolUse hook: {said}"
     return output, is_error
