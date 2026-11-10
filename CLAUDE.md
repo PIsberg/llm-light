@@ -87,7 +87,7 @@ Users install with `pipx install llm-light-cli` from PyPI (the distribution name
 ## Invariants: check these before editing
 
 - **Neutral code reaches a provider only through `llm_light/providers/`.** No import of a provider's SDK and no provider binary name outside `providers/<name>.py` (`tests/unit/test_provider_isolation.py` enforces it). Use `providers.active()` and `providers.DEFAULT`.
-- **Background threads never print.** The watcher and the heartbeat call `ui.notify()`. A print lands inside a streamed reply or over the prompt being typed.
+- **Background threads never print.** The watcher, the heartbeat and the Esc listener (`esc_key.py`) call `ui.notify()` or print nothing. A print lands inside a streamed reply or over the prompt being typed.
 - **Shared state goes through `state.py` under `state.lock`.** Modules import each other's globals at load time, so `__init__.py` wraps public functions in `_wrap()` to sync bindings. Do not add a new cross-module global without going through it.
 - **`EMBED_MODEL` and `TOP_K` are set at runtime by `auto_tune()`.** Do not set them by hand.
 - **`state.turn_count` counts turns.** Do not derive it from `conversation_history`, which compression shrinks.

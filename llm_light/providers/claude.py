@@ -548,6 +548,7 @@ def _make_cli_subprocess_call(
             # The child has its own handle; ours would stop the file being removed.
             if prompt_stdin:
                 prompt_stdin.close()
+        state.turn_process = proc  # Esc on Windows kills it (esc_key.py)
 
         timed_out = _threading.Event()
         idle_out = _threading.Event()
@@ -722,7 +723,8 @@ def _make_cli_subprocess_call(
         return response_text.strip(), usage, session_id
 
     finally:
-        # A turn that ends early (Ctrl+C, an error mid-stream) must not leave
+        state.turn_process = None
+        # A turn that ends early (Ctrl+C, Esc, an error mid-stream) must not leave
         # the agent running: it edits files with permission prompts off.
         try:
             _kill_process_tree(proc)

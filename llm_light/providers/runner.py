@@ -58,8 +58,10 @@ def run_cli(provider: str, argv: list, stdin_text: str, timeout: float = TIMEOUT
     except FileNotFoundError:
         raise ProviderError(f"{binary} CLI not found. Install it and log in, "
                             f"or choose another --provider.")
+    from llm_light import esc_key
     try:
-        stdout, stderr = proc.communicate(stdin_text, timeout)
+        with esc_key.running(proc):  # Esc on Windows kills it
+            stdout, stderr = proc.communicate(stdin_text, timeout)
     except subprocess.TimeoutExpired:
         kill_process_tree(proc)
         raise ProviderError(f"{provider} timed out after {timeout:g} s. "

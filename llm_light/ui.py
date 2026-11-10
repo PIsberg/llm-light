@@ -131,7 +131,8 @@ def print_startup_header(model: str | None = None, access_mode: str | None = Non
     Printed before indexing starts, so it appears at once; the index status
     lives in the toolbar under the prompt.
     """
-    help_line = "/help for commands  ·  ctrl+c cancels a turn  ·  exit to quit"
+    from llm_light import esc_key
+    help_line = f"/help for commands  ·  {esc_key.stop_key()} cancels a turn  ·  exit to quit"
     model_line = ""
     if model:
         model_line = model.replace("claude-", "") + (f"  ·  {access_mode}" if access_mode else "")
@@ -964,7 +965,8 @@ class ResponseView:
         status = _Text()
         status.append(f"\n{frame} ", style="cyan")
         status.append(f"{self.label}{ellipsis} ", style="")
-        status.append(f"({elapsed}s · ctrl+c to interrupt)", style="dim")
+        from llm_light import esc_key
+        status.append(f"({elapsed}s · {esc_key.stop_key()} to interrupt)", style="dim")
         yield status
 
     # -- plain-mode spinner ------------------------------------------------
