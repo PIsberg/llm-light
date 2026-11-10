@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-dummy-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -214,16 +214,16 @@ class TestContinueFlag(unittest.TestCase):
 
     def test_continue_resumes_an_interactive_session(self):
         start_chat, one_shot = self._main(["--continue"])
-        start_chat.assert_called_once_with(auto_apply=False, resume=True, pick=False)
+        start_chat.assert_called_once_with(auto_apply=False, resume=True, pick=False, load_compressor=ANY)
         one_shot.assert_not_called()
 
     def test_plain_start_does_not_resume(self):
         start_chat, _ = self._main([])
-        start_chat.assert_called_once_with(auto_apply=False, resume=False, pick=False)
+        start_chat.assert_called_once_with(auto_apply=False, resume=False, pick=False, load_compressor=ANY)
 
     def test_resume_flag_asks_which_conversation(self):
         start_chat, _ = self._main(["--resume"])
-        start_chat.assert_called_once_with(auto_apply=False, resume=False, pick=True)
+        start_chat.assert_called_once_with(auto_apply=False, resume=False, pick=True, load_compressor=ANY)
 
     def test_resume_with_a_one_shot_question_is_a_usage_error(self):
         with patch("sys.stderr"), self.assertRaises(SystemExit) as raised:
