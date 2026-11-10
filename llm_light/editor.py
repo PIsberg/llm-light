@@ -266,6 +266,7 @@ def apply_edits(edits, check_only=False, explanation="", auto_apply=False):
 
     n = len(applicable)
     label = f"Applying {n} change{'s' if n != 1 else ''}"
+    created = {r["path"] for r in applicable if not Path(r["path"]).exists()}
     errors = []
     written_files = []
 
@@ -294,6 +295,13 @@ def apply_edits(edits, check_only=False, explanation="", auto_apply=False):
         print(f"  {_T_EDIT}  {_ANSI_CYAN}{path}{_ANSI_RESET}")
     for err in errors:
         print(f"  {_T_ERR}  Failed to write {err}")
+
+    # The user's PostToolUse hooks (a formatter, say) run before the commit, so it
+    # holds what they made of the file.
+    from llm_light import hooks
+    if hooks.configured().get("PostToolUse"):
+        for path in written_files:
+            hooks.after_edit(path, new=path in created)
 
     if written_files and git_manager.is_git_repo():
         # Only offer the test run (and its revert) when the commit went in;

@@ -376,6 +376,12 @@ def _make_cli_subprocess_call(
                 "matcher": "Bash|PowerShell",
                 "hooks": [{"type": "command", "command": guard}],
             }]}
+        if tools:
+            # The user's own hooks (~/.llm_light/hooks.json), after the guard: one must
+            # not run first and change the command the guard is about to check.
+            from llm_light import hooks as _hooks
+            for event, groups in _hooks.cli_hooks().items():
+                settings.setdefault("hooks", {}).setdefault(event, []).extend(groups)
         settings_path = Path(isolated_home) / "llm_light_settings.json"
         settings_path.write_text(json.dumps(settings), encoding="utf-8")
 

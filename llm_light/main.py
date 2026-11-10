@@ -22,8 +22,8 @@ from collections import deque
 from pathlib import Path
 
 import llm_light.state as state
-from llm_light import (commands, completions, doctor, headless, mcp_servers, permissions, providers, proxy,
-                       session, settings)
+from llm_light import (commands, completions, doctor, headless, hooks, mcp_servers, permissions, providers,
+                       proxy, session, settings)
 from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, TOP_TIER, USD_BUDGET
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
 from llm_light.ui import (
@@ -56,6 +56,7 @@ _COMMANDS = [
     ("/doctor",     "check the install, login and tools"),
     ("/effort [level]", "show the effort, pin one (low, medium, high, max) or auto"),
     ("/export [file]", "save the conversation to a text file"),
+    ("/hooks",      "your hooks from ~/.llm_light/hooks.json"),
     ("/init",       "write or improve this project's CLAUDE.md or AGENTS.md"),
     ("/mcp",        "the MCP servers from ~/.llm_light/mcp.json and their tools"),
     ("/memory",     "open this project's instructions in your editor"),
@@ -615,6 +616,10 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             if query == "/context":
                 doctor.print_context()
                 continue
+            if query == "/hooks":
+                for line in hooks.command_lines():
+                    print(f"  {_T_SYS}  {line}")
+                continue
             if query == "/mcp":
                 for line in mcp_servers.command_lines(providers.active()):
                     print(f"  {_T_SYS}  {line}")
@@ -1154,7 +1159,7 @@ def main():
         print(f"  {_T_SYS}  --model ignored: {provider.name} picks its own model.", file=sys.stderr)
         state.pinned_model = None
     # Before the first turn: with an API key the servers' tools join the cached tool list.
-    for line in mcp_servers.startup_lines(provider):
+    for line in mcp_servers.startup_lines(provider) + hooks.problems():
         print(f"  {_T_SYS}  {line}", file=sys.stderr)
     set_by_flag = set()
     if args.permission_mode or args.skip_permissions or args.yes:

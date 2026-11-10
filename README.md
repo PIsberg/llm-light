@@ -215,6 +215,21 @@ That is short for `--proxy http://127.0.0.1:8080 --proxy-ca ~/.llm-fw/ca.crt`. F
     ```
 *   **Sinkhole mode** needs none of this: llm-fw redirects the API hosts at the OS level, so only the CA trust matters.
 
+#### Hooks
+Run your own command around the agent's work, a formatter after each edit or a policy check before a command, by listing it in `~/.llm_light/hooks.json`, in the shape of Claude Code's `hooks` setting:
+```json
+{
+  "hooks": {
+    "PostToolUse": [{ "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "ruff format --quiet", "timeout": 30 }] }],
+    "PreToolUse":  [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "/home/me/bin/policy-check" }] }]
+  }
+}
+```
+*   **Which file**: only that one (`LLM_LIGHT_HOOKS_CONFIG` moves it), never a project's `.claude/settings.json`, so a cloned repo cannot choose a command to run. Your `~/.claude/settings.json` hooks do not run either: the agent starts with an empty home. Events: `PreToolUse`, `PostToolUse`, `Notification`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `SessionStart`, `SessionEnd`. A matcher is a regular expression over the tool name; empty or `*` matches every tool.
+*   **On a subscription** the `claude` agent runs every event as Claude Code does, after llm_light's own guard for allowed commands. The agent runs with an empty home directory, so give commands absolute paths rather than `~`.
+*   **With an API key** llm_light runs `PreToolUse` and `PostToolUse` itself, around its tools and after it writes an edit, under Claude Code's tool names (`Read`, `Grep`, `Glob`, `Bash`, `Edit` for a changed file, `Write` for a new one, `mcp__<server>__<tool>`), so one matcher works in both modes. The command gets the event as JSON on stdin and runs from the project root. Exit 2 blocks a `PreToolUse` call and its stderr tells the model why; on `PostToolUse` the stderr goes to the model with the result. Any other failure, or passing `timeout` (default 60 s), is noted and the call goes on. JSON printed on stdout is not read. Edit hooks run before the auto-commit, so the commit holds what a formatter made of the file.
+*   `/hooks` lists them; `/doctor` checks the file without running anything.
+
 #### MCP servers
 Give the agent the tools of your MCP servers (documentation lookup, an issue tracker, a database) by listing them in `~/.llm_light/mcp.json`, in the shape of Claude Code's `.mcp.json`:
 ```json
@@ -301,6 +316,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/doctor` | Check the install, login and tools. It starts no program and sends nothing. `--doctor` runs it from the command line, even when the login is what is broken, and exits 1 on a problem |
 | `/effort [level]` | Show the effort, or pin `low`, `medium`, `high` or `max` for every question; `auto` returns to routing. It also sets how much code retrieval sends. Claude only |
 | `/export [file]` | Save the conversation as plain text; without a name, to `llm_light-conversation-<date>-<time>.txt` in the project (a `.txt`, so the skeleton does not pick it up) |
+| `/hooks` | Your hooks from `~/.llm_light/hooks.json`, by event and matcher (see [Hooks](#hooks)) |
 | `/init` | Ask the model to write or improve this project's `CLAUDE.md` (`AGENTS.md` for Gemini and Codex), as a normal turn, so edits ask as usual |
 | `/mcp` | The MCP servers from `~/.llm_light/mcp.json`: with an API key, whether each connected and its tools; on a subscription, the servers the agent starts each turn (see [MCP servers](#mcp-servers)) |
 | `/memory` | Open that file in `$VISUAL` or `$EDITOR`; it goes out with every question |
