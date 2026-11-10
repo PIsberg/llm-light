@@ -515,6 +515,8 @@ def _make_cli_subprocess_call(
         rules = [f"{tool}({prefix}:*)" for tool, prefix in map(config.command_rule, config.ALLOWED_COMMANDS)
                  ] if allow_rules else []
         rules += _web_rules() if tools else []
+        # Read rules, not --add-dir, which would let the agent write there too.
+        rules += [config.read_rule(d) for d in config.EXTRA_DIRS] if tools and not permissions.bypass() else []
         if rules or mcp_rules:
             command += ["--allowedTools", ",".join(rules + mcp_rules)]
         if model:

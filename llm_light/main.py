@@ -62,6 +62,7 @@ _COMMANDS = [
     ("/memory",     "open this project's instructions in your editor"),
     ("/model [name]", "show the model, pin one (opus, sonnet, haiku, fable) or auto"),
     ("/permissions [mode]", "show or set the permission mode"),
+    ("/add-dir [path]", "let the agent read a directory outside the project; lists them without one"),
     ("/allow [prefix]", "let the agent run commands starting with this; lists them without one"),
     ("/disallow <prefix>", "take a command prefix back"),
     ("/run <cmd>",  "run a shell command and ask Claude about its output"),
@@ -735,6 +736,9 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             if name == "/allow":
                 print(f"  {_T_SYS}  {commands.allow_command(arg)}")
                 continue
+            if name == "/add-dir":
+                print(f"  {_T_SYS}  {commands.add_dir(arg)}")
+                continue
             if name == "/disallow":
                 print(f"  {_T_SYS}  {commands.disallow_command(arg)}")
                 continue
@@ -1047,6 +1051,16 @@ def _web_note(provider) -> str | None:
     return f"--web has no effect with {provider.name}: llm_light gives its agent no web tools."
 
 
+def _add_dir_note(provider) -> str | None:
+    """What to say at startup when --add-dir was given where it has no effect."""
+    import llm_light.config as _config
+    if not _config.EXTRA_DIRS or (AUTH_MODE == "OAUTH" and provider.has(AGENT)):
+        return None
+    if provider.has(AGENT):
+        return "--add-dir needs a Claude subscription: with an API key the tools read the project only."
+    return f"--add-dir has no effect with {provider.name}: llm_light gives its agent no file tools."
+
+
 def _build_parser():
     import argparse
     parser = argparse.ArgumentParser(description="LLM Light RAG Chat")
@@ -1090,6 +1104,9 @@ def _build_parser():
                         help="Let the Claude CLI agent (subscription mode) search the web and fetch "
                              "pages in every permission mode, not only with "
                              "--dangerously-skip-permissions. Also LLM_LIGHT_WEB=1.")
+    parser.add_argument("--add-dir", action="append", default=[], metavar="DIR",
+                        help="Let the Claude CLI agent (subscription mode) read DIR, outside the "
+                             "project, but not write there. Repeatable; /add-dir adds one in a session.")
     parser.add_argument("-c", "--continue", dest="resume", action="store_true",
                         help="Resume this project's previous conversation. With a question or -p, "
                              "answer it there and exit.")
@@ -1140,6 +1157,10 @@ def main():
     saved_commands = commands.load_saved_allowed()
     if args.web:
         _config.WEB_ACCESS = True
+    for directory in args.add_dir:
+        message = commands.add_dir(directory)
+        if message.startswith("Not added"):
+            parser.error(f"--add-dir {directory}: {message[len('Not added: '):]}")
 
     _configure_proxy(parser, args)
 
@@ -1200,8 +1221,9 @@ def main():
     if _config.ALLOWED_COMMANDS and not provider.has(SHELL):
         print(f"  {_T_SYS}  shell access is disabled for {provider.name}: its agent cannot run commands. "
               "--allow-command only lets llm_light run the affected tests.", file=sys.stderr)
-    if _web_note(provider):
-        print(f"  {_T_SYS}  {_web_note(provider)}", file=sys.stderr)
+    for note in (_web_note(provider), _add_dir_note(provider)):
+        if note:
+            print(f"  {_T_SYS}  {note}", file=sys.stderr)
     if state.pinned_model and not provider.has(TOP_TIER):
         print(f"  {_T_SYS}  --model ignored: {provider.name} picks its own model.", file=sys.stderr)
         state.pinned_model = None

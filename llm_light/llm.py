@@ -702,11 +702,21 @@ def _is_followup_clarification(query: str) -> bool:
     return False
 
 
+def _extra_dirs_note() -> str:
+    """Names the directories /add-dir opened to the agent, which it would not look in
+    unasked. Empty without them, so the request is what it was."""
+    from llm_light import config as _config
+    if not (_config.EXTRA_DIRS and _agent_oauth()):
+        return ""
+    return ("[Also readable, read-only, with Read, Grep and Glob: "
+            + "; ".join(_config.EXTRA_DIRS) + "]\n")
+
+
 def _question_text(query, context):
     """The question block: the plan/bypass note (none in default mode), the
     question, then anything attached (@file contents, !command output)."""
     api_shell = not _agent_oauth() and providers.active().has(SHELL)
-    note = permissions.question_note(api_shell=api_shell)
+    note = permissions.question_note(api_shell=api_shell) + _extra_dirs_note()
     return f"Question:\n{note}{query}" + (f"\n\n{context}" if context else "")
 
 

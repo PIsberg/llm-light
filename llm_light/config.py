@@ -240,6 +240,21 @@ def parse_flag(value: str | None) -> bool:
 # --web or LLM_LIGHT_WEB=1.
 WEB_ACCESS = parse_flag(env_get("WEB", ""))
 
+# Directories outside the project the OAuth CLI agent may read (Read, Grep, Glob), never
+# write: an edit there would bypass llm_light's diff, commit and /undo. Absolute paths,
+# from --add-dir or /add-dir, for this session only.
+EXTRA_DIRS: list = []
+
+
+def read_rule(path: str) -> str:
+    """The CLI allow rule that lets Read, Grep and Glob into `path` and everything under
+    it. A Windows drive becomes /c/...: claude 2.1.322 matched //c/Users/... and not
+    //C:/Users/..."""
+    posix = path.replace("\\", "/").rstrip("/")
+    if len(posix) >= 2 and posix[1] == ":":
+        posix = "/" + posix[0].lower() + posix[2:]
+    return f"Read(/{posix}/**)"
+
 SKIP_DIRS      = {
     ".git", "target", "build", "node_modules",
     ".idea", "__pycache__", ".mvn", ".gradle",
