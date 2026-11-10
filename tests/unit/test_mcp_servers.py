@@ -328,7 +328,7 @@ def test_subscription_startup_leaves_the_servers_to_the_agent(mcp_file):
     with patch.object(config, "AUTH_MODE", "OAUTH"), patch.object(mcp_servers, "start") as start:
         lines = mcp_servers.startup_lines(_claude_mod.ClaudeProvider())
     start.assert_not_called()
-    assert lines == ["MCP servers for the agent, which starts them itself each turn: nonce"]
+    assert lines == ["MCP servers for the agent, which starts them itself each turn: nonce (all tools)"]
 
 
 def test_api_key_startup_connects(mcp_file):

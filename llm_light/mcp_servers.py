@@ -29,6 +29,7 @@ Plan mode uses no server: an MCP tool can change things outside the repo.
 import atexit
 import concurrent.futures
 import copy
+import fnmatch
 import json
 import os
 import re
@@ -42,6 +43,10 @@ TYPES = ("stdio", "http", "sse")
 _SERVER_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}")
 _TOOL_NAME_MAX = 64  # the Messages API's limit on a tool name
 _DESCRIPTION_MAX = 2048
+# One "allow" entry: a tool name, or a pattern with * (fnmatch, case-sensitive). No comma,
+# space or parenthesis, since each becomes one rule in the CLI's comma-separated
+# --allowedTools, where "Bash(x)" would be a rule of another kind.
+_ALLOW_ENTRY = re.compile(r"[A-Za-z0-9_.*-]{1,64}")
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 INSTALL_HINT = ("pipx install 'llm-light-cli[mcp]' (or pipx inject llm-light-cli mcp, "
                 "or pip install mcp in a checkout)")
@@ -62,10 +67,26 @@ def _str_map(value, what):
     return dict(value)
 
 
+def _allow(raw) -> dict:
+    """{"allow": [...]} when the entry narrows its tools, else {}."""
+    if "allow" not in raw:
+        return {}
+    allow = raw["allow"]
+    if not isinstance(allow, list) or not all(isinstance(a, str) and _ALLOW_ENTRY.fullmatch(a)
+                                              for a in allow):
+        raise ValueError("allow must be a list of tool names, each 1 to 64 letters, digits, "
+                         "_ . - or *")
+    return {"allow": list(allow)}
+
+
 def _entry(raw) -> dict:
     """The validated, normalised form of one server entry; ValueError says what is wrong."""
     if not isinstance(raw, dict):
         raise ValueError("must be an object")
+    return {**_transport_entry(raw), **_allow(raw)}
+
+
+def _transport_entry(raw) -> dict:
     kind = raw.get("type", "stdio")
     if kind not in TYPES:
         raise ValueError(f"type must be one of {', '.join(TYPES)}")
@@ -159,6 +180,7 @@ def cli_config(servers: dict) -> dict:
     out = {}
     for name, entry in servers.items():
         entry = copy.deepcopy(entry)
+        entry.pop("allow", None)  # llm_light's key, not the CLI's
         if entry["type"] == "stdio":
             entry["env"] = {"HOME": home, "USERPROFILE": home, **entry["env"]}
         out[name] = entry
@@ -166,12 +188,31 @@ def cli_config(servers: dict) -> dict:
 
 
 def allow_rules(servers: dict) -> list:
-    """One CLI allow rule per server, covering all of its tools."""
-    return [PREFIX + name for name in servers]
+    """The CLI allow rules: mcp__<server> for all of a server's tools, or one
+    mcp__<server>__<tool> per "allow" entry. A tool without a rule is denied, since a -p
+    run has no one to ask."""
+    rules = []
+    for name, entry in servers.items():
+        if "allow" in entry:
+            rules += [f"{PREFIX}{name}__{tool}" for tool in entry["allow"]]
+        else:
+            rules.append(PREFIX + name)
+    return rules
+
+
+def _allowed_text(entry: dict) -> str:
+    if "allow" not in entry:
+        return "all tools"
+    return ", ".join(entry["allow"]) or "no tools"
+
+
+def allows(entry: dict, tool: str) -> bool:
+    """Whether the entry's "allow" list (none means all) lets this tool run."""
+    return "allow" not in entry or any(fnmatch.fnmatchcase(tool, pattern) for pattern in entry["allow"])
 
 
 def cli_status_lines(servers: dict) -> list:
-    names = ", ".join(servers)
+    names = ", ".join(f"{name} ({_allowed_text(entry)})" for name, entry in servers.items())
     return [f"MCP servers for the agent, which starts them itself each turn: {names}"]
 
 
@@ -364,6 +405,8 @@ class _Manager:
         self.definitions, self.routes = [], {}
         for srv in self.servers.values():
             for tool in srv.listed:
+                if not allows(srv.entry, tool.name):
+                    continue  # left out, so the model never sees it and its schema costs nothing
                 name = exposed_name(srv.name, tool.name)
                 if name is None or name in self.routes:
                     continue
@@ -406,9 +449,12 @@ class _Manager:
             names = [t.name for t in srv.listed]
             if srv.client is not None:
                 defs = [d for d in self.definitions if self.routes[d["name"]][0] is srv]
+                offered = [n for n in names if allows(srv.entry, n)]
                 tokens = len(json.dumps(defs)) // 4
-                shown = ", ".join(names[:8]) + (", ..." if len(names) > 8 else "")
-                lines.append(f"MCP {srv.name}: {len(defs)} tools ({shown}), about {tokens:,} tokens a turn")
+                shown = ", ".join(offered[:8]) + (", ..." if len(offered) > 8 else "")
+                held = len(names) - len(offered)
+                lines.append(f"MCP {srv.name}: {len(defs)} tools ({shown}), about {tokens:,} tokens a turn"
+                             + (f"; {held} more not allowed" if held else ""))
             else:
                 where = f"; log: {_log_path(srv.name)}" if srv.entry["type"] == "stdio" else ""
                 lines.append(f"MCP {srv.name}: not connected: {srv.error or 'stopped'}{where}")
