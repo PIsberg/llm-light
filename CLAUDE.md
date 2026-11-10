@@ -41,6 +41,7 @@ python3 llm_light.py --provider codex "What does OrderService do?"
 # Let the OAuth agent run these commands (or type /allow <prefix> at the prompt)
 python3 llm_light.py --allow-command "python -m pytest"
 python3 llm_light.py --test-mode small        # 5 files, 10 methods each
+python3 llm_light.py --web                    # the OAuth agent may search the web and fetch pages
 
 # Permission modes (shift+tab or /permissions switch them in a session)
 python3 llm_light.py -y                                   # acceptEdits

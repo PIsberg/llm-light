@@ -228,6 +228,18 @@ def parse_allowed_commands(spec: str) -> list:
 # (repeatable) or LLM_LIGHT_ALLOW_COMMANDS="python -m pytest; powershell: Invoke-Pester".
 ALLOWED_COMMANDS = parse_allowed_commands(env_get("ALLOW_COMMANDS", ""))
 
+
+def parse_flag(value: str | None) -> bool:
+    """An on/off environment value: 1, true, yes or on (any case) is on."""
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+# Let the OAuth CLI agent search the web and fetch pages (WebSearch, WebFetch) in
+# every permission mode, not only in bypass. Off by default: a turn reads untrusted
+# repo text, and a fetched URL can carry what it read out of the machine. Set with
+# --web or LLM_LIGHT_WEB=1.
+WEB_ACCESS = parse_flag(env_get("WEB", ""))
+
 SKIP_DIRS      = {
     ".git", "target", "build", "node_modules",
     ".idea", "__pycache__", ".mvn", ".gradle",

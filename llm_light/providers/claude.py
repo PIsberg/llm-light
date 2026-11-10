@@ -157,12 +157,13 @@ def _agent_tools() -> str:
     backstop, since one CLI release ignored --tools.
 
     NotebookEdit costs 630 tokens a round and is only offered where there are notebooks,
-    because Edit refuses .ipynb. The web tools are only in bypass: in the other modes a
-    -p run denies them anyway.
+    because Edit refuses .ipynb. The web tools come with bypass, or in any mode with
+    --web, which also allows them (_web_rules): offered alone, a -p run denies them.
     """
     from llm_light import permissions
+    web = ["WebSearch", "WebFetch"] if config.WEB_ACCESS else []
     if permissions.plan():
-        return "Read,Grep,Glob"
+        return ",".join(["Read", "Grep", "Glob"] + web)
     names = ["Read", "Grep", "Glob", "Edit", "Write"]
     if _project_has_notebooks():
         names.append("NotebookEdit")
@@ -171,8 +172,15 @@ def _agent_tools() -> str:
     else:
         # The same shells the caller leaves off --disallowed-tools.
         shells = {config.command_rule(c)[0] for c in config.ALLOWED_COMMANDS}
-        names += [shell for shell in ("Bash", "PowerShell") if shell in shells]
+        names += [shell for shell in ("Bash", "PowerShell") if shell in shells] + web
     return ",".join(names)
+
+
+def _web_rules() -> list:
+    """Allow rules for --web outside bypass. A -p run has no one to ask, so a web tool
+    without a rule is denied (claude 2.1.322)."""
+    from llm_light import permissions
+    return ["WebSearch", "WebFetch"] if config.WEB_ACCESS and not permissions.bypass() else []
 
 
 # The CLI runs a full agent loop (read files, edit, re-read), so a multi-file
@@ -506,6 +514,7 @@ def _make_cli_subprocess_call(
         command += ["--tools", _agent_tools() if tools else ""]
         rules = [f"{tool}({prefix}:*)" for tool, prefix in map(config.command_rule, config.ALLOWED_COMMANDS)
                  ] if allow_rules else []
+        rules += _web_rules() if tools else []
         if rules or mcp_rules:
             command += ["--allowedTools", ",".join(rules + mcp_rules)]
         if model:
