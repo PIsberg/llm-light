@@ -22,8 +22,8 @@ from collections import deque
 from pathlib import Path
 
 import llm_light.state as state
-from llm_light import (commands, completions, doctor, headless, mcp_servers, permissions, providers, proxy,
-                       session, settings)
+from llm_light import (commands, completions, doctor, headless, hooks, mcp_servers, permissions, providers,
+                       proxy, session, settings)
 from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, TOP_TIER, USD_BUDGET
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
 from llm_light.ui import (
@@ -56,6 +56,7 @@ _COMMANDS = [
     ("/doctor",     "check the install, login and tools"),
     ("/effort [level]", "show the effort, pin one (low, medium, high, max) or auto"),
     ("/export [file]", "save the conversation to a text file"),
+    ("/hooks",      "your hooks from ~/.llm_light/hooks.json"),
     ("/init",       "write or improve this project's CLAUDE.md or AGENTS.md"),
     ("/mcp",        "the MCP servers from ~/.llm_light/mcp.json and their tools"),
     ("/memory",     "open this project's instructions in your editor"),
@@ -68,6 +69,7 @@ _COMMANDS = [
     ("/budget <$>", "cap session spend; routing drops to the cheapest model at the cap"),
     ("/status",     "version, provider, model, permissions, shell and index"),
     ("/resume",     "switch to one of this project's earlier conversations"),
+    ("/rename [name]", "name this conversation, to find it with /resume or --resume <name>"),
     ("/review [ref]", "review the uncommitted changes, or those against a ref"),
     ("/rewind",     "go back to before an earlier turn: its files and the conversation"),
     ("/undo",       "revert the last commit Claude made"),
@@ -614,6 +616,10 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             if query == "/context":
                 doctor.print_context()
                 continue
+            if query == "/hooks":
+                for line in hooks.command_lines():
+                    print(f"  {_T_SYS}  {line}")
+                continue
             if query == "/mcp":
                 for line in mcp_servers.command_lines(providers.active()):
                     print(f"  {_T_SYS}  {line}")
@@ -712,6 +718,9 @@ def start_chat(auto_apply=False, resume=False, pick=False):
                 continue
             if query == "/resume":
                 _resume_picker()
+                continue
+            if name == "/rename":
+                print(f"  {_T_SYS}  {session.rename(arg)}")
                 continue
             if query == "/rewind":
                 targets = commands.rewind_targets()
@@ -1041,8 +1050,10 @@ def _build_parser():
     parser.add_argument("-c", "--continue", dest="resume", action="store_true",
                         help="Resume this project's previous conversation. With a question or -p, "
                              "answer it there and exit.")
-    parser.add_argument("--resume", dest="pick", action="store_true",
-                        help="Pick one of this project's earlier conversations to resume.")
+    parser.add_argument("--resume", dest="pick", nargs="?", const=True, default=False, metavar="NAME",
+                        help="Pick one of this project's earlier conversations to resume, or name it: "
+                             "--resume NAME continues the one /rename called NAME, also with a "
+                             "question or -p.")
     parser.add_argument("--provider", choices=providers.NAMES, default=providers.DEFAULT,
                         help="Which agent answers: " + ", ".join(providers.NAMES) + " (default: %(default)s).")
     parser.add_argument("--proxy", metavar="URL",
@@ -1113,7 +1124,7 @@ def main():
     if args.print_mode and not query_str and sys.stdin.isatty():
         parser.error("-p needs a question: llm_light -p \"...\", or pipe one on stdin")
     interactive = not args.print_mode and not query_str and sys.stdin.isatty()
-    if args.pick and not interactive:
+    if args.pick is True and not interactive:
         parser.error("--resume asks which conversation, so it needs a terminal and no question; "
                      "--continue answers in the latest one")
     if args.output_format and not args.print_mode:
@@ -1121,6 +1132,16 @@ def main():
     for notice in _config.legacy_notices():
         print(f"  {_T_SYS}  {notice}", file=sys.stderr)
     provider = providers.select(args.provider)
+    if isinstance(args.pick, str):
+        # --resume NAME: make that conversation the current one, then go on as --continue.
+        found = session.find(args.pick)
+        if found is None:
+            named = [e["name"] for e in session.conversations() if e["name"]]
+            parser.error(f"--resume {args.pick}: no conversation of this project is called that. "
+                         + ("Named ones: " + ", ".join(named) if named
+                            else "/rename <name> names the current one."))
+        session.resume(found["path"])
+        args.pick, args.resume = False, True
     if args.doctor:  # before the login check: a broken login is why people run it
         raise SystemExit(doctor.run())
     provider.require_auth()
@@ -1138,7 +1159,7 @@ def main():
         print(f"  {_T_SYS}  --model ignored: {provider.name} picks its own model.", file=sys.stderr)
         state.pinned_model = None
     # Before the first turn: with an API key the servers' tools join the cached tool list.
-    for line in mcp_servers.startup_lines(provider):
+    for line in mcp_servers.startup_lines(provider) + hooks.problems():
         print(f"  {_T_SYS}  {line}", file=sys.stderr)
     set_by_flag = set()
     if args.permission_mode or args.skip_permissions or args.yes:

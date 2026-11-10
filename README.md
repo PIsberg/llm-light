@@ -215,6 +215,21 @@ That is short for `--proxy http://127.0.0.1:8080 --proxy-ca ~/.llm-fw/ca.crt`. F
     ```
 *   **Sinkhole mode** needs none of this: llm-fw redirects the API hosts at the OS level, so only the CA trust matters.
 
+#### Hooks
+Run your own command around the agent's work, a formatter after each edit or a policy check before a command, by listing it in `~/.llm_light/hooks.json`, in the shape of Claude Code's `hooks` setting:
+```json
+{
+  "hooks": {
+    "PostToolUse": [{ "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "ruff format --quiet", "timeout": 30 }] }],
+    "PreToolUse":  [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "/home/me/bin/policy-check" }] }]
+  }
+}
+```
+*   **Which file**: only that one (`LLM_LIGHT_HOOKS_CONFIG` moves it), never a project's `.claude/settings.json`, so a cloned repo cannot choose a command to run. Your `~/.claude/settings.json` hooks do not run either: the agent starts with an empty home. Events: `PreToolUse`, `PostToolUse`, `Notification`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `SessionStart`, `SessionEnd`. A matcher is a regular expression over the tool name; empty or `*` matches every tool.
+*   **On a subscription** the `claude` agent runs every event as Claude Code does, after llm_light's own guard for allowed commands. The agent runs with an empty home directory, so give commands absolute paths rather than `~`.
+*   **With an API key** llm_light runs `PreToolUse` and `PostToolUse` itself, around its tools and after it writes an edit, under Claude Code's tool names (`Read`, `Grep`, `Glob`, `Bash`, `Edit` for a changed file, `Write` for a new one, `mcp__<server>__<tool>`), so one matcher works in both modes. The command gets the event as JSON on stdin and runs from the project root. Exit 2 blocks a `PreToolUse` call and its stderr tells the model why; on `PostToolUse` the stderr goes to the model with the result. Any other failure, or passing `timeout` (default 60 s), is noted and the call goes on. JSON printed on stdout is not read. Edit hooks run before the auto-commit, so the commit holds what a formatter made of the file.
+*   `/hooks` lists them; `/doctor` checks the file without running anything.
+
 #### MCP servers
 Give the agent the tools of your MCP servers (documentation lookup, an issue tracker, a database) by listing them in `~/.llm_light/mcp.json`, in the shape of Claude Code's `.mcp.json`:
 ```json
@@ -284,7 +299,7 @@ Bypass asks nothing, so use it only in a sandbox, a container or a repository yo
 
 On a subscription the agent is offered only the tools its mode can use: reading and editing files, plus a shell where the table above allows one, plus `NotebookEdit` in a project with notebooks, and the web tools in bypass. It cannot start subagents, run skills or schedule jobs. That saves about 11,000 input tokens on every model round.
 
-`python3 llm_light.py --continue` (or `-c`) picks up this project's previous conversation where you left it, as `claude --continue` does. The conversation is saved after every turn to `~/.llm_light_sessions/` (one file per project, outside the repo so a cloned repo cannot supply one), along with the session's model. Cost counters start from zero. Retrieval runs fresh for each new question, but earlier answers may describe code that has changed since. `/clear` starts a new conversation and keeps the old one: `--resume` at startup, or `/resume` in a session, lists this project's saved conversations (date, turns, first question) and switches to the one you pick, keeping the newest 10 per project and provider. `--resume` asks which conversation, so it needs a terminal. `--continue` also takes a question: `llm_light.py -c -p "and then?"` answers in the saved conversation and saves it again, while a plain `-p` question sends no history and saves nothing.
+`python3 llm_light.py --continue` (or `-c`) picks up this project's previous conversation where you left it, as `claude --continue` does. The conversation is saved after every turn to `~/.llm_light_sessions/` (one file per project, outside the repo so a cloned repo cannot supply one), along with the session's model. Cost counters start from zero. Retrieval runs fresh for each new question, but earlier answers may describe code that has changed since. `/clear` starts a new conversation and keeps the old one: `--resume` at startup, or `/resume` in a session, lists this project's saved conversations (date, turns, first question) and switches to the one you pick, keeping the newest 10 unnamed ones per project and provider. `/rename auth-fix` names the conversation: the name leads its line in the list, it is never pruned, and `--resume auth-fix` continues it without asking, also with a question (`--resume auth-fix -p "and then?"`). A plain `--resume` asks which conversation, so it needs a terminal. `--continue` also takes a question: `llm_light.py -c -p "and then?"` answers in the saved conversation and saves it again, while a plain `-p` question sends no history and saves nothing.
 
 Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session keeps the first question's model (`LLM_LIGHT_ROUTE_ONCE=0` routes every question). A question that routes to Opus asks first: Opus 5.5, Fable 5.1 or Sonnet 5.5, each with its estimated cost for the turn. Esc, or running without a terminal, picks Sonnet 5.5.
 
@@ -301,6 +316,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/doctor` | Check the install, login and tools. It starts no program and sends nothing. `--doctor` runs it from the command line, even when the login is what is broken, and exits 1 on a problem |
 | `/effort [level]` | Show the effort, or pin `low`, `medium`, `high` or `max` for every question; `auto` returns to routing. It also sets how much code retrieval sends. Claude only |
 | `/export [file]` | Save the conversation as plain text; without a name, to `llm_light-conversation-<date>-<time>.txt` in the project (a `.txt`, so the skeleton does not pick it up) |
+| `/hooks` | Your hooks from `~/.llm_light/hooks.json`, by event and matcher (see [Hooks](#hooks)) |
 | `/init` | Ask the model to write or improve this project's `CLAUDE.md` (`AGENTS.md` for Gemini and Codex), as a normal turn, so edits ask as usual |
 | `/mcp` | The MCP servers from `~/.llm_light/mcp.json`: with an API key, whether each connected and its tools; on a subscription, the servers the agent starts each turn (see [MCP servers](#mcp-servers)) |
 | `/memory` | Open that file in `$VISUAL` or `$EDITOR`; it goes out with every question |
@@ -314,7 +330,8 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/loop <interval> <question>` | Ask again every `30s`, `5m` or `1h`, counted from the end of the last turn, up to 20 turns. The question may be one of your own `/commands`. `ctrl+c`, a failed turn or a reached `/budget` stops either form. Nothing can be typed while it runs, and in `default` mode a turn that edits still stops to ask |
 | `/budget <$>` | Cap the session's spend; at the cap, questions go to the cheapest model. `/budget off` removes it |
 | `/status` | Version, project, provider and access, model, permission mode, what the shell may run, index state and where the conversation is saved |
-| `/resume` | Switch to one of this project's saved conversations, picked from a list with their date, turn count and first question. The conversation you leave is kept |
+| `/resume` | Switch to one of this project's saved conversations, picked from a list with their name, date, turn count and first question. The conversation you leave is kept |
+| `/rename [name]` | Name this conversation, so `/resume` shows it and `--resume <name>` continues it without asking; a named conversation is never pruned. Without a name, shows the current one. Names are one line, up to 60 characters, unique per project |
 | `/review [ref]` | Review the uncommitted changes, or those against a ref, as a turn in plan mode whatever the session's mode, so it cannot edit or run a command. Up to 50,000 characters of diff are sent, and untracked files are named. Your own `~/.llm_light/commands/review.md` replaces it, and likewise `init.md` for `/init` |
 | `/rewind` | Go back to before an earlier turn of this run: picks the turn from a menu, truncates the conversation to before it and resets the files to the commit HEAD was at then (`git reset --keep`). Refuses, changing nothing, if a commit since is not a `Claude:` one or a file it would reset has local edits. Edits the agent left uncommitted are not restored; compaction and `/clear` drop the earlier turns from the menu |
 | `/undo` | Undo the last `Claude:` commit. Keeps uncommitted work; refuses if the last commit is yours or its files have local edits |

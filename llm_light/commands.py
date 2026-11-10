@@ -754,7 +754,8 @@ def status_lines() -> list:
         f"Shell         {shell}",
         f"Command shell {user_shell.name()}",
         f"Index         {index}",
-        f"Conversation  {turns} turn{'' if turns == 1 else 's'}, saved to {session.session_file()}",
+        f"Conversation  " + (f"{state.session_name}, " if state.session_name else "")
+        + f"{turns} turn{'' if turns == 1 else 's'}, saved to {session.session_file()}",
     ]
 
 

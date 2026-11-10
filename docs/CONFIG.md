@@ -30,7 +30,7 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `SESSION_DIR` | Where `session.py` saves each project's conversation for `--continue`, one file per project named by a hash of its path (`~/.llm_light_sessions`; override with `LLM_LIGHT_SESSION_DIR`). In the home directory so a cloned repo cannot supply a conversation. `/clear` keeps the old one next to it as `<name>.saved-<stamp>.json` for `/resume` |
 | `USER_COMMANDS_DIR` | Where your own slash commands live: `<name>.md` becomes `/<name>` (`~/.llm_light/commands`; override with `LLM_LIGHT_COMMANDS_DIR`). Only this directory is read, never the project's |
 | `MCP_START_TIMEOUT` / `MCP_CALL_TIMEOUT` | API-key mode: seconds a server has to start and list its tools (60), and one tool call has to answer (120). The subscription's agent uses its own |
-| `SESSION_KEEP` | Earlier conversations kept per project and provider after `/clear`, for `/resume` and `--resume` (default 10; the oldest is deleted beyond that) |
+| `SESSION_KEEP` | Earlier conversations kept per project and provider after `/clear`, for `/resume` and `--resume` (default 10; the oldest is deleted beyond that). A conversation named with `/rename` is not counted and never deleted |
 | `HEARTBEAT_SECS` | How often the heartbeat thread wakes (default 30) |
 | `CACHE_TTL_SECS` | Seconds since the last turn or warm before the heartbeat warms the cache again (default 3300, five minutes inside the skeleton's 1-hour TTL) |
 | `MODEL_HAIKU` / `MODEL_SONNET` / `MODEL_OPUS` | Model ID constants used by the router |
@@ -50,6 +50,7 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `CLI_RESUME` | Subscription turns continue one `claude` CLI session (`--resume`). Default on: 25% lower API-equivalent cost per session and 44% more total input tokens (`docs/BENCHMARKS.md`, section 2h). `LLM_LIGHT_CLI_RESUME=0` re-sends the history as one prompt on every turn. Not used in API-key mode or by Gemini and Codex |
 | `WORKTREE_BOOST` | Z-score boost for chunks in modified, staged or untracked files; hybrid path only (default 1.0, tuned with `benchmark_models.py --worktree`; 1.5 starts losing answers). Disable with `LLM_LIGHT_WORKTREE_BOOST=0` |
 | `LLM_LIGHT_SETTINGS_FILE` | Where `/config` keeps its settings (default `~/.llm_light/settings.json`). Never read from the project |
+| `LLM_LIGHT_HOOKS_CONFIG` | Where your hooks are listed (default `~/.llm_light/hooks.json`, the shape of Claude Code's `hooks` setting). Never read from the project. See [architecture/components.md](architecture/components.md#hooks) |
 | `LLM_LIGHT_MCP_CONFIG` | Where the MCP servers are listed (default `~/.llm_light/mcp.json`, the shape of Claude Code's `.mcp.json`). Never read from the project. See [architecture/components.md](architecture/components.md#mcp-servers) |
 | `LLM_LIGHT_SHELL` | Windows only: which shell runs `!command`, `/run` and the API-mode `shell` tool. Default is Git Bash when Git for Windows is installed, else `cmd.exe`. `cmd` forces `cmd.exe`; a path names another bash. On Linux and macOS it is always `sh` |
 | `LLM_LIGHT_RUN_TIMEOUT` | Timeout in seconds for the `shell` tool, `!command` and `/run` (default 120; 0 or blank disables the cap) |

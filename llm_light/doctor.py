@@ -79,6 +79,19 @@ def _mcp(provider) -> tuple:
     return OK, f"MCP servers: {names}"
 
 
+def _hooks() -> tuple:
+    """Reads ~/.llm_light/hooks.json; runs no hook."""
+    from llm_light import hooks
+    found, problems = hooks.load()
+    if problems:
+        more = f" ({len(problems) - 1} more)" if len(problems) > 1 else ""
+        return PROBLEM, f"Hooks: {problems[0]}{more}"
+    if not found:
+        return NOTE, f"Hooks: none; add them to {hooks.config_file()}"
+    count = sum(len(g["hooks"]) for groups in found.values() for g in groups)
+    return OK, f"Hooks: {count} command{'' if count == 1 else 's'} on {', '.join(found)}"
+
+
 def _index() -> tuple:
     from llm_light.config import INDEXABLE_EXTENSIONS
     cache = config.CACHE_DIR
@@ -122,6 +135,7 @@ def checks() -> list:
         found.append((OK if allowed else NOTE,
                       "Agent commands: " + ("; ".join(allowed) if allowed else "none; /allow <prefix> adds one")))
     found.append(_mcp(provider))
+    found.append(_hooks())
     found.append((OK, f"Permission mode: {permissions.mode()}"))
     if proxy.active():
         found.append((OK, f"Proxy: {proxy.display()}"))

@@ -147,8 +147,25 @@ def all_tools():
 
 
 def run_tool(name, tool_input, root=None):
-    """Run one tool call. Returns (output_text, is_error); never raises."""
+    """Run one tool call, between the user's PreToolUse and PostToolUse hooks (hooks.py).
+    Returns (output_text, is_error); never raises."""
+    from llm_light import hooks
     root = Path(root or os.getcwd()).resolve()
+    if not hooks.configured():
+        return _run_tool(name, tool_input, root)
+    hook_name = hooks.CLI_NAMES.get(name, name)
+    hook_input = hooks.tool_input_for(name, tool_input, root)
+    blocked, why = hooks.run("PreToolUse", hook_name, hook_input, root)
+    if blocked:
+        return f"Error: a PreToolUse hook blocked this call: {why}", True
+    output, is_error = _run_tool(name, tool_input, root)
+    _, said = hooks.run("PostToolUse", hook_name, hook_input, root, tool_response=output)
+    if said:
+        output += f"\n\nPostToolUse hook: {said}"
+    return output, is_error
+
+
+def _run_tool(name, tool_input, root):
     try:
         if not isinstance(tool_input, dict):
             raise _ToolError("tool input must be a JSON object")
