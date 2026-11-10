@@ -191,6 +191,11 @@ def cost_breakdown(usage, model=None) -> dict:
     if _count(reported) and sum(costs.values()) > 0:
         scale = reported / sum(costs.values())
         costs = {k: v * scale for k, v in costs.items()}
+    # Server-run web searches (--web with an API key) bill per search, not per token.
+    searches = _count(getattr(getattr(usage, "server_tool_use", None), "web_search_requests", 0))
+    if searches:
+        from llm_light.config import WEB_SEARCH_PRICE_USD
+        costs["web_search"] = searches * WEB_SEARCH_PRICE_USD
     return costs
 
 
@@ -287,9 +292,10 @@ def print_session_summary():
         cost_cw  = state.session_costs["cache_write"]
         cost_cr  = state.session_costs["cache_read"]
         cost_out = state.session_costs["output"]
+        cost_web = state.session_costs.get("web_search", 0.0)  # --web with an API key
 
     total = inp + cw + cr + out
-    cost_tot = cost_inp + cost_cw + cost_cr + cost_out
+    cost_tot = cost_inp + cost_cw + cost_cr + cost_out + cost_web
 
     def pct(n):
         return f"{n / total * 100:.1f}%" if total else "—"
@@ -318,6 +324,11 @@ def print_session_summary():
     print(row("Cache write",       cw,   cost_cw))
     print(row("Cache read",        cr,   cost_cr,  _ANSI_GREEN))
     print(row("Output",            out,  cost_out))
+    if cost_web:
+        from llm_light.config import WEB_SEARCH_PRICE_USD
+        searches = f"{round(cost_web / WEB_SEARCH_PRICE_USD)} searches"
+        print(f"{_B}│{_R} {'Web search':<{col_w[0]}} {_B}│{_R} {searches:>{col_w[1]}}"
+              f" {_B}│{_R} {'':>{col_w[2]}} {_B}│{_R} {_ANSI_YELLOW}{f'${cost_web:.4f}':>{col_w[3]}}{_R} {_B}│{_R}")
     print(f"{_B}├{'─'*24}┼{'─'*14}┼{'─'*10}┼{'─'*12}┤{_R}")
     print(row("TOTAL",             total, cost_tot, _ANSI_BOLD))
 
@@ -395,7 +406,8 @@ def print_session_footer():
     with state.lock:
         inp, cw = state.session_tokens["input"], state.session_tokens["cache_write"]
         cr, out = state.session_tokens["cache_read"], state.session_tokens["output"]
-        cost = sum(state.session_costs[k] for k in ("input", "cache_write", "cache_read", "output"))
+        cost = sum(state.session_costs.get(k, 0.0)
+                   for k in ("input", "cache_write", "cache_read", "output", "web_search"))
         without = state.session_costs["without_cache"]
         turns = state.turn_count
     total = inp + cw + cr + out

@@ -234,11 +234,15 @@ def parse_flag(value: str | None) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-# Let the OAuth CLI agent search the web and fetch pages (WebSearch, WebFetch) in
-# every permission mode, not only in bypass. Off by default: a turn reads untrusted
-# repo text, and a fetched URL can carry what it read out of the machine. Set with
-# --web or LLM_LIGHT_WEB=1.
+# Let the model search the web and fetch pages: the OAuth CLI agent's WebSearch and
+# WebFetch in every permission mode, not only in bypass; with an API key, Anthropic's
+# server-run web_search and web_fetch tools (tools.web_tools). Off by default: a turn
+# reads untrusted repo text, and a fetched URL can carry what it read out of the
+# machine. Set with --web or LLM_LIGHT_WEB=1.
 WEB_ACCESS = parse_flag(env_get("WEB", ""))
+# A server-run web search bills $10 per 1,000 searches on top of tokens (Anthropic's
+# pricing, via the claude-api skill's reference of 2026-11-03); a fetch bills tokens only.
+WEB_SEARCH_PRICE_USD = 0.01
 
 # Directories outside the project the OAuth CLI agent may read (Read, Grep, Glob), never
 # write: an edit there would bypass llm_light's diff, commit and /undo. Absolute paths,
