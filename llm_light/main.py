@@ -110,6 +110,7 @@ _KEYS = [
     ("!<cmd>",      "run a command; its output goes with your next message"),
     ("!!<cmd>",     "run a program that needs the terminal; nothing is sent to the model"),
     ("@<path>",     "attach a project file or image to your message (tab completes)"),
+    ("alt+v",       "paste an image from the clipboard (also ctrl+v where the terminal allows)"),
     ("ctrl+c",      "cancel the running turn or command; at the prompt, clear the line, then quit"),
     ("↑ / ↓" if _UNICODE else "up / down", "previous prompts"),
 ]
@@ -496,6 +497,21 @@ def _prompt_bindings():
     @bindings.add("c-c", filter=Condition(lambda: bool(get_app().current_buffer.text)))
     def _clear_line(event):
         event.current_buffer.reset()
+
+    # alt+v everywhere; ctrl+v where the terminal passes it on (Windows Terminal turns it
+    # into a text paste, so it never arrives there). Claude Code uses the same pair.
+    @bindings.add("escape", "v")
+    @bindings.add("c-v")
+    def _paste_image(event):
+        from llm_light import clipboard
+        path, problem = clipboard.paste_image()
+        if path:
+            buffer = event.current_buffer
+            before = buffer.document.char_before_cursor
+            buffer.insert_text(("" if not before or before.isspace() else " ") + f"@{path} ")
+        else:
+            from prompt_toolkit.application import run_in_terminal
+            run_in_terminal(lambda: print(f"  {_T_SYS}  {problem}"))
 
     return bindings
 
