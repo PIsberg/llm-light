@@ -151,14 +151,34 @@ def _stop_turn_windows() -> None:
             kill_process_tree(proc)
         except Exception:  # noqa: BLE001  already gone: the read ends anyway
             pass
-    # An API-key turn has no process: close its stream, which ends the blocking read the
-    # interrupt waits for (#229). The client opens a new connection for the next request.
+    # An API-key turn has no process: end its stream's blocking read, which the interrupt
+    # waits for (#229). The client opens a new connection for the next request.
     stream = state.turn_stream
     if stream is not None:
+        _abort_stream(stream)
+
+
+def _abort_stream(stream) -> None:
+    """Shut the stream's socket down, then close the stream. Closing alone ends a blocked
+    read on Windows but not on Linux, where only shutdown() wakes a recv() that another
+    thread is blocked in."""
+    import socket
+    raw = getattr(stream, "_raw_stream", None)
+    response = getattr(stream, "response", None) or getattr(raw, "response", None)
+    try:
+        network = response.extensions.get("network_stream")
+        sock = network.get_extra_info("socket") if network is not None else None
+    except Exception:  # noqa: BLE001  another transport: closing is all there is
+        sock = None
+    if sock is not None:
         try:
-            stream.close()
-        except Exception:  # noqa: BLE001  closing a stream mid-read may raise; it is closed
-            pass
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass  # already closed by the peer
+    try:
+        stream.close()
+    except Exception:  # noqa: BLE001  closing a stream mid-read may raise; it is closed
+        pass
 
 
 @contextmanager
