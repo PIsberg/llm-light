@@ -5,7 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 
@@ -166,7 +166,7 @@ def _current_first_question():
 def test_resume_by_name_continues_it_without_asking():
     _two_conversations()
     start_chat, _, _ = _main(["--resume", "auth-fix"])
-    start_chat.assert_called_once_with(auto_apply=False, resume=True, pick=False)
+    start_chat.assert_called_once_with(auto_apply=False, resume=True, pick=False, load_compressor=ANY)
     assert _current_first_question() == "the named one"
 
 
@@ -190,7 +190,7 @@ def test_resume_with_an_unknown_name_is_a_usage_error_naming_the_known_ones(caps
 
 def test_resume_without_a_name_still_asks():
     start_chat, _, _ = _main(["--resume"])
-    start_chat.assert_called_once_with(auto_apply=False, resume=False, pick=True)
+    start_chat.assert_called_once_with(auto_apply=False, resume=False, pick=True, load_compressor=ANY)
 
 
 # --- the commands ---------------------------------------------------------------------------

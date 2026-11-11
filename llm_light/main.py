@@ -516,7 +516,9 @@ def _prompt_bindings():
     return bindings
 
 
-def start_chat(auto_apply=False, resume=False, pick=False):
+def start_chat(auto_apply=False, resume=False, pick=False, load_compressor=None):
+    """The interactive session. load_compressor, when given, starts the LLMLingua load with
+    the other background work; main() passes it, so a test calling this starts none."""
     print_startup_header(*(providers.active().header() or (MODEL, access_label(API_KEY_SOURCE))))
     # -y is the acceptEdits mode; from here the mode decides, so shift+tab
     # can switch back to asking.
@@ -537,45 +539,53 @@ def start_chat(auto_apply=False, resume=False, pick=False):
         print(f"  {_T_SYS}  {session.restore()}")
     _setup_signal_handlers()
 
-    # Kick off indexing in background so the prompt appears immediately.
-    # Any query submitted before indexing completes will wait at that point.
+    # Indexing runs in the background so the prompt appears at once. Any query submitted
+    # before it completes waits at that point; the toolbar says so meanwhile.
     state.indexing_done.clear()
-
-    def _bg_refresh():
-        try:
-            full_refresh(quiet=True)
-        finally:
-            state.indexing_done.set()
-
-    _refresh_thread = threading.Thread(target=_bg_refresh, daemon=True, name="llm-light-refresh")
-    _refresh_thread.start()
-    # If threading.Thread is mocked (test environment), is_alive() returns a
-    # MagicMock rather than bool. Run _bg_refresh() inline so indexing_done
-    # gets set and the query loop doesn't block indefinitely.
-    if not isinstance(_refresh_thread.is_alive(), bool):
-        _bg_refresh()
-
-    # The watcher needs no index, and neither its import nor a recursive schedule over
-    # a large tree should hold up the prompt. A background thread must not print.
     observer = None
+    watcher_thread = []
 
-    def _start_watcher():
-        nonlocal observer
-        try:
-            started = Observer()
-            started.schedule(SourceHandler(), path=".", recursive=True)
-            started.start()
-            observer = started
-        except Exception as e:
-            notify(f"File watcher did not start: {e}", error=True)
+    def _start_background():
+        """Indexing, the file watcher, the LLMLingua load and the cache heartbeat. Started
+        once the prompt is built, not before: their imports (the embedder, transformers,
+        watchdog) hold the GIL and the import locks, and on Windows they put about 90 ms
+        on the way to the prompt (#192). A background thread must not print."""
+        def _bg_refresh():
+            try:
+                full_refresh(quiet=True)
+            finally:
+                state.indexing_done.set()
 
-    _watcher_thread = threading.Thread(target=_start_watcher, daemon=True, name="llm-light-watcher")
-    _watcher_thread.start()
-    if not isinstance(_watcher_thread.is_alive(), bool):  # threading.Thread mocked in a test
-        _start_watcher()
+        _refresh_thread = threading.Thread(target=_bg_refresh, daemon=True, name="llm-light-refresh")
+        _refresh_thread.start()
+        # If threading.Thread is mocked (test environment), is_alive() returns a
+        # MagicMock rather than bool. Run _bg_refresh() inline so indexing_done
+        # gets set and the query loop doesn't block indefinitely.
+        if not isinstance(_refresh_thread.is_alive(), bool):
+            _bg_refresh()
 
-    if AUTH_MODE == "API_KEY" and providers.active().has(CACHING):
-        threading.Thread(target=heartbeat, daemon=True).start()
+        # The watcher needs no index, and neither its import nor a recursive schedule
+        # over a large tree should hold up the prompt.
+        def _start_watcher():
+            nonlocal observer
+            try:
+                started = Observer()
+                started.schedule(SourceHandler(), path=".", recursive=True)
+                started.start()
+                observer = started
+            except Exception as e:
+                notify(f"File watcher did not start: {e}", error=True)
+
+        _watcher_thread = threading.Thread(target=_start_watcher, daemon=True, name="llm-light-watcher")
+        _watcher_thread.start()
+        watcher_thread.append(_watcher_thread)
+        if not isinstance(_watcher_thread.is_alive(), bool):  # threading.Thread mocked in a test
+            _start_watcher()
+
+        if load_compressor is not None:
+            load_compressor()
+        if AUTH_MODE == "API_KEY" and providers.active().has(CACHING):
+            threading.Thread(target=heartbeat, daemon=True).start()
 
     if _PROMPTTK_AVAILABLE:
         from prompt_toolkit import HTML
@@ -623,12 +633,26 @@ def start_chat(auto_apply=False, resume=False, pick=False):
             print(f"\n{stat}")
             return input("> ").strip()
 
+    started = []
+
+    def _start_background_once(_app=None):
+        if not started:
+            started.append(True)
+            _start_background()
+
+    if _PROMPTTK_AVAILABLE:
+        # After the first frame is drawn: started before it, the threads slow the
+        # render itself.
+        _session.app.after_render += _start_background_once
+    else:
+        _start_background_once()
     try:
         while True:
             try:
                 query = _get_input()
             except (KeyboardInterrupt, EOFError):
                 break
+            _start_background_once()  # in case no frame was drawn
 
             if not query:
                 continue
@@ -818,7 +842,8 @@ def start_chat(auto_apply=False, resume=False, pick=False):
         pass
     finally:
         state.stop_event.set()
-        _watcher_thread.join(timeout=5)  # a quick exit may beat its start
+        for thread in watcher_thread:  # none when the session ended before the first frame
+            thread.join(timeout=5)  # a quick exit may beat its start
         if observer is not None:
             try:
                 observer.stop()
@@ -1183,11 +1208,6 @@ def main():
         manager = MockManager(args.test_mode)
         manager.start()
 
-    # Kick off LLMLingua-2 model load in background as early as possible so
-    # indexing + skeleton-building run in parallel with the model load. No-op
-    # if disabled or if the package isn't installed.
-    _start_llmlingua_load()
-
     state.bypass_allowed = bool(args.skip_permissions or args.allow_skip_permissions
                                 or args.permission_mode == permissions.BYPASS)
     permissions.set_mode(args.permission_mode
@@ -1204,6 +1224,11 @@ def main():
     if args.print_mode and not query_str and sys.stdin.isatty():
         parser.error("-p needs a question: llm_light -p \"...\", or pipe one on stdin")
     interactive = not args.print_mode and not query_str and sys.stdin.isatty()
+    if not interactive:
+        # Kick off the LLMLingua-2 model load in the background as early as possible, so
+        # indexing and skeleton-building run in parallel with it. No-op if disabled or not
+        # installed. An interactive session starts it after the prompt is built (start_chat).
+        _start_llmlingua_load()
     if args.pick is True and not interactive:
         parser.error("--resume asks which conversation, so it needs a terminal and no question; "
                      "--continue answers in the latest one")
@@ -1252,7 +1277,8 @@ def main():
         set_by_flag.add("model")
     settings.apply_at_startup(provider, skip=set_by_flag)
     if interactive:
-        start_chat(auto_apply=args.yes, resume=args.resume, pick=args.pick)
+        start_chat(auto_apply=args.yes, resume=args.resume, pick=args.pick,
+                   load_compressor=_start_llmlingua_load)
         return
     if permissions.bypass():
         print(f"  {_bypass_warning()}", file=sys.stderr)

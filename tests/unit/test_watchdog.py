@@ -85,9 +85,10 @@ class TestWatchdogResourceManagement:
 
     def test_observer_cleanup_on_exception(self):
         """Test that start_chat propagates full_refresh exceptions to the caller."""
-        # full_refresh now runs in a background thread; with threading.Thread
-        # mocked (no real thread) _bg_refresh runs inline, so the exception
-        # propagates synchronously just as before.
+        # full_refresh runs in a background thread; with threading.Thread mocked (no
+        # real thread) _bg_refresh runs inline, so the exception propagates
+        # synchronously. The plain-input prompt starts the background work before the
+        # first question; the prompt_toolkit one waits for its first frame (#192).
         import llm_light as cl
         mock_observer = MagicMock()
 
@@ -98,11 +99,11 @@ class TestWatchdogResourceManagement:
              patch('llm_light.Observer', return_value=mock_observer), \
              patch('llm_light.SourceHandler', return_value=MagicMock()), \
              patch('threading.Thread', return_value=MagicMock()), \
+             patch('llm_light.main._PROMPTTK_AVAILABLE', False), \
+             patch('builtins.input', side_effect=EOFError), \
              patch('builtins.print'):
-            try:
+            with pytest.raises(RuntimeError):
                 cl.start_chat()
-            except RuntimeError:
-                pass
 
     def test_observer_join_has_timeout(self):
         """Test that observer.join() has a timeout to prevent hanging."""
