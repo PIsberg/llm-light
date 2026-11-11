@@ -408,21 +408,14 @@ def test_t027_done_forbidden_tool_with_its_kind_denied_does_not_raise(tool, kind
     assert reply == "a fine answer"
 
 
-_ALLOWED = ["read_file", "view_file", "list_dir", "find_by_name", "grep_search"]
-
-
-@pytest.mark.parametrize("tool", _ALLOWED)
-def test_t027_allowlisted_read_only_tools_do_not_raise(tool):
-    out = _ndjson({"event": "init"}, _tool_step(tool), _result("a fine answer"))
-    (reply, _u, _p), _, _ = _complete(out)
-    assert reply == "a fine answer"
-
-
 # search_web is here since #122: the llm-light agent has no tools, so a search
 # means the agent did not load, and the query (which can quote repo code) left.
+# The read-only tools joined it in #173: the run's home may hold a copy of the
+# sign-in token, so a read that finished is no longer harmless.
 _NOT_ALLOWED = ["search_web", "execute_browser_javascript", "browser_input", "invoke_subagent",
                 "run_workflow", "schedule", "generate_image", "define_subagent",
-                "some_new_tool"]
+                "some_new_tool",
+                "read_file", "view_file", "list_dir", "find_by_name", "grep_search"]
 
 
 @pytest.mark.parametrize("tool", _NOT_ALLOWED)

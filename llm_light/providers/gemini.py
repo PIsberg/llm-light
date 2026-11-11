@@ -129,11 +129,10 @@ _FORBIDDEN = {
     "write_to_file": "file", "replace_file_content": "file",
     "multi_replace_file_content": "file", "sed_file": "file", "notebook_edit": "file",
 }
-# Read-only tools that may finish without a denial. The llm-light agent has none of
-# them; they stay allowed because they cannot reach the project (empty cwd,
-# allowNonWorkspaceAccess false). search_web is not here: a search means the
-# agent did not load, and the query may quote repo code, so it fails closed (#122).
-_ALLOWED_TOOLS = frozenset({"read_file", "view_file", "list_dir", "find_by_name", "grep_search"})
+# No tool may finish without a denial. The llm-light agent has none (tools: []), so a
+# finished call means the agent did not load. search_web failed closed first, since the
+# query may quote repo code (#122); the read-only tools followed, since the run's home
+# may hold a copy of the sign-in token (#124) that a read could reach (#173).
 
 
 def _stdin_line(text: str) -> str:
@@ -163,9 +162,9 @@ def _is_plan_artifact(step: dict, home) -> bool:
 
 
 def _check_tools(stdout: str, result: dict, home=None) -> None:
-    """Fail closed: a finished tool call passes only if it is read-only, or agy denied it.
+    """Fail closed: a finished tool call passes only if agy denied it.
 
-    A tool outside the allowlist and the `_FORBIDDEN` kinds raises, except agy's plan artifact
+    A tool outside the `_FORBIDDEN` kinds raises, read-only ones included, except agy's plan artifact
     in the run's own home (`_is_plan_artifact`). A forbidden tool passes only while the DONE
     steps of its kind do not outnumber the `denied_actions` records of that kind.
     """
@@ -181,7 +180,7 @@ def _check_tools(stdout: str, result: dict, home=None) -> None:
                 or step.get("state") != "DONE"):
             continue
         tool = step.get("tool_name")
-        if tool in _ALLOWED_TOOLS or _is_plan_artifact(step, home):
+        if _is_plan_artifact(step, home):
             continue
         kind = _FORBIDDEN.get(tool)
         if kind:
