@@ -707,12 +707,21 @@ def _is_followup_clarification(query: str) -> bool:
 
 def _extra_dirs_note() -> str:
     """Names the directories /add-dir opened to the agent, which it would not look in
-    unasked. Empty without them, so the request is what it was."""
+    unasked. Empty without them, or for a provider with no file tools, so the request is
+    what it was. With an API key it also says how llm_light's own tools, whose descriptions
+    speak of project paths only, reach them (tools._locate, tools._grep_base)."""
     from llm_light import config as _config
-    if not (_config.EXTRA_DIRS and _agent_oauth()):
+    if not _config.EXTRA_DIRS:
         return ""
-    return ("[Also readable, read-only, with Read, Grep and Glob: "
-            + "; ".join(_config.EXTRA_DIRS) + "]\n")
+    if _agent_oauth():
+        return ("[Also readable, read-only, with Read, Grep and Glob: "
+                + "; ".join(_config.EXTRA_DIRS) + "]\n")
+    if not providers.active().has(AGENT):
+        return ""
+    dirs = [Path(d).as_posix() for d in _config.EXTRA_DIRS]
+    return ("[Also readable, read-only: " + "; ".join(dirs) + ". Give read_file and list_files "
+            "an absolute path there; grep searches one when its glob starts with it, "
+            f"e.g. '{dirs[0]}/*'.]\n")
 
 
 def _question_text(query, context):

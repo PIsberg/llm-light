@@ -8,8 +8,12 @@ open a file that retrieval missed. These three tools close that gap without
 giving the model any way to change or execute anything: edits still go through
 SEARCH/REPLACE blocks, which llm_light lint-checks, previews and commits.
 
-Every path is resolved against the project root and refused if it escapes it.
-Output is capped so a single call cannot flood the context window.
+Every path is resolved against the project root and refused if it escapes it,
+unless it falls inside a directory the user opened with --add-dir or /add-dir
+(config.EXTRA_DIRS): read_file and list_files reach one by absolute path, and
+grep searches one when its glob starts with it. Those paths come back absolute,
+project paths relative, so the tool descriptions and the cached prefix stay as
+they were. Output is capped so a single call cannot flood the context window.
 """
 
 import fnmatch
@@ -215,16 +219,51 @@ def _int_arg(tool_input, key):
     return value
 
 
-def _inside(root, rel):
-    """Resolve `rel` under root; refuse anything that escapes it."""
+def _within(base, target):
+    return target == base or base in target.parents
+
+
+def _extra_roots():
+    """The --add-dir directories, read-only, for this session."""
+    from llm_light import config
+    return [Path(d).resolve() for d in config.EXTRA_DIRS]
+
+
+def _locate(root, rel):
+    """Resolve `rel` under the project root, or inside a --add-dir directory, and return
+    (that base, the path); refuse anything that escapes both. Resolving first means a
+    `..` or a symlink cannot step out of the directory it names."""
     target = (root / rel).resolve()
-    if target != root and root not in target.parents:
-        raise _ToolError(f"{rel!r} is outside the project")
-    return target
+    if _within(root, target):
+        return root, target
+    for extra in _extra_roots():
+        if _within(extra, target):
+            return extra, target
+    where = "the project and the --add-dir directories" if _extra_roots() else "the project"
+    raise _ToolError(f"{rel!r} is outside {where}")
 
 
 def _rel(root, path):
     return path.relative_to(root).as_posix()
+
+
+def _shown(base, root, path):
+    """A path as the model sees it: relative in the project, absolute in an added directory."""
+    return _rel(root, path) if base == root else path.as_posix()
+
+
+def _grep_base(root, glob):
+    """The directory grep searches: a --add-dir directory when the glob starts with one
+    (the directory alone means everything in it), else the project. Returns (base, glob)."""
+    if glob:
+        wanted = os.path.normcase(glob.replace("\\", "/"))
+        for extra in _extra_roots():
+            prefix = extra.as_posix().rstrip("/")
+            if wanted == os.path.normcase(prefix):
+                return extra, prefix + "/*"
+            if wanted.startswith(os.path.normcase(prefix + "/")):
+                return extra, glob.replace("\\", "/")
+    return root, glob
 
 
 def _skipped(rel_parts):
@@ -260,7 +299,7 @@ def _read_file(root, tool_input):
     rel = _str_arg(tool_input, "path")
     start = _int_arg(tool_input, "start_line") or 1
     end = _int_arg(tool_input, "end_line")
-    path = _inside(root, rel)
+    base, path = _locate(root, rel)
     if not path.is_file():
         raise _ToolError(f"{rel!r} not found")
     data = path.read_bytes()
@@ -270,7 +309,7 @@ def _read_file(root, tool_input):
     if end is None or end > start + _MAX_READ_LINES - 1:
         end = min(len(lines), start + _MAX_READ_LINES - 1)
     if start > len(lines):
-        return f"{_rel(root, path)} has {len(lines)} lines"
+        return f"{_shown(base, root, path)} has {len(lines)} lines"
     body = "\n".join(f"{n}\t{lines[n - 1]}" for n in range(start, min(end, len(lines)) + 1))
     more = f"\n… ({len(lines) - end} more lines; pass start_line={end + 1})" if end < len(lines) else ""
     return _cap(body + more)
@@ -435,10 +474,11 @@ def _grep(root, tool_input):
         rx = re.compile(pattern)
     except re.error as e:
         raise _ToolError(f"invalid regular expression: {e}")
+    base, glob = _grep_base(root, glob)
     matches = []
-    for path in _walk_files(root, root):
-        rel = _rel(root, path)
-        if glob and not (fnmatch.fnmatch(rel, glob) or fnmatch.fnmatch(path.name, glob)):
+    for path in _walk_files(base, base):
+        rel = _shown(base, root, path)
+        if glob and not (fnmatch.fnmatch(rel, glob) or (base == root and fnmatch.fnmatch(path.name, glob))):
             continue
         try:
             if path.stat().st_size > _MAX_SCAN_BYTES:
@@ -458,12 +498,12 @@ def _grep(root, tool_input):
 
 def _list_files(root, tool_input):
     rel = _str_arg(tool_input, "path", required=False) or "."
-    base = _inside(root, rel)
+    top, base = _locate(root, rel)
     if not base.is_dir():
         raise _ToolError(f"{rel!r} is not a directory")
     entries = []
-    for path in _walk_files(root, base):
-        entries.append(_rel(root, path))
+    for path in _walk_files(top, base):
+        entries.append(_shown(top, root, path))
         if len(entries) >= _MAX_LIST_ENTRIES:
             entries.append(f"… (stopped at {_MAX_LIST_ENTRIES} entries)")
             break
