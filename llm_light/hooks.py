@@ -21,7 +21,14 @@ only the keys it knows.
   Edit, Write, mcp__...) so one matcher serves both modes. A command gets the event as
   JSON on stdin. Exit 2 blocks a PreToolUse call, and its stderr tells the model why; on
   PostToolUse it goes to the model with the result. Any other failure, a timeout
-  included, is noted and the call goes on. JSON output on stdout is not read.
+  included, is noted and the call goes on.
+  A JSON object on stdout is read as Claude Code reads it, on any exit code but 2 (#227):
+  PreToolUse's hookSpecificOutput.permissionDecision "deny" blocks with its
+  permissionDecisionReason, and so does "ask", since nothing can be asked in the middle
+  of a turn (as in a claude -p run); the older top-level decision "block"/"approve" maps
+  to deny/allow. PostToolUse's decision "block" puts its reason next to the result.
+  additionalContext goes to the model with the result, systemMessage to the user.
+  updatedInput, updatedToolOutput, continue and "defer" are not acted on (#248).
 """
 
 import json
@@ -138,33 +145,85 @@ def _matches(matcher, tool_name: str) -> bool:
 
 
 def _run_one(hook: dict, payload: dict, cwd: Path) -> tuple:
-    """(exit code or None on a timeout or failure to start, stderr text)."""
+    """(exit code or None on a timeout or failure to start, stderr text, stdout text)."""
     from llm_light import user_shell
     from llm_light.providers.runner import kill_process_tree, new_session
     timeout = hook.get("timeout", DEFAULT_TIMEOUT)
     argv, shell = user_shell.command_argv(hook["command"])
     try:
         proc = subprocess.Popen(argv, shell=shell, cwd=str(cwd), stdin=subprocess.PIPE,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, encoding="utf-8", errors="replace",
                                 start_new_session=new_session())
     except OSError as e:
-        return None, f"could not start: {e}"
+        return None, f"could not start: {e}", ""
     try:
-        _, err = proc.communicate(json.dumps(payload), timeout=timeout)
+        out, err = proc.communicate(json.dumps(payload), timeout=timeout)
     except subprocess.TimeoutExpired:
         kill_process_tree(proc)
         try:
             proc.communicate(timeout=5)
         except Exception:  # noqa: BLE001  it is being killed; nothing to add
             pass
-        return None, f"timed out after {timeout:g}s"
-    return proc.returncode, (err or "").strip()[-_STDERR_MAX:]
+        return None, f"timed out after {timeout:g}s", ""
+    return proc.returncode, (err or "").strip()[-_STDERR_MAX:], out or ""
+
+
+def _json_output(out: str) -> tuple:
+    """(the JSON object a hook printed, or None; a problem to note, or None). Output that
+    does not start with '{' is plain text, which Claude Code also leaves alone."""
+    text = out.strip()
+    if not text.startswith("{"):
+        return None, None
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        return None, f"not valid JSON: {e}"
+    return (data, None) if isinstance(data, dict) else (None, "not a JSON object")
+
+
+_LEGACY_PRE = {"block": "deny", "approve": "allow"}
+
+
+def _apply_json(event: str, data: dict) -> tuple:
+    """(blocked, texts for the model) from one hook's JSON, as Claude Code reads it."""
+    specific = data.get("hookSpecificOutput")
+    specific = specific if isinstance(specific, dict) else {}
+    message = data.get("systemMessage")
+    if isinstance(message, str) and message.strip():
+        notify(f"{event} hook: {message.strip()}")
+    blocked, texts = False, []
+    if event == "PreToolUse":
+        decision = specific.get("permissionDecision")
+        reason = specific.get("permissionDecisionReason")
+        if decision is None:
+            decision = _LEGACY_PRE.get(data.get("decision"))
+            reason = reason or data.get("reason")
+        reason = reason.strip() if isinstance(reason, str) and reason.strip() else None
+        if decision == "deny":
+            blocked = True
+            texts.append(reason or "a PreToolUse hook denied this call")
+        elif decision == "ask":
+            blocked = True
+            texts.append((reason + " " if reason else "")
+                         + "(The hook asked for a confirmation, which cannot be asked in the "
+                           "middle of a turn, so the call was refused.)")
+    elif data.get("decision") == "block":
+        reason = data.get("reason")
+        blocked = True
+        texts.append(reason.strip() if isinstance(reason, str) and reason.strip()
+                     else f"a {event} hook flagged this result")
+    context = specific.get("additionalContext")
+    if isinstance(context, str) and context.strip():
+        texts.append(context.strip())
+    return blocked, texts
 
 
 def run(event: str, tool_name: str, tool_input: dict, cwd: Path, tool_response=None) -> tuple:
     """Run the hooks of `event` whose matcher fits `tool_name`. Returns (blocked, text):
-    blocked when one exited 2, with the stderr of those that did."""
+    blocked when one exited 2 or its JSON denied the call; text is what the model should
+    read: the stderr of those that exited 2, the reasons and the additionalContext of
+    those that printed JSON."""
     groups = configured().get(event)
     if not groups:
         return False, ""
@@ -177,10 +236,18 @@ def run(event: str, tool_name: str, tool_input: dict, cwd: Path, tool_response=N
         if not _matches(group.get("matcher"), tool_name):
             continue
         for hook in group["hooks"]:
-            code, err = _run_one(hook, payload, cwd)
-            if code == 2:
+            code, err, out = _run_one(hook, payload, cwd)
+            if code == 2:  # blocks whatever its JSON says
                 blocked = True
                 said.append(err or f"{hook['command']} exited 2")
+                continue
+            data, problem = _json_output(out) if code is not None else (None, None)
+            if problem:
+                notify(f"{event} hook printed output that is {problem}: {hook['command']}", error=True)
+            if data is not None:  # the JSON decides; the exit code is ignored, as in Claude Code
+                json_blocked, texts = _apply_json(event, data)
+                blocked = blocked or json_blocked
+                said.extend(texts)
             elif code != 0:
                 why = f"exit {code}" if code is not None else "failed"
                 notify(f"{event} hook {why}: {err or hook['command']}", error=True)
