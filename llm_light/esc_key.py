@@ -208,19 +208,46 @@ class _Listener:
             time.sleep(_DELIVERY_SECS)  # the interrupt, if not here yet, is raised in this sleep
 
 
-@contextmanager
-def listening(on_escape=None):
-    """Listen for Esc for the length of the block; see the module docstring."""
-    listener = _Listener(on_escape or _interrupt)
+def _start(on_escape):
+    listener = _Listener(on_escape)
     if _enabled():
         try:
             listener.start(_key_source())
         except (OSError, ValueError, ImportError):
             listener.active = False  # no usable terminal: Ctrl+C still works
+    return listener
+
+
+@contextmanager
+def listening(on_escape=None):
+    """Listen for Esc for the length of the block; see the module docstring."""
+    listener = _start(on_escape or _interrupt)
+    state.esc_listener = listener
     try:
         yield listener
     finally:
+        current = state.esc_listener
+        state.esc_listener = None
+        if current is not None and current is not listener:
+            current.stop()  # the one paused() started
         listener.stop()
+
+
+@contextmanager
+def paused():
+    """Stop listening for the length of the block, for a question asked in the middle of a
+    turn (ui.ask_mid_turn): the listener would read the keys meant for the menu. A new
+    listener with the same action starts afterwards. Without one running, nothing."""
+    listener = state.esc_listener
+    if listener is None or not listener.active:
+        yield
+        return
+    listener.stop()
+    state.esc_listener = None
+    try:
+        yield
+    finally:
+        state.esc_listener = _start(listener.on_escape)
 
 
 def stop_key() -> str:

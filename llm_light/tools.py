@@ -17,6 +17,7 @@ they were. Output is capped so a single call cannot flood the context window.
 """
 
 import fnmatch
+import json
 import os
 import re
 from pathlib import Path
@@ -216,11 +217,28 @@ def _run_tool(name, tool_input, root):
 
 
 def _mcp(name, tool_input):
-    from llm_light import permissions
+    from llm_light import permissions, ui
+    import llm_light.state as state
     if permissions.plan():
         # An MCP tool can change things outside the repo; the CLI agent gets no
         # servers in plan mode either.
         raise _ToolError("plan mode is on: no MCP tool runs. Describe the call in your plan instead.")
+    if (permissions.mode() == permissions.DEFAULT and name not in state.mcp_always_allowed
+            and ui.can_ask()):
+        # As Claude Code asks before an MCP call (#234). Without a terminal (-p) nothing
+        # can be asked, and the mcp.json allow list stays the gate.
+        shown = json.dumps(tool_input, ensure_ascii=False)
+        shown = shown if len(shown) <= 300 else shown[:297] + "..."
+        answer = ui.ask_mid_turn(f"Run {name} {shown}?", [
+            ("yes", "Yes"),
+            ("always", f"Yes, and don't ask again for {name} this session"),
+            ("no", "No"),
+        ])
+        if answer == "always":
+            state.mcp_always_allowed.add(name)
+        elif answer != "yes":
+            raise _ToolError("the user declined this call. Do not retry it; go on without it "
+                             "or ask the user.")
     return mcp_servers.call(name, tool_input)
 
 
