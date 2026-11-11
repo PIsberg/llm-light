@@ -364,10 +364,11 @@ def _accumulate_usage(usage, model=None):
         state.session_tokens["cache_read"]  += cache_read
         state.session_tokens["output"]      += output_tokens
         for category, dollars in costs.items():
-            state.session_costs[category] += dollars
+            state.session_costs[category] = state.session_costs.get(category, 0.0) + dollars
         state.session_costs["without_cache"] += (
             (input_tokens + cache_write + cache_read) / 1e6 * p["input"]
             + output_tokens / 1e6 * p["output"]
+            + costs.get("web_search", 0.0)  # caching does not change what searches cost
         )
 
         # Update Global Stats

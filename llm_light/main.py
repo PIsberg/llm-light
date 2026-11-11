@@ -1082,13 +1082,12 @@ def _configure_proxy(parser, args) -> None:
 
 
 def _web_note(provider) -> str | None:
-    """What to say at startup when --web was asked for where it has no effect: only the
-    Claude CLI agent (a subscription) has web tools to turn on."""
+    """What to say at startup when --web was asked for where it has no effect: Claude has
+    web tools to turn on, the CLI agent's on a subscription and Anthropic's server-run ones
+    with an API key; Gemini and Codex get none."""
     import llm_light.config as _config
-    if not _config.WEB_ACCESS or (AUTH_MODE == "OAUTH" and provider.has(AGENT)):
+    if not _config.WEB_ACCESS or provider.has(AGENT):
         return None
-    if provider.has(AGENT):
-        return "--web needs a Claude subscription: with an API key the model has no web tools."
     return f"--web has no effect with {provider.name}: llm_light gives its agent no web tools."
 
 
@@ -1140,9 +1139,10 @@ def _build_parser():
                              "it is a Bash command. Repeatable. Also "
                              "LLM_LIGHT_ALLOW_COMMANDS=\"a; powershell: b\".")
     parser.add_argument("--web", action="store_true",
-                        help="Let the Claude CLI agent (subscription mode) search the web and fetch "
-                             "pages in every permission mode, not only with "
-                             "--dangerously-skip-permissions. Also LLM_LIGHT_WEB=1.")
+                        help="Let Claude search the web and fetch pages: the CLI agent in every "
+                             "permission mode on a subscription, not only with "
+                             "--dangerously-skip-permissions; Anthropic's server-run web tools with "
+                             "an API key. Also LLM_LIGHT_WEB=1.")
     parser.add_argument("--add-dir", action="append", default=[], metavar="DIR",
                         help="Let the agent read DIR, outside the project, but not write there. "
                              "Repeatable; /add-dir adds one in a session.")

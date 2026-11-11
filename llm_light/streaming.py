@@ -22,6 +22,7 @@ class StreamingResponseHandler:
         self.cache_read_tokens = 0
         self.thinking_buffer = ""
         self.is_thinking = False
+        self.server_tool = None  # [name, input JSON so far] while one streams
 
     def process_stream(self, stream: Iterator, view=None) -> Tuple[str, Dict[str, int]]:
         """Consume a stream, rendering the reply into `view`.
@@ -46,12 +47,22 @@ class StreamingResponseHandler:
             return
         if event.type == "content_block_start":
             block = getattr(event, "content_block", None)
-            if block is not None and getattr(block, "type", None) == "thinking":
+            kind = getattr(block, "type", None)
+            if kind == "thinking":
                 self.is_thinking = True
                 view.status("Thinking")
+            elif kind == "server_tool_use":  # a web search or fetch Anthropic runs (--web)
+                self.server_tool = [getattr(block, "name", "web"), ""]
+            elif kind in ("web_search_tool_result", "web_fetch_tool_result"):
+                error = _server_tool_error(getattr(block, "content", None))
+                if error:
+                    view.tool(f"{kind.split('_tool_result')[0].replace('_', ' ')} failed: {error}")
         elif event.type == "content_block_delta":
             delta = getattr(event, "delta", None)
             if not delta:
+                return
+            if self.server_tool is not None:
+                self.server_tool[1] += getattr(delta, "partial_json", None) or ""
                 return
             if self.is_thinking:
                 thinking = getattr(delta, "thinking", None)
@@ -63,7 +74,12 @@ class StreamingResponseHandler:
                     self.buffer += text
                     view.text(text)
         elif event.type == "content_block_stop":
-            if self.is_thinking:
+            if self.server_tool is not None:
+                name, raw = self.server_tool
+                self.server_tool = None
+                view.tool(_describe_server_tool(name, raw))
+                view.status("Working")
+            elif self.is_thinking:
                 self.is_thinking = False
                 view.status("Writing")
         elif event.type == "message_delta":
@@ -86,6 +102,29 @@ class StreamingResponseHandler:
             "cache_creation_tokens": self.cache_creation_tokens,
             "cache_read_tokens": self.cache_read_tokens,
         }
+
+
+def _describe_server_tool(name: str, raw_input: str) -> str:
+    """'web_search llm-light release date' for the line shown while it runs."""
+    import json
+    try:
+        data = json.loads(raw_input) if raw_input else {}
+    except ValueError:
+        data = {}
+    value = data.get("query") or data.get("url") if isinstance(data, dict) else None
+    if not isinstance(value, str) or not value.strip():
+        return name
+    value = " ".join(value.split())
+    return f"{name} {value if len(value) <= 80 else value[:77] + '...'}"
+
+
+def _server_tool_error(content) -> str | None:
+    """The error code of a failed web search or fetch. The API reports it as a 200 with
+    an error object where the results would be (a list for a search), not as an error."""
+    if content is None or isinstance(content, list):
+        return None
+    code = content.get("error_code") if isinstance(content, dict) else getattr(content, "error_code", None)
+    return str(code) if code else None
 
 
 def stream_chat_response(client, view=None, **create_kwargs) -> Tuple[str, Dict[str, int]]:

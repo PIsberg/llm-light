@@ -133,6 +133,26 @@ TOOLS = [
     },
 ]
 
+# --web with an API key: Anthropic runs these server-side and streams their results
+# into the reply, so run_tool never sees a call. The _20260209 versions filter results
+# with code before they reach the context; Haiku has only the basic versions.
+WEB_SEARCH_MAX_USES = 5  # per request: bounds a turn's search bill (config.WEB_SEARCH_PRICE_USD)
+_WEB_TOOLS = {
+    "dynamic": [{"type": "web_search_20260209", "name": "web_search", "max_uses": WEB_SEARCH_MAX_USES},
+                {"type": "web_fetch_20260209", "name": "web_fetch"}],
+    "basic": [{"type": "web_search_20250305", "name": "web_search", "max_uses": WEB_SEARCH_MAX_USES},
+              {"type": "web_fetch_20250910", "name": "web_fetch"}],
+}
+
+
+def web_tools(model=None):
+    """The server web tools for `model`, or [] without --web."""
+    from llm_light import config
+    if not config.WEB_ACCESS:
+        return []
+    return _WEB_TOOLS["basic" if model and "haiku" in model else "dynamic"]
+
+
 _SHELL_HEAD_LINES = 20
 _SHELL_TAIL_LINES = 80
 _SHELL_TIMEOUT_DEFAULT = 120
@@ -142,11 +162,12 @@ class _ToolError(Exception):
     """A problem to report back to the model as an error result."""
 
 
-def all_tools():
-    """TOOLS, then the connected MCP servers' tools (mcp_servers.py). Without any, TOOLS
-    itself, so a request is byte-identical to one sent before MCP support: tools render
-    first in the cached prefix. The MCP list is fixed once the servers start."""
-    extra = mcp_servers.tool_definitions()
+def all_tools(model=None):
+    """TOOLS, then the connected MCP servers' tools (mcp_servers.py), then the server web
+    tools with --web (web_tools). Without any, TOOLS itself, so a request is byte-identical
+    to one sent before MCP and web support: tools render first in the cached prefix. The
+    list is fixed for a session and a model; the cache is per model anyway."""
+    extra = mcp_servers.tool_definitions() + web_tools(model)
     return TOOLS + extra if extra else TOOLS
 
 

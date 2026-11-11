@@ -125,7 +125,7 @@ def test_env_var(value, expected):
 
 @pytest.mark.parametrize("auth_mode, provider, available", [
     ("OAUTH", "claude", True),
-    ("API_KEY", "claude", False),
+    ("API_KEY", "claude", True),  # Anthropic's server-run web tools (#231)
     ("OAUTH", "codex", False),
     ("OAUTH", "gemini", False),
 ])

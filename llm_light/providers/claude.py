@@ -9,6 +9,7 @@ import re
 import shutil
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import llm_light.config as config
 from llm_light.config import API_KEY, AUTH_MODE, MODEL, SUMMARY_MODEL, SYSTEM_PROMPT, ENABLE_STREAMING
@@ -882,6 +883,7 @@ class _TurnUsage:
         self.cache_creation_input_tokens = 0
         self.cache_read_input_tokens = 0
         self.cache_creation = {"ephemeral_1h_input_tokens": 0}
+        self.server_tool_use = SimpleNamespace(web_search_requests=0)
         self.cost_usd = None
 
     def add(self, usage):
@@ -897,6 +899,8 @@ class _TurnUsage:
         self.cache_creation_input_tokens += _count(getattr(usage, "cache_creation_input_tokens", 0))
         self.cache_read_input_tokens += _count(getattr(usage, "cache_read_input_tokens", 0))
         self.cache_creation["ephemeral_1h_input_tokens"] += _one_hour_writes(usage)
+        self.server_tool_use.web_search_requests += _count(
+            getattr(getattr(usage, "server_tool_use", None), "web_search_requests", 0))
 
 
 def _api_tool_loop(create_kwargs):
@@ -907,7 +911,7 @@ def _api_tool_loop(create_kwargs):
     the reply text. Returns (reply_text, usage, streamed=True).
     """
     from llm_light import tools
-    kwargs = dict(create_kwargs, tools=tools.all_tools())
+    kwargs = dict(create_kwargs, tools=tools.all_tools(create_kwargs.get("model")))
     messages = list(create_kwargs["messages"])
     usage = _TurnUsage()
     texts = []
@@ -930,9 +934,15 @@ def _run_tool_rounds(kwargs, messages, usage, texts, view):
         usage.add(message.usage if message is not None else usage_dict)
         if text and text.strip():
             texts.append(text.strip())
+        stop = getattr(message, "stop_reason", None) if message is not None else None
+        if stop == "pause_turn" and step < _API_TOOL_STEPS:
+            # The server's own tool loop (a web search) stopped at its iteration limit.
+            # Sending its content back, with no new user message, resumes it.
+            messages = messages + [{"role": "assistant", "content": message.content}]
+            continue
         # Only a completed tool_use turn runs tools: never on max_tokens (the
         # input may be cut off) or refusal.
-        if message is None or getattr(message, "stop_reason", None) != "tool_use":
+        if stop != "tool_use":
             break
         if step == _API_TOOL_STEPS:
             print(f"  {_T_ERR}  stopped after {_API_TOOL_STEPS} rounds of tool calls", flush=True)
@@ -1076,7 +1086,7 @@ class ClaudeProvider(Provider):
                 max_tokens=0,
                 # Tools render before the system prompt in the cache prefix; warm
                 # with the same list the turns send, or this warms nothing they use.
-                tools=_tools.all_tools(),
+                tools=_tools.all_tools(model),
                 system=_build_system_blocks(skeleton),
                 messages=[{"role": "user", "content": "ok"}],
                 # Effort is rendered into the prompt; warm at the level turns send.
