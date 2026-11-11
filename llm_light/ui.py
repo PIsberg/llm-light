@@ -4,6 +4,7 @@ import time
 import threading
 import difflib
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 from llm_light.config import PRICE_WRITE, ECONOMY_MODE, model_prices
@@ -585,6 +586,27 @@ def choose(question, options, default=0, *, _input=None, _output=None, _force_pl
     return _plain_choice(question, options)
 
 
+def can_ask() -> bool:
+    """Whether a question can be put to the user now: a terminal on both ends, and no
+    script reading the output (headless.py)."""
+    if state.event_sink is not None:
+        return False
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def ask_mid_turn(question, options, default=0):
+    """choose() in the middle of a turn: the reply's spinner and the Esc listener pause
+    while the menu is up, since one would draw over it and the other read its keys."""
+    from contextlib import nullcontext
+    from llm_light import esc_key
+    view = state.turn_view
+    with (view.paused() if view is not None else nullcontext()), esc_key.paused():
+        return choose(question, options, default)
+
+
 def _choose_menu(question, options, default, _input, _output):
     from prompt_toolkit.application import Application
     from prompt_toolkit.key_binding import KeyBindings
@@ -874,6 +896,34 @@ class ResponseView:
     def __exit__(self, exc_type, exc, tb):
         self.close()
         return False
+
+    @contextmanager
+    def paused(self):
+        """Print what is pending and take the spinner down for the block, for a question
+        asked in the middle of the reply; then put it back."""
+        if self._sink is not None or self._closed:
+            yield
+            return
+        if self._console is None:
+            self._stop_heartbeat()
+            try:
+                yield
+            finally:
+                self._start_heartbeat()
+            return
+        pending, self._pending = self._pending, ""
+        self._commit(pending)
+        live, self._live = self._live, None
+        if live is not None:
+            live.stop()
+        try:
+            yield
+        finally:
+            if live is not None:
+                from rich.live import Live
+                self._live = Live(self, console=self._console, transient=True,
+                                  refresh_per_second=10)
+                self._live.start()
 
     def close(self):
         """Print what is still pending and remove the spinner. Idempotent."""

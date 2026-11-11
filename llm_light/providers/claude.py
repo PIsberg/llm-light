@@ -916,7 +916,11 @@ def _api_tool_loop(create_kwargs):
     usage = _TurnUsage()
     texts = []
     with ResponseView("Thinking") as view:  # one view, so rounds read as one reply
-        _run_tool_rounds(kwargs, messages, usage, texts, view)
+        state.turn_view = view  # a question mid-turn pauses it (ui.ask_mid_turn)
+        try:
+            _run_tool_rounds(kwargs, messages, usage, texts, view)
+        finally:
+            state.turn_view = None
     return "\n\n".join(texts), usage, True
 
 

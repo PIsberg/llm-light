@@ -47,6 +47,12 @@ pending_context = []
 typeahead = ""
 # The agent CLI process of the running turn, if any: Esc on Windows kills it (esc_key.py).
 turn_process = None
+# The running Esc listener (esc_key.listening) and the API-key turn's ResponseView, which a
+# question in the middle of a turn pauses (ui.ask_mid_turn).
+esc_listener = None
+turn_view = None
+# MCP tools the user answered "don't ask again" for, by name, for this session (#234).
+mcp_always_allowed = set()
 # This run's full replies, newest last, for /copy (history keeps them
 # without their code blocks, and compression rewrites it).
 replies = []
