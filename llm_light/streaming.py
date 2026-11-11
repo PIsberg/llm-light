@@ -131,7 +131,11 @@ def stream_chat_response(client, view=None, **create_kwargs) -> Tuple[str, Dict[
     """Execute a streaming chat request and return full response with usage."""
     handler = StreamingResponseHandler()
     with client.messages.stream(**create_kwargs) as stream:
-        response_text, usage = handler.process_stream(stream, view=view)
+        state.turn_stream = stream  # Esc on Windows closes it (esc_key._stop_turn_windows)
+        try:
+            response_text, usage = handler.process_stream(stream, view=view)
+        finally:
+            state.turn_stream = None
         # The complete message (stop_reason, tool_use blocks, exact usage) for
         # the tool loop in llm.py. Streams without it (mocks) simply omit it.
         try:

@@ -51,6 +51,8 @@ turn_process = None
 # question in the middle of a turn pauses (ui.ask_mid_turn).
 esc_listener = None
 turn_view = None
+# The API-key turn's open response stream, which Esc on Windows closes (#229).
+turn_stream = None
 # MCP tools the user answered "don't ask again" for, by name, for this session (#234).
 mcp_always_allowed = set()
 # This run's full replies, newest last, for /copy (history keeps them

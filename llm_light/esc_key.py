@@ -11,8 +11,9 @@ model answers in an interactive session, listening() reads keys on a thread:
   since the interrupt waits for a blocking read to return: a pipe read with no output ran
   its full 8 s alone and stopped in 0.5 s with the child killed. A console CTRL_C_EVENT was
   not used, because a process started with Ctrl+C ignored (a flag children inherit) never
-  sees one. With an API key there is no child, so on Windows the turn stops at the next
-  piece of the streamed reply.
+  sees one. With an API key there is no child, so it closes the open response stream
+  (state.turn_stream) instead, which ends the read: a stream silent for 10 s stopped in
+  0.5 s, and the next request on the same client answered (#229).
 - Any other text is kept and put in the next prompt (take_typeahead()), as it would have
   waited in the terminal. Enter, Tab and other control keys are dropped, so nothing is
   submitted or completed on the user's behalf; an arrow or function key is not Esc.
@@ -137,6 +138,10 @@ def _interrupt() -> None:
     if os.name != "nt":
         os.kill(os.getpid(), signal.SIGINT)  # the CLI child has its own session either way
         return
+    _stop_turn_windows()
+
+
+def _stop_turn_windows() -> None:
     import _thread
     from llm_light.providers.runner import kill_process_tree
     _thread.interrupt_main()
@@ -145,6 +150,14 @@ def _interrupt() -> None:
         try:
             kill_process_tree(proc)
         except Exception:  # noqa: BLE001  already gone: the read ends anyway
+            pass
+    # An API-key turn has no process: close its stream, which ends the blocking read the
+    # interrupt waits for (#229). The client opens a new connection for the next request.
+    stream = state.turn_stream
+    if stream is not None:
+        try:
+            stream.close()
+        except Exception:  # noqa: BLE001  closing a stream mid-read may raise; it is closed
             pass
 
 
