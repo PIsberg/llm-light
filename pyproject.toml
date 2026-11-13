@@ -47,7 +47,7 @@ llmlingua = ["llmlingua>=0.2.2"]
 mcp = ["mcp>=2.3.0"]
 dev = [
     "build>=1.6.1",
-    "hypothesis>=6.170.14",
+    "hypothesis>=6.170.15",
     "pytest>=9.2.0",
 ]
 
