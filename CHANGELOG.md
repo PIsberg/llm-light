@@ -4,6 +4,8 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-14
+
 ### Added
 
 - **Paste a screenshot with `alt+v`.** Claude Code, Codex and Gemini CLI take an image from the clipboard; llm_light needed it saved in the project and typed as `@path`. `alt+v` (and `ctrl+v` where the terminal passes it on) saves the clipboard image in `.llm_light_cache/pastes/`, which git and the index ignore, and puts its `@` path in the prompt, so it is checked and sent like any `@image`. No new dependency: PowerShell on Windows, `osascript` on macOS, `wl-paste` or `xclip` on Linux. Checked live on Windows: a bitmap with the words KIWI 83 put on the real clipboard was saved as a 1,619-byte PNG and the subscription agent read the words back; a text clipboard gave "No image on the clipboard". macOS and Linux were not run (#239).
@@ -90,5 +92,6 @@ The first release on PyPI, as `llm-light-cli`: `pipx install llm-light-cli` or `
 - Licensed under PolyForm Noncommercial 1.0.0: free for personal and hobby use; commercial use needs a license.
 - Gemini and Codex run without caching, effort, the top tier, `/budget` or the shell tool.
 
-[Unreleased]: https://github.com/PIsberg/llm-light/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/PIsberg/llm-light/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/PIsberg/llm-light/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/PIsberg/llm-light/releases/tag/v0.1.0
