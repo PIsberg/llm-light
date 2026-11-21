@@ -6,6 +6,7 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ### Added
 
+- **The route line's cost estimate counts web searches (#245).** With `--web` and an API key, while a `/budget` is set, the per-turn estimate priced tokens only, though each request may run up to five searches at $0.01. It now reads as a range, for example `~$0.012 to $0.062`, since how many searches a turn makes is the model's choice. Without `--web` the line is unchanged.
 - **Hooks can rewrite a call, its result, or stop the turn, with an API key (#248).** A hook's JSON could block a call and add context; three more fields Claude Code honours now work too. PreToolUse `updatedInput` rewrites the call's input, which the tool then checks like the model's own, so a hook cannot widen a read past the project. PostToolUse `updatedToolOutput` (or `updatedMCPToolOutput`, as text or an object's `stdout`) replaces what the model gets back. `continue: false` ends the turn as Ctrl+C does, showing its `stopReason`. `defer` is still ignored (#308).
 
 ### Changed
