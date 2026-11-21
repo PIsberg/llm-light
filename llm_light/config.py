@@ -259,9 +259,14 @@ def read_rule(path: str) -> str:
         posix = "/" + posix[0].lower() + posix[2:]
     return f"Read(/{posix}/**)"
 
+# One list for the project walk, the API tools and the affected-test search.
+# In a git work tree the walk also leaves out what .gitignore excludes
+# (skeleton._git_listed_files); these names cover the rest. Any name starting
+# with "." is skipped too.
 SKIP_DIRS      = {
     ".git", "target", "build", "node_modules",
     ".idea", "__pycache__", ".mvn", ".gradle",
+    "venv", "dist",
 }
 
 # Global Stats - stored in home directory to persist across all repositories.
@@ -374,7 +379,14 @@ _WANTED_LANGS = {
     ".py":   (lambda: Language(__import__("tree_sitter_python").language()),
               ["function_definition", "async_function_definition", "decorated_definition"]),
     ".js":   (lambda: Language(__import__("tree_sitter_javascript").language()),
-              ["function_declaration", "method_definition"]),
+              ["function_declaration", "method_definition", "arrow_function"]),
+    # The same grammar parses JSX and ES/CommonJS modules (#270).
+    ".jsx":  (lambda: Language(__import__("tree_sitter_javascript").language()),
+              ["function_declaration", "method_definition", "arrow_function"]),
+    ".mjs":  (lambda: Language(__import__("tree_sitter_javascript").language()),
+              ["function_declaration", "method_definition", "arrow_function"]),
+    ".cjs":  (lambda: Language(__import__("tree_sitter_javascript").language()),
+              ["function_declaration", "method_definition", "arrow_function"]),
     ".go":   (lambda: Language(__import__("tree_sitter_go").language()),
               ["function_declaration", "method_declaration"]),
     ".rs":   (lambda: Language(__import__("tree_sitter_rust").language()),
