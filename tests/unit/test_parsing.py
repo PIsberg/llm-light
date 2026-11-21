@@ -135,6 +135,39 @@ class TestStripComments(unittest.TestCase):
             self.assertNotIn("javadoc text", _strip_comments(java, ".java"))
 
 
+
+class TestStripCommentsKeepsStrings(unittest.TestCase):
+    """Comment markers inside string literals are not comments (#266)."""
+
+    def test_python_hash_in_strings(self):
+        print("\n  ▶ TestStripCommentsKeepsStrings.test_python_hash_in_strings")
+        out = _strip_comments('color = "#ff8800"\nurl = "https://x.test/a#frag"  # note\n', ".py")
+        self.assertIn('color = "#ff8800"', out)
+        self.assertIn('url = "https://x.test/a#frag"', out)
+        self.assertNotIn("note", out)
+
+    def test_js_url_literal(self):
+        print("\n  ▶ TestStripCommentsKeepsStrings.test_js_url_literal")
+        out = _strip_comments('const api = "https://api.example.com/v1";\nfetch(api); // go\n', ".js")
+        self.assertIn('const api = "https://api.example.com/v1";', out)
+        self.assertNotIn("go", out.replace("api", ""))
+
+    def test_go_regexp_literal(self):
+        print("\n  ▶ TestStripCommentsKeepsStrings.test_go_regexp_literal")
+        out = _strip_comments('re := regexp.MustCompile("a//b") // compile once\n', ".go")
+        self.assertIn('regexp.MustCompile("a//b")', out)
+        self.assertNotIn("compile once", out)
+
+    def test_java_method_fragment(self):
+        print("\n  ▶ TestStripCommentsKeepsStrings.test_java_method_fragment")
+        # Retrieval strips a method body on its own, not a whole file.
+        body = ('public String url() {\n    // the base\n    return "http://h/x"; /* old */\n}\n')
+        out = _strip_comments(body, ".java")
+        self.assertIn('return "http://h/x";', out)
+        self.assertNotIn("the base", out)
+        self.assertNotIn("old", out)
+
+
 # ---------------------------------------------------------------------------
 # _walk
 # ---------------------------------------------------------------------------
