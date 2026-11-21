@@ -296,6 +296,10 @@ def test_an_endless_pipe_neither_fills_memory_nor_hangs():
     finally:
         stop.set()
     writer.join(timeout=5)
+    if not writer.is_alive():
+        # End of file for a reader left blocked on an empty pipe; without it the
+        # thread stays alive and fails a later test that counts readers (#297).
+        os.close(write_end)
     assert len(text) < 60_000
     assert "still open" in text
 
@@ -309,15 +313,23 @@ def test_reading_stops_after_giving_up():
         while not stop.is_set():
             os.write(write_end, b"y" * 4096)
 
-    threading.Thread(target=write, daemon=True).start()
+    def readers():
+        return {t for t in threading.enumerate() if t.name == "llm-light-stdin" and t.is_alive()}
+
+    before = readers()  # another test's reader is not this test's business (#297)
+    writer = threading.Thread(target=write, daemon=True)
+    writer.start()
     with patch.object(sys, "stdin", stream):
         main_mod._read_piped_stdin(wait=1, give_up=0.2)
     deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and any(t.name == "llm-light-stdin" and t.is_alive()
-                                              for t in threading.enumerate()):
+    while time.monotonic() < deadline and readers() - before:
         time.sleep(0.05)
     stop.set()
-    assert not any(t.name == "llm-light-stdin" and t.is_alive() for t in threading.enumerate())
+    left = readers() - before
+    writer.join(timeout=5)
+    if not writer.is_alive():
+        os.close(write_end)
+    assert not left
 
 
 def test_a_terminal_is_not_read(monkeypatch):

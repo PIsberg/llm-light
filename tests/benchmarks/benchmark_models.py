@@ -112,8 +112,9 @@ def evaluate(name, ids, files, questions, select, budget=BUDGET):
         else:
             bucket[0] += q["file"] in sent
             out["files_sent"].append(len(sent))
-        out["tokens_sent"].append(sum(retrieval._estimate_tokens(state.chunk_store[c]["text"])
-                                      for c, _ in picked))
+        # What the model is sent: each file's header once, comments stripped (#288).
+        out["tokens_sent"].append(retrieval._estimate_tokens(retrieval._dedup_retrieved_context(picked))
+                                  if picked else 0)
     return out
 
 
@@ -184,7 +185,7 @@ def main():
 
     if args.budgets:
         m = config.DENSE_EMBED_MODEL
-        print(f"\nPer-effort budget, static + {m} (tokens = selected chunk text, estimated):")
+        print(f"\nPer-effort budget, static + {m} (tokens = rendered context, estimated):")
         for effort, budget in config._RETRIEVAL_BUDGET.items():
             r = evaluate(f"{effort} budget {budget}", ids, files, questions,
                          hybrid(m, budget=budget), budget=budget)

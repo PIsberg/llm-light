@@ -326,6 +326,33 @@ class TestRetrieve(unittest.TestCase):
             cl.chunk_store.update(orig_store)
 
 
+class TestBudgetCountsWhatIsSent(unittest.TestCase):
+    """A second chunk from a file already in the context adds only its body:
+    the file's header and preamble are sent once (#288)."""
+
+    def setUp(self):
+        self.saved = dict(_state.chunk_store)
+        preamble = "\n".join(f"import module_{i}" for i in range(400))   # ~3,000 tokens
+        for name in ("alpha", "beta"):
+            _state.chunk_store[f"m.py::{name}"] = {
+                "text": f"// m.py\n{preamble}\n    // ...\ndef {name}():\n    return 1\n"}
+
+    def tearDown(self):
+        _state.chunk_store.clear()
+        _state.chunk_store.update(self.saved)
+
+    def test_second_chunk_of_a_file_costs_its_body(self):
+        print("\n  ▶ TestBudgetCountsWhatIsSent.test_second_chunk_of_a_file_costs_its_body")
+        from llm_light.retrieval import _select_within_budget, _dedup_retrieved_context, _estimate_tokens
+        candidates = [("m.py::alpha", 0.9), ("m.py::beta", 0.89)]
+        # Two full chunks do not fit; one full chunk and the other's body do.
+        budget = int(_estimate_tokens(_state.chunk_store["m.py::alpha"]["text"]) * 1.2)
+        picked = _select_within_budget(candidates, budget, k=5)
+        self.assertEqual([cid for cid, _ in picked], ["m.py::alpha", "m.py::beta"])
+        # And what is sent stays within the budget.
+        self.assertLessEqual(_estimate_tokens(_dedup_retrieved_context(picked)), budget)
+
+
 if __name__ == "__main__":
     unittest.main()
 
