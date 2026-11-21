@@ -103,7 +103,10 @@ def _archive(current: Path) -> None:
     os.replace(current, current.with_name(f"{current.stem}.saved-{stamp}.json"))
     unnamed = [p for p in _archives(current) if not (_read(p) or {}).get("name")]
     for old in unnamed[config.SESSION_KEEP:]:
-        old.unlink(missing_ok=True)
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            pass  # best effort: one another process holds open is pruned next time
 
 
 def clear() -> None:

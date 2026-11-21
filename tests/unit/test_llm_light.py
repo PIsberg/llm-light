@@ -5367,6 +5367,51 @@ class TestOneShotLintCacheControlStrip(unittest.TestCase):
 # MockManager — test mode class
 # ---------------------------------------------------------------------------
 
+class TestImportLeavesPathAlone(unittest.TestCase):
+    """Importing the package must not patch pathlib for the whole process (#278).
+
+    A Path.unlink that swallowed PermissionError made a file that could not be
+    deleted look deleted, in llm_light and in every library. Checked in a fresh
+    interpreter, so no test fixture can hide it."""
+
+    def test_import_keeps_path_unlink(self):
+        import subprocess
+        code = ("import pathlib; orig = pathlib.Path.unlink; import llm_light; "
+                "print(pathlib.Path.unlink is orig)")
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                             cwd=str(Path(__file__).resolve().parents[2]), timeout=120)
+        self.assertEqual(out.stdout.strip().splitlines()[-1:], ["True"], out.stderr[-2000:])
+
+
+class TestArchivePruneSurvivesALockedFile(unittest.TestCase):
+    """Pruning old conversations is best effort: a file that cannot be deleted
+    (another process has it open on Windows) is skipped, and the conversation
+    is still archived (#278, now that unlink errors are no longer swallowed)."""
+
+    def test_locked_old_archive_does_not_break_archiving(self):
+        import tempfile
+        from unittest.mock import patch as _patch
+        from llm_light import session
+        import llm_light.config as config
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            current = tmp / "proj.json"
+            for i in range(config.SESSION_KEEP + 2):
+                (tmp / f"proj.saved-2026010{i % 10}-00000{i}.json").write_text(
+                    '{"messages": [], "provider": "claude"}', encoding="utf-8")
+            current.write_text('{"messages": [], "provider": "claude"}', encoding="utf-8")
+
+            def locked(self, missing_ok=False):
+                raise PermissionError(13, "in use", str(self))
+
+            with _patch.object(Path, "unlink", locked):
+                session._archive(current)
+            self.assertFalse(current.exists())   # the conversation was archived
+        finally:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class TestMockManager(unittest.TestCase):
 
     def test_mock_manager_small_preset(self):
