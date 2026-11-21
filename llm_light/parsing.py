@@ -7,7 +7,7 @@ try:
 except ImportError:
     pass
 
-_COMMENT_EXTS_C = frozenset({".java", ".js", ".ts", ".tsx", ".go", ".rs"})
+_COMMENT_EXTS_C = frozenset({".java", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".go", ".rs"})
 
 
 def _walk(node, node_types, results):
@@ -19,8 +19,31 @@ def _walk(node, node_types, results):
         _walk(child, node_types, results)
 
 
+def _symbol_span(node):
+    """The node a symbol's chunk covers. An arrow function bound by const,
+    let or var takes its whole declaration (and an export in front), so the
+    chunk reads "export const load = async (id) => ..." (#270)."""
+    parent = node.parent
+    if node.type in _BOUND_FUNCTION_TYPES and parent is not None and parent.type == "variable_declarator":
+        decl = parent.parent
+        if decl is not None and decl.type in ("lexical_declaration", "variable_declaration"):
+            if decl.parent is not None and decl.parent.type == "export_statement":
+                return decl.parent
+            return decl
+    return node
+
+
+_BOUND_FUNCTION_TYPES = frozenset({"arrow_function", "function_expression"})
+
+
 def _extract_symbol_name(node):
     """Return the identifier name for an AST symbol node."""
+    # const load = async () => ...: the function is named by its declarator
+    if node.type in _BOUND_FUNCTION_TYPES and node.parent is not None \
+            and node.parent.type == "variable_declarator":
+        for child in node.parent.children:
+            if child.type in _NAME_CHILD_TYPES:
+                return child.text.decode("utf-8", errors="replace")
     # Python decorated_definition wraps a function — dig inside for the name
     if node.type == "decorated_definition":
         for child in node.children:
@@ -48,14 +71,15 @@ def _chunk_with_treesitter(filepath, source, language, node_types):
     if not symbols:
         return [{"id": filepath, "text": source}]
 
+    spans          = [_symbol_span(node) for node in symbols]
     lines          = source.splitlines(keepends=True)
-    first_sym_line = symbols[0].start_point[0]   # 0-indexed row
+    first_sym_line = min(span.start_point[0] for span in spans)   # 0-indexed row
     preamble       = "".join(lines[:first_sym_line]).rstrip()
 
     chunks = []
     seen = {}
-    for node in symbols:
-        name = _extract_symbol_name(node)
+
+    def add(name, body):
         # Deduplicate overloaded names with a numeric suffix
         if name in seen:
             seen[name] += 1
@@ -63,19 +87,83 @@ def _chunk_with_treesitter(filepath, source, language, node_types):
         else:
             seen[name] = 1
             uid = name
-
-        # tree-sitter offsets count UTF-8 bytes, not characters (#262).
-        node_text  = src_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
         chunk_text = (
             f"// {filepath}\n"
             + preamble + "\n"
             + "    // ...\n"
-            + node_text.strip()
+            + body.strip()
             + "\n"
         )
         chunks.append({"id": f"{filepath}::{uid}", "text": chunk_text})
 
+    for node, span in zip(symbols, spans):
+        # tree-sitter offsets count UTF-8 bytes, not characters (#262).
+        add(_extract_symbol_name(node),
+            src_bytes[span.start_byte:span.end_byte].decode("utf-8", errors="replace"))
+
+    covered = set()
+    for span in spans:
+        covered.update(range(span.start_point[0], span.end_point[0] + 1))
+    for row, body in _gap_pieces(lines, first_sym_line, covered):
+        add(_gap_name(body, row), body)
+
     return chunks
+
+
+# Top-level code between symbols (#270): constants after the first function,
+# class headers and attributes, a class without methods. Split at blank lines
+# into pieces of at most _GAP_MAX_LINES; a piece needs _GAP_MIN_LINES non-blank
+# lines, one of them code, or it is left out (a lone assignment, a comment).
+_GAP_MIN_LINES = 2
+_GAP_MAX_LINES = 40
+_COMMENT_STARTS = ("#", "//", "/*", "*")
+_GAP_NAME_RE = re.compile(
+    r"^\s*(?:export\s+)?(?:default\s+)?(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?"
+    r"(?:const|let|var|class|interface|type|enum|struct|static|final|func|fn|impl|trait|mod)?\s*"
+    r"([A-Za-z_][A-Za-z0-9_]*)")
+_GAP_NAME_SKIP = frozenset({"if", "for", "while", "try", "with", "return", "import", "from",
+                            "package", "use", "else", "elif", "except", "finally", "assert"})
+
+
+def _gap_pieces(lines, first_row, covered):
+    """(first row, text) for each run of uncovered lines from first_row on."""
+    pieces, block, start = [], [], None
+
+    def flush():
+        nonlocal block, start
+        text = "".join(block)
+        code = [l.strip() for l in block if l.strip()]
+        if len(code) >= _GAP_MIN_LINES and any(not l.startswith(_COMMENT_STARTS) for l in code):
+            pieces.append((start, text))
+        block, start = [], None
+
+    for row in range(first_row, len(lines)):
+        line = lines[row]
+        if row in covered:
+            flush()
+            continue
+        if not line.strip() and len(block) >= _GAP_MAX_LINES:
+            flush()
+            continue
+        if start is None:
+            if not line.strip():
+                continue
+            start = row
+        block.append(line)
+    flush()
+    return pieces
+
+
+def _gap_name(body, row):
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(_COMMENT_STARTS):
+            continue
+        m = _GAP_NAME_RE.match(line)
+        if m and m.group(1) not in _GAP_NAME_SKIP:
+            return m.group(1)
+        break
+    return f"top_{row + 1}"
 
 
 _BODY_MARK = "\n    // ...\n"
