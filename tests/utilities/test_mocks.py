@@ -43,6 +43,9 @@ class MockManager:
             patch.object(llm_light.indexer, 'Path', new=mock_path),
             patch.object(llm_light.editor, 'Path', new=mock_path),
             patch.object(llm_light.config, 'Path', new=mock_path),
+            # The project walk asks git or os.walk, not Path.rglob (#267).
+            patch.object(llm_light.skeleton, '_walk_paths',
+                         new=lambda: sorted(mock_path(f) for f in self.files)),
         ]
         self.path_patcher = self.path_patchers[0]
         for p in self.path_patchers: p.start()
