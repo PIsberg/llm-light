@@ -483,6 +483,102 @@ class TestApplyEditsWrite(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# apply_edits: several SEARCH/REPLACE blocks for one file (#260)
+# ---------------------------------------------------------------------------
+
+class TestSeveralBlocksOneFile(unittest.TestCase):
+    """The system prompt asks for one block per change, even within a file.
+
+    Each block must apply to the result of the block before it, and the file
+    is shown, checked, written and committed once.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+        Path("a.py").write_text("def one():\n    return 1\n\n\ndef two():\n    return 2\n",
+                                encoding="utf-8")
+
+    def tearDown(self):
+        os.chdir(self.orig)
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _two_blocks(self):
+        fence = "```"
+        reply = (f"{fence}python:a.py\n<<<<<<< SEARCH\n    return 1\n=======\n    return 100\n"
+                 f">>>>>>> REPLACE\n{fence}\n\n"
+                 f"{fence}python:a.py\n<<<<<<< SEARCH\n    return 2\n=======\n    return 200\n"
+                 f">>>>>>> REPLACE\n{fence}\n\nChanged both.\n")
+        return parse_edit_blocks(reply)
+
+    def test_both_blocks_land_and_commit_once(self):
+        print("\n  ▶ TestSeveralBlocksOneFile.test_both_blocks_land_and_commit_once")
+        edits = self._two_blocks()
+        self.assertEqual(len(edits), 2)
+        with patch("sys.stdout", io.StringIO()), \
+             patch("llm_light.editor.git_manager.is_git_repo", return_value=True), \
+             patch("llm_light.editor.git_manager.auto_commit", return_value=False) as commit:
+            apply_edits(edits, explanation="Changed both.", auto_apply=True)
+        self.assertEqual(Path("a.py").read_text(encoding="utf-8"),
+                         "def one():\n    return 100\n\n\ndef two():\n    return 200\n")
+        commit.assert_called_once()
+        self.assertEqual(commit.call_args.args[0], ["a.py"])
+
+    def test_one_diff_per_file(self):
+        print("\n  ▶ TestSeveralBlocksOneFile.test_one_diff_per_file")
+        with patch("sys.stdout", io.StringIO()), \
+             patch("llm_light.editor.show_diff") as diff, \
+             patch("llm_light.editor.git_manager.is_git_repo", return_value=False):
+            apply_edits(self._two_blocks(), auto_apply=True)
+        diff.assert_called_once()
+        self.assertIn("return 100", diff.call_args.args[1])
+        self.assertIn("return 200", diff.call_args.args[1])
+
+    def test_syntax_check_sees_the_combined_result(self):
+        print("\n  ▶ TestSeveralBlocksOneFile.test_syntax_check_sees_the_combined_result")
+        # Each block alone leaves a bracket open or closes one that is not
+        # open; together they are valid Python.
+        Path("c.py").write_text("x = 1\ny = 2\n", encoding="utf-8")
+        edits = [
+            {"type": "edit", "path": "c.py", "search": "x = 1\n", "replace": "x = (1\n"},
+            {"type": "edit", "path": "c.py", "search": "y = 2\n", "replace": "    + 2)\n"},
+        ]
+        errs = apply_edits(edits, check_only=True)
+        self.assertEqual(errs, [], errs)
+
+    def test_later_block_searches_the_earlier_result(self):
+        print("\n  ▶ TestSeveralBlocksOneFile.test_later_block_searches_the_earlier_result")
+        # The second block edits a line only the first block wrote.
+        edits = [
+            {"type": "edit", "path": "a.py", "search": "    return 1\n",
+             "replace": "    value = compute_the_first_value()\n    return value\n"},
+            {"type": "edit", "path": "a.py", "search": "    value = compute_the_first_value()\n",
+             "replace": "    value = 41 + 1\n"},
+        ]
+        self.assertEqual(apply_edits(edits, check_only=True), [])
+        with patch("sys.stdout", io.StringIO()), \
+             patch("llm_light.editor.git_manager.is_git_repo", return_value=False):
+            apply_edits(edits, auto_apply=True)
+        text = Path("a.py").read_text(encoding="utf-8")
+        self.assertIn("    value = 41 + 1\n    return value\n", text)
+        self.assertIn("    return 2\n", text)
+
+    def test_new_file_then_edit_of_it(self):
+        print("\n  ▶ TestSeveralBlocksOneFile.test_new_file_then_edit_of_it")
+        edits = [
+            {"type": "new", "path": "b.py", "content": "x = 1\ny = 2\n"},
+            {"type": "edit", "path": "b.py", "search": "y = 2\n", "replace": "y = 3\n"},
+        ]
+        self.assertEqual(apply_edits(edits, check_only=True), [])
+        with patch("sys.stdout", io.StringIO()), \
+             patch("llm_light.editor.git_manager.is_git_repo", return_value=False):
+            apply_edits(edits, auto_apply=True)
+        self.assertEqual(Path("b.py").read_text(encoding="utf-8"), "x = 1\ny = 3\n")
+
+
+# ---------------------------------------------------------------------------
 # show_diff
 # ---------------------------------------------------------------------------
 

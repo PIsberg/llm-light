@@ -27,7 +27,7 @@ This diagram shows the main components and their relationships within LLM Light.
 | `user_shell.py` | Which shell runs `!command`, `/run` and the API-mode `shell` tool: Git Bash on Windows when installed, else `cmd.exe`; `sh` elsewhere |
 | `cli_shell_guard.py` | `PreToolUse` hook for the OAuth CLI agent: blocks a Bash or PowerShell command that chains, pipes, redirects or substitutes (issue #70); holds the refused characters `tools.py` uses too |
 | `affected_tests.py` | After an auto-commit, runs the test files that mention the edited modules, if a pytest command is allowed |
-| `editor.py` | Code editor, parses and applies SEARCH/REPLACE blocks; runs the user's `PostToolUse` hooks on each written file before the auto-commit |
+| `editor.py` | Code editor, parses and applies SEARCH/REPLACE blocks (a file's blocks in order, each to the result of the one before, then one diff, syntax check and write per file); runs the user's `PostToolUse` hooks on each written file before the auto-commit |
 | `esc_key.py` | Esc cancels a turn: reads keys on a thread while `chat()` waits for the provider, interrupts the main thread, and keeps other typed keys for the next prompt. See [Reliability and lifecycle](#reliability-and-lifecycle) |
 | `hooks.py` | The user's hooks from `~/.llm_light/hooks.json`: merged into the CLI agent's `--settings` on a subscription, run around `tools.run_tool` and after edits with an API key, `/hooks`. See [Hooks](#hooks) |
 | `indexer.py` | File watcher, manages incremental indexing and cache |
