@@ -37,7 +37,7 @@ import llm_light.state as state  # noqa: E402
 from llm_light import config, retrieval  # noqa: E402
 from llm_light.config import INDEXABLE_EXTENSIONS, _DOC_PREFIX, _QUERY_PREFIX  # noqa: E402
 from llm_light.indexer import _is_skipped  # noqa: E402
-from llm_light.parsing import chunk_file  # noqa: E402
+from llm_light.parsing import chunk_file, embed_text  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "repo_questions.json"
 FAST = config.FAST_EMBED_MODEL
@@ -74,16 +74,19 @@ def embed(model_name, chunks, questions, cache_dir):
     import hashlib
     key = model_name.replace("/", "__")
     ids_path = cache_dir / f"{key}.ids.json"
-    # Keyed on the chunk texts and questions, not just the ids: an edited
+    # Keyed on the embedded texts and questions, not just the ids: an edited
     # function keeps its id, and its stale vector would be reused silently.
-    digest = hashlib.sha256("\0".join([c["text"] for c in chunks] + [q["question"] for q in questions])
+    # What llm_light embeds: the dense models get path and body (#264), the
+    # static model the full chunk text.
+    texts = [c["text"] if model_name == FAST else embed_text(c["text"]) for c in chunks]
+    digest = hashlib.sha256("\0".join(texts + [q["question"] for q in questions])
                             .encode("utf-8")).hexdigest()
     if ids_path.exists() and json.loads(ids_path.read_text()) == digest:
         return np.load(cache_dir / f"{key}.chunks.npy"), np.load(cache_dir / f"{key}.questions.npy")
     from sentence_transformers import SentenceTransformer
     model = SentenceTransformer(model_name, device="cpu")
     print(f"  embedding {len(chunks)} chunks with {model_name}...", flush=True)
-    E = model.encode([_DOC_PREFIX.get(model_name, "") + c["text"] for c in chunks],
+    E = model.encode([_DOC_PREFIX.get(model_name, "") + t for t in texts],
                      normalize_embeddings=True, batch_size=64)
     Q = model.encode([_QUERY_PREFIX.get(model_name, "") + q["question"] for q in questions],
                      normalize_embeddings=True)

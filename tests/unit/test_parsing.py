@@ -260,6 +260,15 @@ class TestChunkFile(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
 
 
+    def test_embed_text_puts_the_body_first(self):
+        print("\n  ▶ TestChunkFile.test_embed_text_puts_the_body_first")
+        from llm_light.parsing import chunk_file, embed_text
+        src = "import os\nimport sys\n\n\ndef alpha():\n    return 1\n"
+        chunk = chunk_file("m.py", src)[0]
+        self.assertEqual(embed_text(chunk["text"]), "// m.py\ndef alpha():\n    return 1\n")
+        # A whole-file chunk (no symbols, or an unknown language) is embedded as it is.
+        self.assertEqual(embed_text("x = 1\n"), "x = 1\n")
+
     def test_non_ascii_before_symbols_keeps_chunk_bounds(self):
         print("\n  ▶ TestChunkFile.test_non_ascii_before_symbols_keeps_chunk_bounds")
         # tree-sitter offsets count UTF-8 bytes; slicing the str with them

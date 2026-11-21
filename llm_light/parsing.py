@@ -78,6 +78,25 @@ def _chunk_with_treesitter(filepath, source, language, node_types):
     return chunks
 
 
+_BODY_MARK = "\n    // ...\n"
+
+
+def embed_text(chunk_text):
+    """The text a chunk is embedded as: its path line and its body, without
+    the file preamble.
+
+    The chunk text (what the model is shown) is the path, the preamble and the
+    body. Embedding models read only the start of their input (all-mpnet-base-v2:
+    384 tokens), so a long import block left every function of a file with the
+    same vector (#264). A whole-file chunk has no preamble and is used as it is.
+    Used for the dense model only; the static model keeps the full text.
+    """
+    head, sep, body = chunk_text.partition(_BODY_MARK)
+    if not sep:
+        return chunk_text
+    return head.split("\n", 1)[0] + "\n" + body
+
+
 def chunk_file(filepath, source):
     """
     Split a source file into symbol-level chunks using tree-sitter AST parsing.
