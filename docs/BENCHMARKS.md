@@ -339,8 +339,10 @@ that answers the question reach the context the model is given?
   attempts after the server says it is overloaded?") and 6 off-topic ones
   ("what's the weather like in Paris today"), each with its answering file.
 * The repository is chunked with llm_light's own chunker (tests included,
-  since they compete in real use) and embedded with each model. Vectors are
-  cached in `.llm_light_cache/bench/`, keyed on the chunk texts.
+  since they compete in real use) and embedded with each model, as llm_light
+  embeds them: the dense models get each chunk's path and body
+  (`parsing.embed_text`), the static model the full chunk text. Vectors are
+  cached in `.llm_light_cache/bench/`, keyed on the embedded texts.
 * For every question the production selection code runs at the medium
   budget: `_adaptive_select_pairs` for single dense models,
   `hybrid_scores` + `_hybrid_select_pairs` for the hybrid index.
@@ -355,6 +357,28 @@ python tests/benchmarks/benchmark_models.py --worktree   # working-tree boost, r
 python tests/benchmarks/benchmark_router.py            # effort and model per question
 python tests/benchmarks/benchmark_router.py --margin 0.30  # replay with another escalation margin
 ```
+
+### Body-first dense vectors (2026-11-21, #264)
+
+A chunk's text is its path, the file's preamble and the function body, and the
+dense models read only the start of their input (all-mpnet-base-v2: 384
+tokens). In 54% of this repository's function chunks the preamble filled the
+window, so every function of `llm.py` had the same vector. The dense models now
+embed path and body only. Both trees clean (166 files, 43 questions), base the
+commit before the change:
+
+| Configuration | Identifier | Paraphrase | Unrelated got nothing | Files sent (median) |
+|---|---|---|---|---|
+| all-MiniLM-L6-v2 alone | 7 → 15 of 25 | 4 → 5 of 12 | 6 → 6 of 6 | 2 → 6 |
+| all-mpnet-base-v2 alone | 6 → 14 | 6 → 8 | 6 → 6 | 2 → 4 |
+| static + all-MiniLM-L6-v2 | 16 → 21 | 7 → 9 | 5 → 5 | 4 → 3 |
+| static + all-mpnet-base-v2 (default) | 17 → 19 | 9 → 10 | 5 → 4 | 4 → 3 |
+
+Body-first for the static model too lost the off-topic check (static alone: 5
+→ 1 of 6 got nothing; the default hybrid: 5 → 0), so the static model keeps the
+full text. The default sends the right file for 29 of 37 on-topic questions,
+from 26, and one more of the 6 off-topic questions now gets context. The
+per-model floors were tuned on the old vectors and were not re-swept (#287).
 
 ### Results (2026-10-24, CPU)
 

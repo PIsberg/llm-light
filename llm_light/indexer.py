@@ -14,7 +14,7 @@ from llm_light.ui import _T_RAG, _T_CACHE, _T_ERR, _ANSI_GREEN, _ANSI_YELLOW, _A
 import llm_light.state as state
 
 from llm_light.skeleton import _file_hash, _file_hash_parallel, _get_cached_paths, _invalidate_path_cache, _stat_tuple
-from llm_light.parsing import chunk_file
+from llm_light.parsing import chunk_file, embed_text
 from llm_light.executor import (
     auto_tune, start_embedder_background_load, set_top_k, _load_embedding_model,
 )
@@ -45,7 +45,8 @@ def _project_path(src) -> str:
 # Bumped when chunking changes what a chunk's text is, so an unchanged file
 # cached by an older version is chunked again. 2: chunk bodies sliced by byte
 # offset (#262); before that, a non-ASCII character shifted every chunk after it.
-CHUNK_FORMAT = 2
+# 3: vectors embed the path and body, not the file preamble (#264).
+CHUNK_FORMAT = 3
 
 
 def _load_cache(source_files: list, embed_model: str, file_hashes: dict, quiet=False) -> tuple:
@@ -245,7 +246,7 @@ def index_files(quiet=False, dense="background"):
             print(f"{_T_RAG} Embedding {len(new_chunks)} chunk(s)...", flush=True)
         with state.embedder_lock:
             embeddings = state.embedder.encode(
-                [doc_prefix + c["text"] for c in new_chunks],
+                [doc_prefix + embed_text(c["text"]) for c in new_chunks],
                 normalize_embeddings=True,
                 show_progress_bar=show_bar,
                 batch_size=256,
@@ -374,6 +375,8 @@ def _index_files_hybrid(quiet, dense):
     missing = [cid for cid, e in store.items() if "emb_fast" not in e]
     if missing:
         fast = _ensure_fast_embedder(quiet)
+        # The static model keeps the full text: body-first made it send context
+        # for off-topic questions (benchmark_models: 1 of 6 got none, from 5).
         vecs = fast.encode([store[cid]["text"] for cid in missing], normalize_embeddings=True, batch_size=256)
         for cid, v in zip(missing, vecs):
             store[cid]["emb_fast"] = v
@@ -424,7 +427,7 @@ def _complete_dense_index():
             if not todo:
                 break
             with state.embedder_lock:
-                vecs = state.embedder.encode([prefix + t for _, t in todo], normalize_embeddings=True)
+                vecs = state.embedder.encode([prefix + embed_text(t) for _, t in todo], normalize_embeddings=True)
             with state.lock:
                 for (cid, text), v in zip(todo, vecs):
                     entry = state.chunk_store.get(cid)
@@ -466,7 +469,7 @@ def reindex_file(path):
             doc_prefix = _DOC_PREFIX.get(state.EMBED_MODEL, "")
             with state.embedder_lock:
                 embeddings = state.embedder.encode(
-                    [doc_prefix + c["text"] for c in chunks],
+                    [doc_prefix + embed_text(c["text"]) for c in chunks],
                     normalize_embeddings=True,
                     batch_size=256,
                 )

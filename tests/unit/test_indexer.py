@@ -218,6 +218,32 @@ class TestReindexFile(unittest.TestCase):
         keys = list(cl.chunk_store.keys())
         self.assertTrue(any("module.py" in k for k in keys))
 
+    def test_functions_after_a_long_preamble_get_their_own_vectors(self):
+        print("\n  ▶ TestReindexFile.test_functions_after_a_long_preamble_get_their_own_vectors")
+        # The dense model reads only the start of its input (384 tokens for
+        # all-mpnet-base-v2). With the preamble first, every function of a
+        # file with a long import block got the same vector (#264).
+        import hashlib
+        from llm_light import reindex_file
+        import llm_light as cl
+        import numpy as np
+        preamble = "".join(f"import module_{i}\n" for i in range(80))
+        Path("module.py").write_text(preamble + "\n\ndef alpha():\n    return 1\n\n\ndef beta():\n    return 2\n",
+                                     encoding="utf-8")
+
+        class WindowedEmbedder:
+            def encode(self, texts, **kwargs):
+                return np.array([[b / 255 for b in hashlib.sha256(t[:400].encode()).digest()[:8]]
+                                 for t in texts])
+
+        cl.embedder = WindowedEmbedder()
+        with patch("llm_light._save_cache"), patch("builtins.print"):
+            reindex_file("module.py")
+        alpha, beta = cl.chunk_store["module.py::alpha"], cl.chunk_store["module.py::beta"]
+        self.assertFalse(np.allclose(alpha["emb"], beta["emb"]))
+        # What the model is shown keeps the preamble.
+        self.assertIn("import module_0", alpha["text"])
+
     def test_reindex_file_exception_no_crash(self):
         print("\n  ▶ TestReindexFile.test_reindex_file_exception_no_crash")
         from llm_light import reindex_file
