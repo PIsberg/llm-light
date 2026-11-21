@@ -222,7 +222,7 @@ class TestResolveNewContent(unittest.TestCase):
             orig = os.getcwd()
             os.chdir(tmpdir)
             try:
-                Path("existing.py").write_text("old content\n", encoding="utf-8")
+                Path("existing.py").write_bytes(b"old content\n")
                 edit = {"type": "new", "path": "existing.py", "content": "new content\n"}
                 old, new = _resolve_new_content(edit)
                 self.assertEqual(old, "old content\n")
@@ -651,11 +651,53 @@ class TestSearchThatMatchesNothing(unittest.TestCase):
 
     def test_indentation_only_difference_still_matches(self):
         print("\n  ▶ TestSearchThatMatchesNothing.test_indentation_only_difference_still_matches")
-        Path("m.py").write_text("class A:\n    def f(self):\n        return 1\n", encoding="utf-8")
+        Path("m.py").write_bytes(b"class A:\n    def f(self):\n        return 1\n")
         _, new = _resolve_new_content({"type": "edit", "path": "m.py",
                                        "search": "def f(self):\n    return 1\n",
                                        "replace": "def f(self):\n    return 2\n"})
         self.assertEqual(new, "class A:\n    def f(self):\n        return 2\n")
+
+
+# ---------------------------------------------------------------------------
+# apply_edits: bytes the edit did not name stay as they were (#265)
+# ---------------------------------------------------------------------------
+
+class TestEditKeepsOtherBytes(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+
+    def tearDown(self):
+        os.chdir(self.orig)
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _apply(self, path, search, replace):
+        edits = [{"type": "edit", "path": path, "search": search, "replace": replace}]
+        self.assertEqual(apply_edits(edits, check_only=True), [])
+        with patch("sys.stdout", io.StringIO()), \
+             patch("llm_light.editor.git_manager.is_git_repo", return_value=False):
+            apply_edits(edits, auto_apply=True)
+        return Path(path).read_bytes()
+
+    def test_lf_file_stays_lf(self):
+        print("\n  ▶ TestEditKeepsOtherBytes.test_lf_file_stays_lf")
+        Path("a.py").write_bytes(b"a = 1\nb = 2\nc = 3\n")
+        self.assertEqual(self._apply("a.py", "a = 1\n", "a = 9\n"), b"a = 9\nb = 2\nc = 3\n")
+
+    def test_crlf_file_stays_crlf(self):
+        print("\n  ▶ TestEditKeepsOtherBytes.test_crlf_file_stays_crlf")
+        Path("a.py").write_bytes(b"a = 1\r\nb = 2\r\nc = 3\r\n")
+        # The model writes LF; the file keeps its CRLF.
+        self.assertEqual(self._apply("a.py", "a = 1\nb = 2\n", "a = 9\nb = 2\n"),
+                         b"a = 9\r\nb = 2\r\nc = 3\r\n")
+
+    def test_byte_that_is_not_utf8_survives(self):
+        print("\n  ▶ TestEditKeepsOtherBytes.test_byte_that_is_not_utf8_survives")
+        Path("a.py").write_bytes(b"# caf\xe9 owner\nx = 1\n")
+        self.assertEqual(self._apply("a.py", "x = 1\n", "x = 2\n"), b"# caf\xe9 owner\nx = 2\n")
 
 
 # ---------------------------------------------------------------------------
