@@ -33,7 +33,7 @@ _MAX_GREP_MATCHES = 100
 _MAX_LIST_ENTRIES = 300
 _MAX_SCAN_BYTES = 1_000_000  # skip larger files when searching
 _MAX_FETCH_IDS = 5
-_SKIP = set(SKIP_DIRS) | {".llm_light_cache", ".venv", "venv", "dist"}
+_SKIP = SKIP_DIRS  # dot names (.venv, .llm_light_cache) are skipped by _skipped
 
 TOOLS = [
     {

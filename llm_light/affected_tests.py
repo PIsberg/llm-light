@@ -14,7 +14,7 @@ from llm_light.config import SKIP_DIRS
 
 _MAX_TEST_FILES = 20
 _MAX_SCAN_BYTES = 500_000
-_SKIP = set(SKIP_DIRS) | {".venv", "venv", "dist", ".llm_light_cache"}
+_SKIP = SKIP_DIRS  # dot names (.venv, .llm_light_cache) are skipped below
 
 
 def is_test_file(path):

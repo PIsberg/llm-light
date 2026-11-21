@@ -581,19 +581,86 @@ def _build_system_blocks(skeleton):
     return blocks
 
 
+_SNAPSHOT_MAX_BYTES = 2_000_000
+
+
 def _git_modified_snapshot():
-    """Return the set of files currently dirty in the working tree.
+    """The files dirty in the working tree, with what each holds:
+    {path: bytes}, or (size, mtime) for one over 2 MB, None if unreadable.
 
     Used in OAUTH mode to detect edits the Claude CLI agent made directly
     via its own Read/Edit/Bash tools (`--tools ""` doesn't actually disable
-    those in CLI 2.1.118). We snapshot before the API call and diff after
+    those in CLI 2.1.118). We snapshot before the API call and compare after
     so we only commit files the agent touched during this turn, not
-    whatever the user had dirty beforehand.
+    whatever the user had dirty beforehand. The content matters for a file
+    that was dirty already: its name is in both snapshots (#275).
     """
     from llm_light import git_manager
     if not git_manager.is_git_repo():
-        return set()
-    return set(git_manager.get_modified_files())
+        return {}
+    return {path: _snapshot_of(path) for path in git_manager.get_modified_files()}
+
+
+def _snapshot_of(path):
+    try:
+        p = Path(path)
+        st = p.stat()
+        if st.st_size > _SNAPSHOT_MAX_BYTES:
+            return (st.st_size, st.st_mtime_ns)
+        return p.read_bytes()
+    except OSError:
+        return None
+
+
+def _drop_cut_off_edits(edits):
+    """Edits from a reply that stopped at max_tokens are not applied (#271).
+
+    The cut may fall inside a block, and parse_edit_blocks needs the closing
+    fence, so only the blocks before it come back: half of a two-file refactor
+    is worse than none. A refusal gets a line too.
+    """
+    stop = state.last_stop_reason
+    if stop == "refusal":
+        print(f"  {_T_ERR}  The model declined to answer (stop reason: refusal).")
+    if stop != "max_tokens":
+        return edits
+    if edits:
+        n = len(edits)
+        print(f"  {_T_ERR}  The reply was cut off at the output limit; its {n} complete edit "
+              f"block{'s' if n != 1 else ''} {'were' if n != 1 else 'was'} not applied. "
+              f"Ask again, or for a smaller change.")
+        return []
+    print(f"  {_ANSI_DIM}The reply was cut off at the output limit.{_ANSI_RESET}")
+    return edits
+
+
+def _agent_edits_since(pre):
+    """(files the agent made dirty, files dirty before that it changed)."""
+    post = _git_modified_snapshot()
+    before = pre if isinstance(pre, dict) else dict.fromkeys(pre or ())
+    new = {p for p in post if p not in before}
+    changed = {p for p in post if p in before and before[p] is not None and post[p] != before[p]}
+    return new, changed, before
+
+
+def _handle_agent_edits(pre, explanation, auto_apply=False):
+    """After an OAUTH turn: commit what the agent made dirty, and show, without
+    committing, what it changed in files that already held the user's own
+    uncommitted work. Committing those would mix the two, and /undo would
+    then take the user's work back too."""
+    new, changed, before = _agent_edits_since(pre)
+    if new:
+        _commit_agent_edits(new, explanation, auto_apply=auto_apply)
+    if changed:
+        from llm_light.ui import show_diff
+        print()
+        for path in sorted(changed):
+            old, now = before[path], _snapshot_of(path)
+            if isinstance(old, bytes) and isinstance(now, bytes):
+                show_diff(path, now.decode("utf-8", "replace"),
+                          old_content=old.decode("utf-8", "replace"))
+            print(f"  {_T_EDIT}  {path}  {_ANSI_DIM}(edited by the agent, not committed: "
+                  f"it also holds your uncommitted changes){_ANSI_RESET}")
 
 
 def _commit_agent_edits(new_files, explanation, auto_apply=False):
@@ -807,8 +874,6 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
     another turn (/loop) can only learn of them from the result."""
     routed_model, effort, max_tok = _finalize_route(*route_query(query))
     token_budget = _RETRIEVAL_BUDGET[effort]
-    from llm_light.commands import checkpoint
-    turn_checkpoint = checkpoint(query)
 
     from llm_light.indexer import _chunk_label
     skipped_reason = None
@@ -852,6 +917,10 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
         skeleton = state.skeleton_context
 
     _maybe_compress_history()
+    # After compressing: it shortens the history and clears the checkpoints,
+    # and /rewind cuts the history at this length (#274).
+    from llm_light.commands import checkpoint
+    turn_checkpoint = checkpoint(query)
     trimmed = state.conversation_history[-(MAX_HISTORY_TURNS * 2):]
 
     if trimmed:
@@ -895,9 +964,11 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
         for attempt in range(3):
             # Esc stops the turn like Ctrl+C, only while the model answers (esc_key.py).
             with esc_key.listening():
+                state.last_stop_reason = None
                 reply, usage, was_streamed = providers.active().complete(create_kwargs)
 
             planned, edits = _plan_split(parse_edit_blocks(reply))
+            edits = _drop_cut_off_edits(edits)
 
             if edits:
                 lint_errs = apply_edits(edits, check_only=True)
@@ -955,10 +1026,7 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
                 # original query as the commit message — the agent's reply
                 # is narration ("Let me first check…") and makes for a
                 # noisy commit log.
-                post_modified = _git_modified_snapshot()
-                agent_edits = post_modified - pre_modified
-                if agent_edits:
-                    _commit_agent_edits(agent_edits, query, auto_apply=auto_apply)
+                _handle_agent_edits(pre_modified, query, auto_apply=auto_apply)
 
             providers.active().turn_done()
             print()
@@ -1087,9 +1155,11 @@ def _one_shot_turn(prompt, auto_apply, use_index, context="", images=()):
 
     try:
         for attempt in range(3):
+            state.last_stop_reason = None
             reply, usage, was_streamed = providers.active().complete(create_kwargs)
 
             planned, edits = _plan_split(parse_edit_blocks(reply))
+            edits = _drop_cut_off_edits(edits)
 
             if edits:
                 lint_errs = apply_edits(edits, check_only=True)
@@ -1122,10 +1192,7 @@ def _one_shot_turn(prompt, auto_apply, use_index, context="", images=()):
                 apply_edits(edits, explanation=explanation, auto_apply=auto_apply)
             elif _agent_oauth():
                 # See chat() — use the prompt, not the agent's narration.
-                post_modified = _git_modified_snapshot()
-                agent_edits = post_modified - pre_modified
-                if agent_edits:
-                    _commit_agent_edits(agent_edits, prompt, auto_apply=auto_apply)
+                _handle_agent_edits(pre_modified, prompt, auto_apply=auto_apply)
 
             if _record_usage(usage, routed_model):
                 print_stats(usage, label="Stats", file=sys.stderr, model=routed_model)

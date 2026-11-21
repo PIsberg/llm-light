@@ -171,19 +171,62 @@ def auto_commit(
             success = False
     return success
 
+def _git_error(*args: str) -> Tuple[int, str]:
+    """Run git; (return code, what it said on failure: stderr, else stdout)."""
+    try:
+        result = subprocess.run(["git"] + list(args), capture_output=True, text=True,
+                                encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return 127, "git not found"
+    return result.returncode, (result.stderr or result.stdout or "").strip()
+
+
+def _show_git_error(message: str) -> None:
+    for line in message.splitlines()[:12]:
+        print(f"    {_ANSI_DIM}{line}{_ANSI_RESET}")
+
+
 def _commit_one_root(root: Optional[Path], files: List[str], explanation: str) -> bool:
-    """Helper to stage and commit files for a single git root."""
+    """Helper to stage and commit files for a single git root.
+
+    An ignored file among `files` is left out with a note. If staging or the
+    commit fails (a pre-commit hook, say), git's message is shown and what this
+    call staged is unstaged again, so the edit stays a plain working-tree change
+    (#276).
+    """
     cmd_prefix = ["-C", str(root)] if root else []
-    
+    staged: List[str] = []
+
+    def unstage():
+        if staged:
+            code, _ = _git_error(*(cmd_prefix + ["reset", "-q", "--"] + staged))
+            if code != 0:  # no HEAD yet: nothing to reset to
+                _git_error(*(cmd_prefix + ["rm", "-q", "--cached", "--"] + staged))
+
     # Stage files
     if files:
+        kept = []
         for f in files:
             # Make path relative to root if root is provided
             rel_f = os.path.relpath(f, root) if root else f
-            _, code = _run_git(*(cmd_prefix + ["add", rel_f]))
-            if code != 0:
-                print(f"{_T_ERR} Failed to stage {f} (root: {root})")
-                return False
+            code, message = _git_error(*(cmd_prefix + ["add", "--", rel_f]))
+            if code == 0:
+                staged.append(rel_f)
+                kept.append(f)
+                continue
+            ignored, _ = _git_error(*(cmd_prefix + ["check-ignore", "-q", "--", rel_f]))
+            if ignored == 0:
+                print(f"{_T_EDIT} {f} is ignored by git: edited, not committed")
+                continue
+            print(f"{_T_ERR} Failed to stage {f} (root: {root or 'CWD'}):")
+            _show_git_error(message)
+            unstage()
+            return False
+        files = kept
+        if not files:
+            # Every edited file is ignored: no commit, so the caller must not
+            # offer to revert "the last commit", which would be an older one.
+            return False
     else:
         # Stage all if no specific files
         _, code = _run_git(*(cmd_prefix + ["add", "-A"]))
@@ -202,9 +245,11 @@ def _commit_one_root(root: Optional[Path], files: List[str], explanation: str) -
         )
 
     # Create commit
-    _, code = _run_git(*(cmd_prefix + ["commit", "-m", commit_msg]))
+    code, message = _git_error(*(cmd_prefix + ["commit", "-m", commit_msg]))
     if code != 0:
-        print(f"{_T_ERR} Failed to create commit in {root or 'CWD'}")
+        print(f"{_T_ERR} Failed to create commit in {root or 'CWD'}; the edit is on disk, uncommitted:")
+        _show_git_error(message)
+        unstage()
         return False
 
     n = f" ({len(files)} file{'s' if len(files) != 1 else ''})" if files else ""
