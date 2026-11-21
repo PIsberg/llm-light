@@ -492,6 +492,7 @@ def compact_history(focus: str = "") -> int:
     if not history:
         return 0
     turns = (len(history) + 1) // 2
+    _run_pre_compact_hooks("manual", focus)
     summary_text, usage = _summarize_turns(list(history), focus) if focus else _summarize_turns(list(history))
     _record_usage(usage, SUMMARY_MODEL)
     state.checkpoints.clear()  # the summary replaces the turns they point into
@@ -503,9 +504,34 @@ def compact_history(focus: str = "") -> int:
     return turns
 
 
+def _run_stop_hooks():
+    """Stop hooks after a completed API-key turn (#226). Exit 2 cannot send the model
+    back to work here, as it can in Claude Code; its message is shown."""
+    if _agent_oauth():
+        return
+    from llm_light import hooks
+    if hooks.configured().get("Stop"):
+        done = hooks.run_event("Stop", Path.cwd(), stop_hook_active=False)
+        if done["blocked"] and done["text"]:
+            print(f"  {_ANSI_DIM}Stop hook: {done['text']}{_ANSI_RESET}")
+
+
+def _run_pre_compact_hooks(trigger: str, focus: str = ""):
+    """PreCompact hooks before history compression (#226), informational as in Claude Code."""
+    if _agent_oauth():
+        return
+    from llm_light import hooks
+    if hooks.configured().get("PreCompact"):
+        done = hooks.run_event("PreCompact", Path.cwd(), match_value=trigger,
+                               trigger=trigger, custom_instructions=focus)
+        if done["blocked"] and done["text"]:
+            print(f"  {_ANSI_DIM}PreCompact hook: {done['text']}{_ANSI_RESET}")
+
+
 def _maybe_compress_history():
     if len(state.conversation_history) <= MAX_HISTORY_TURNS * 2:
         return
+    _run_pre_compact_hooks("auto")
     batch_msgs   = SUMMARIZE_BATCH * 2
     state.checkpoints.clear()  # their history lengths stop matching either way
     # The next prompt carries the shorter history into a new CLI session, which is
@@ -878,6 +904,17 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
     Returns True when the turn completed, False when it was interrupted or failed.
     Both of those are reported here and swallowed, so a caller that goes on to
     another turn (/loop) can only learn of them from the result."""
+    # With an API key llm_light runs the user's UserPromptSubmit hooks itself; the
+    # claude CLI agent runs them on a subscription (#226).
+    if not _agent_oauth():
+        from llm_light import hooks
+        if hooks.configured().get("UserPromptSubmit"):
+            submitted = hooks.run_event("UserPromptSubmit", Path.cwd(), prompt=query)
+            if submitted["blocked"]:
+                print(f"  {_T_ERR}  A UserPromptSubmit hook refused this question: {submitted['text']}")
+                return False
+            if submitted["context"]:
+                context = (context + "\n\n" if context else "") + f"UserPromptSubmit hook:\n{submitted['context']}"
     routed_model, effort, max_tok = _finalize_route(*route_query(query))
     token_budget = _RETRIEVAL_BUDGET[effort]
 
@@ -1035,6 +1072,7 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
                 _handle_agent_edits(pre_modified, query, auto_apply=auto_apply)
 
             providers.active().turn_done()
+            _run_stop_hooks()
             print()
             if has_usage:
                 print_stats(usage, label=f"Turn {turns}", model=routed_model)

@@ -192,3 +192,100 @@ def test_continue_false_after_an_edit_does_not_stop_the_commit(json_hook, projec
     # The edit is already on disk; hooks.after_edit must return so the commit still runs.
     json_hook("PostToolUse", {"continue": False, "stopReason": "freeze"})
     hooks.after_edit("a.py", new=False)  # no KeyboardInterrupt
+
+
+
+# --- #226: UserPromptSubmit, Stop and PreCompact with an API key -----------------------------
+
+_RECORD = '''import json, sys
+payload = json.loads(sys.stdin.read())
+open(sys.argv[1], "a", encoding="utf-8").write(json.dumps(payload) + "\\n")
+sys.stdout.write(sys.argv[2])
+sys.stderr.write(sys.argv[3])
+sys.exit(int(sys.argv[4]))
+'''
+
+
+@pytest.fixture
+def record_hook(tmp_path, monkeypatch):
+    """record_hook(event, stdout="", stderr="", code=0) -> file holding each payload received."""
+    script = tmp_path / "record.py"
+    script.write_text(_RECORD, encoding="utf-8")
+    path = tmp_path / "home" / "hooks.json"
+    monkeypatch.setenv("LLM_LIGHT_HOOKS_CONFIG", str(path))
+    groups = {}
+
+    def add(event, stdout="", stderr="", code=0):
+        log = tmp_path / f"{event}.jsonl"
+        command = (f'"{Path(sys.executable).as_posix()}" "{script.as_posix()}" "{log.as_posix()}" '
+                   f'"{stdout}" "{stderr}" {code}')
+        groups.setdefault(event, []).append({"hooks": [{"type": "command", "command": command}]})
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"hooks": groups}), encoding="utf-8")
+        hooks.reset()
+        return log
+    hooks.reset()
+    yield add
+    hooks.reset()
+
+
+@pytest.fixture
+def api_turn(monkeypatch, project):
+    """Run llm.chat with only the provider's complete faked; returns the requests sent."""
+    from llm_light import llm
+    from llm_light.providers.claude import ClaudeProvider
+    import llm_light.state as state
+    sent = []
+
+    def complete(self, request):
+        sent.append(request)
+        return "Fine.", None, True
+
+    monkeypatch.setattr(ClaudeProvider, "complete", complete)
+    monkeypatch.setattr(ClaudeProvider, "turn_done", lambda self: None)
+    monkeypatch.setattr(llm, "_agent_oauth", lambda: False)
+    monkeypatch.setattr(llm, "_record_usage", lambda *a, **k: False)
+    saved = (list(state.conversation_history), state.turn_count, list(state.checkpoints))
+    yield sent
+    state.conversation_history[:], state.turn_count, state.checkpoints[:] = saved
+
+
+def test_user_prompt_submit_exit_2_refuses_the_question(record_hook, api_turn, capsys):
+    from llm_light import llm
+    log = record_hook("UserPromptSubmit", stderr="no questions about payroll", code=2)
+    assert llm.chat("what does payroll.py do", use_index=False) is False
+    assert api_turn == []                                   # nothing reached the model
+    assert "no questions about payroll" in capsys.readouterr().out
+    assert json.loads(log.read_text(encoding="utf-8"))["prompt"] == "what does payroll.py do"
+
+
+def test_user_prompt_submit_stdout_goes_with_the_question(record_hook, api_turn):
+    from llm_light import llm
+    record_hook("UserPromptSubmit", stdout="Ticket ABC-12 is in progress.")
+    assert llm.chat("what is next", use_index=False)
+    assert "Ticket ABC-12 is in progress." in json.dumps(api_turn[0]["messages"])
+
+
+def test_stop_runs_after_a_turn(record_hook, api_turn):
+    from llm_light import llm
+    log = record_hook("Stop")
+    assert llm.chat("hello", use_index=False)
+    assert json.loads(log.read_text(encoding="utf-8"))["hook_event_name"] == "Stop"
+
+
+def test_pre_compact_runs_before_compact(record_hook, project, monkeypatch):
+    from llm_light import llm
+    import llm_light.state as state
+    from llm_light.providers.claude import ClaudeProvider
+    log = record_hook("PreCompact")
+    monkeypatch.setattr(ClaudeProvider, "summarize", lambda self, text: ("summary", None))
+    monkeypatch.setattr(llm, "_agent_oauth", lambda: False)
+    monkeypatch.setattr(llm, "_record_usage", lambda *a, **k: False)
+    saved = list(state.conversation_history)
+    try:
+        state.conversation_history[:] = [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}]
+        llm.compact_history("keep the codeword")
+    finally:
+        state.conversation_history[:] = saved
+    payload = json.loads(log.read_text(encoding="utf-8"))
+    assert (payload["trigger"], payload["custom_instructions"]) == ("manual", "keep the codeword")
