@@ -473,5 +473,130 @@ class TestRefreshTreeOnly(unittest.TestCase):
                 os.chdir(orig)
 
 
+class TestProjectWalkRespectsGitignore(unittest.TestCase):
+    """The project walk lists what git would: tracked files and untracked
+    ones that .gitignore does not exclude (#267)."""
+
+    def setUp(self):
+        import subprocess
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+        from llm_light import skeleton
+        skeleton._invalidate_path_cache()
+        self.files = {
+            ".gitignore": "venv/\ndist/\ngenerated/\n",
+            "app.py": "x = 1\n",
+            "dist/bundle.js": "var a;\n",
+            "generated/client.py": "y = 1\n",
+            "venv/Lib/site-packages/pkg/mod.py": "z = 1\n",
+            "src/new_untracked.py": "w = 1\n",
+        }
+        for name, text in self.files.items():
+            Path(name).parent.mkdir(parents=True, exist_ok=True)
+            Path(name).write_text(text, encoding="utf-8")
+        self.git = lambda *a: subprocess.run(["git", *a], capture_output=True, check=True)
+
+    def tearDown(self):
+        os.chdir(self.orig)
+        from llm_light import skeleton
+        skeleton._invalidate_path_cache()
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _files(self):
+        from llm_light import skeleton
+        skeleton._invalidate_path_cache()
+        return {p.as_posix() for p in skeleton._get_cached_paths() if p.is_file()}
+
+    def test_git_repo_leaves_out_ignored_files(self):
+        print("\n  ▶ TestProjectWalkRespectsGitignore.test_git_repo_leaves_out_ignored_files")
+        self.git("init", "-q")
+        self.git("add", ".gitignore", "app.py")
+        self.assertEqual(self._files(), {"app.py", "src/new_untracked.py"})
+
+    def test_git_repo_tree_has_no_ignored_directories(self):
+        print("\n  ▶ TestProjectWalkRespectsGitignore.test_git_repo_tree_has_no_ignored_directories")
+        from llm_light import skeleton
+        self.git("init", "-q")
+        skeleton._invalidate_path_cache()
+        tree = skeleton._build_compressed_tree(skeleton._get_cached_paths())
+        for name in ("venv", "dist", "generated", "bundle.js"):
+            self.assertNotIn(name, tree)
+        self.assertIn("app.py", tree)
+
+    def test_git_that_fails_to_run_falls_back_to_the_walk(self):
+        print("\n  ▶ TestProjectWalkRespectsGitignore.test_git_that_fails_to_run_falls_back_to_the_walk")
+        with patch("subprocess.run", side_effect=ValueError("not a real git")):
+            self.assertEqual(self._files(), {"app.py", "generated/client.py", "src/new_untracked.py"})
+
+    def test_without_git_vendored_directories_are_skipped(self):
+        print("\n  ▶ TestProjectWalkRespectsGitignore.test_without_git_vendored_directories_are_skipped")
+        # No repository: .gitignore cannot be read, but venv and dist are
+        # skipped by name, like node_modules.
+        self.assertEqual(self._files(), {"app.py", "generated/client.py", "src/new_untracked.py"})
+
+
+class TestTreeFollowsTheDisk(unittest.TestCase):
+    """The skeleton tree is rebuilt from a fresh walk, not the one taken at
+    startup: the watcher refreshes it on create, delete and move (#268)."""
+
+    def setUp(self):
+        import llm_light.state as st
+        from llm_light import skeleton
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+        self.saved = (st._skeleton_tree, dict(st._skeleton_md_hashes), dict(st._skeleton_md_stats))
+        skeleton._invalidate_path_cache()
+        Path("a.py").write_text("def a():\n    return 1\n", encoding="utf-8")
+
+    def tearDown(self):
+        import llm_light.state as st
+        from llm_light import skeleton
+        os.chdir(self.orig)
+        st._skeleton_tree = self.saved[0]
+        st._skeleton_md_hashes.clear(); st._skeleton_md_hashes.update(self.saved[1])
+        st._skeleton_md_stats.clear(); st._skeleton_md_stats.update(self.saved[2])
+        skeleton._invalidate_path_cache()
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _change_files(self):
+        Path("brand_new_module.py").write_text("def b():\n    return 2\n", encoding="utf-8")
+        Path("a.py").unlink()
+
+    def test_tree_refresh_sees_new_and_deleted_files(self):
+        print("\n  ▶ TestTreeFollowsTheDisk.test_tree_refresh_sees_new_and_deleted_files")
+        from llm_light import skeleton
+        self.assertIn("a.py", skeleton.build_skeleton())
+        self._change_files()
+        text = skeleton._refresh_tree_only()
+        self.assertIn("brand_new_module.py", text)
+        self.assertNotIn("a.py", text)
+
+    def test_watcher_create_event_puts_the_file_in_the_prompt(self):
+        print("\n  ▶ TestTreeFollowsTheDisk.test_watcher_create_event_puts_the_file_in_the_prompt")
+        from llm_light import indexer, skeleton
+        skeleton.build_skeleton()
+        Path("brand_new_module.py").write_text("def b():\n    return 2\n", encoding="utf-8")
+        event = type("Event", (), {"is_directory": False,
+                                   "src_path": str(Path(self.tmpdir, "brand_new_module.py"))})()
+        with patch("llm_light.indexer._debounce"), \
+             patch("llm_light.llm._apply_skeleton") as apply:
+            indexer.SourceHandler().on_created(event)
+        apply.assert_called_once()
+        self.assertIn("brand_new_module", apply.call_args.args[0])  # the tree may write {a,brand_new_module}.py
+
+    def test_full_build_sees_new_and_deleted_files(self):
+        print("\n  ▶ TestTreeFollowsTheDisk.test_full_build_sees_new_and_deleted_files")
+        from llm_light import skeleton
+        skeleton.build_skeleton()
+        self._change_files()
+        text = skeleton.build_skeleton()
+        self.assertIn("brand_new_module.py", text)
+        self.assertNotIn("a.py", text)
+
+
 if __name__ == "__main__":
     unittest.main()

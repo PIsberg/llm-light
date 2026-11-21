@@ -286,6 +286,38 @@ def test_pinned_effort_reaches_the_subscription_cli():
     assert claude._effort_flags() == []  # a routed turn's command line stays as it was
 
 
+# --- /rewind to a turn in which the history was compressed (#274) ------------------
+
+def test_rewind_removes_a_turn_whose_start_compressed_the_history(tmp_path, monkeypatch):
+    # chat() took the checkpoint before compressing, so its history_len pointed
+    # past the end of the shorter history and /rewind removed nothing.
+    from llm_light.providers.claude import ClaudeProvider
+    monkeypatch.chdir(tmp_path)  # no git repository: rewind touches no files
+    saved = (list(state.conversation_history), state.turn_count, list(state.checkpoints))
+    try:
+        history = []
+        for i in range(llm.MAX_HISTORY_TURNS + 1):
+            history += [{"role": "user", "content": f"question {i}"},
+                        {"role": "assistant", "content": f"answer {i}"}]
+        state.conversation_history[:] = history
+        state.turn_count = llm.MAX_HISTORY_TURNS + 1
+        state.checkpoints[:] = []
+        with patch.object(ClaudeProvider, "complete", return_value=("answer eight", None, True)), \
+             patch.object(ClaudeProvider, "summarize", return_value=("earlier turns", None)), \
+             patch.object(ClaudeProvider, "turn_done"), \
+             patch.object(llm, "_record_usage", return_value=False), \
+             patch("llm_light.session.save"), patch("builtins.print"):
+            assert llm.chat("turn eight", use_index=False)
+        assert any(m["content"] == "answer eight" for m in state.conversation_history)
+        index = len(state.checkpoints) - 1
+        commands.rewind(index)
+        contents = [m["content"] for m in state.conversation_history]
+        assert "answer eight" not in contents
+        assert not any("turn eight" in str(c) for c in contents)
+    finally:
+        state.conversation_history[:], state.turn_count, state.checkpoints[:] = saved
+
+
 # --- /compact <focus> ---------------------------------------------------------------
 
 def test_compact_passes_the_focus_to_the_summary():
