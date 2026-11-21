@@ -38,19 +38,40 @@ from llm_light.streaming import stream_chat_response, accumulate_usage_from_dict
 # Router — module-level keyword sets (not re-allocated per call)
 # ---------------------------------------------------------------------------
 
+# Signals match whole words (#263). A substring test fired on parts of words:
+# "this" held the greeting "hi", "address" held "add", "prefix" held "fix",
+# "builder" held "build", so "fix this bug" went to Haiku and a lookup to Opus.
+# Each entry lists the word forms it stands for, and scores once however
+# many of them a question holds.
+def _word_signals(entries: dict) -> dict:
+    return {name: re.compile(r"\b(?:" + forms + r")\b") for name, forms in entries.items()}
+
+
+# A greeting or a session word is the whole question, not a word inside one.
 _META_SIGNALS = frozenset({
     "hi", "hello", "help", "who are you", "what are you", "clear history", "compact"
 })
-_ARCH_SIGNALS = frozenset({
-    "architect", "architecture", "design system", "deeply", "deep analysis",
-    "performance", "optimize", "security", "scalability", "trade-off",
-    "trade off", "tradeoff", "cross-cutting", "evaluate", "compare",
-    "strategy", "reasoning", "step by step", "comprehensive", "deadlock", "race condition"
+_ARCH_SIGNALS = _word_signals({
+    "architect": r"architect\w*", "architecture": r"architectures?",
+    "design system": r"design systems?", "deeply": r"deeply",
+    "deep analysis": r"deep analys[ie]s", "performance": r"performance",
+    "optimize": r"optimi[sz]\w*", "security": r"security", "scalability": r"scalability",
+    "trade-off": r"trade-offs?", "trade off": r"trade offs?", "tradeoff": r"tradeoffs?",
+    "cross-cutting": r"cross-cutting", "evaluate": r"evaluat\w+", "compare": r"compar\w+",
+    "strategy": r"strateg\w+", "reasoning": r"reasoning", "step by step": r"step by step",
+    "comprehensive": r"comprehensive\w*", "deadlock": r"deadlock\w*",
+    "race condition": r"race conditions?",
 })
-_LOGIC_SIGNALS = frozenset({
-    "implement", "write", "create", "add", "refactor", "fix", "debug",
-    "build", "develop", "generate", "update", "change", "modify",
-    "migrate", "convert", "extend", "integrate", "logic", "algorithm"
+_LOGIC_SIGNALS = _word_signals({
+    "implement": r"implement\w*", "write": r"write|writes|writing",
+    "create": r"creat\w+", "add": r"add|adds|added|adding", "refactor": r"refactor\w*",
+    "fix": r"fix|fixes|fixed|fixing", "debug": r"debug\w*",
+    "build": r"build|builds|building|built",
+    "develop": r"develop|develops|developed|developing|development",
+    "generate": r"generat\w+", "update": r"updat\w+", "change": r"chang\w+",
+    "modify": r"modif\w+", "migrate": r"migrat\w+", "convert": r"convert\w*",
+    "extend": r"extend\w*|extension\w*", "integrate": r"integrat\w+",
+    "logic": r"logic", "algorithm": r"algorithm\w*",
 })
 # Edit verbs matched as whole words: "make" must not fire on "makefile" or
 # "make_report". Without them, "Make divide raise ValueError..." and
@@ -58,10 +79,13 @@ _LOGIC_SIGNALS = frozenset({
 _EDIT_VERB_RE = re.compile(
     r"\b(?:make|rename|remove|delete|replace|raise|handle|rewrite|move|split|validate|wrap|drop|inline|extract)\b"
 )
-_INFRA_SIGNALS = frozenset({
-    "list", "show", "where", "what is", "what are",
-    "how many", "print", "display", "tell me", "which file",
-    "which files", "find", "locate", "count", "search", "grep"
+_INFRA_SIGNALS = _word_signals({
+    "list": r"list|lists|listing|listed", "show": r"show|shows|showing|shown",
+    "where": r"where", "what is": r"what is", "what are": r"what are",
+    "how many": r"how many", "print": r"print|prints|printing|printed",
+    "display": r"display\w*", "tell me": r"tell me", "which file": r"which files?",
+    "which files": r"which files", "find": r"find|finds|finding", "locate": r"locat\w+",
+    "count": r"count|counts|counting", "search": r"search\w*", "grep": r"grep\w*",
 })
 
 # Prototype embedding cache — keyed by EMBED_MODEL, built once per model load.
@@ -119,12 +143,12 @@ def _get_prototype_embeddings():
 
 
 def _lexical_dimension_scores(q: str) -> dict:
-    """Weighted substring match scores for each intent dimension."""
+    """Weighted whole-word match scores for each intent dimension."""
     return {
-        "arch":  sum(4.0 for s in _ARCH_SIGNALS  if s in q),
-        "logic": sum(5.0 for s in _LOGIC_SIGNALS if s in q)
+        "arch":  sum(4.0 for p in _ARCH_SIGNALS.values()  if p.search(q)),
+        "logic": sum(5.0 for p in _LOGIC_SIGNALS.values() if p.search(q))
                  + (5.0 if _EDIT_VERB_RE.search(q) else 0.0),
-        "infra": sum(0.5 for s in _INFRA_SIGNALS if s in q),
+        "infra": sum(0.5 for p in _INFRA_SIGNALS.values() if p.search(q)),
     }
 
 
@@ -175,7 +199,7 @@ def route_query(query: str) -> tuple[str, str, int]:
     word_count = len(words)
 
     # 1. Meta quick-route — short greetings/commands → Haiku immediately
-    if word_count < 5 and any(s in q for s in _META_SIGNALS):
+    if word_count < 5 and q.strip(" ?!.") in _META_SIGNALS:
         return MODEL_HAIKU, "low", 2_048
 
     # 2. Fused intent scores (keyword + semantic, additive)

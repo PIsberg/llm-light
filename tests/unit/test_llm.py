@@ -93,6 +93,47 @@ class TestRouteQuery(unittest.TestCase):
         self.assertEqual(_lexical_dimension_scores("where is make_report defined")["logic"], 0)
         self.assertEqual(_lexical_dimension_scores("show the makefile")["logic"], 0)
 
+    def test_short_requests_are_not_greetings(self):
+        print("\n  ▶ TestRouteQuery.test_short_requests_are_not_greetings")
+        # "this" contains "hi": every short question with it took the meta
+        # quick-route to Haiku at low effort (#263).
+        for q in ("fix this bug", "refactor this function", "rename this method"):
+            model, effort, _ = route_query(q)
+            self.assertNotEqual((model, effort), (MODEL_HAIKU, "low"), msg=q)
+
+    def test_greetings_still_take_the_quick_route(self):
+        print("\n  ▶ TestRouteQuery.test_greetings_still_take_the_quick_route")
+        for q in ("hi", "Hello!", "help", "who are you?"):
+            self.assertEqual(route_query(q), (MODEL_HAIKU, "low", 2_048), msg=q)
+
+    def test_lookups_with_signal_substrings_stay_off_the_top_tier(self):
+        print("\n  ▶ TestRouteQuery.test_lookups_with_signal_substrings_stay_off_the_top_tier")
+        # "address" holds "add", "prefix"/"suffix" hold "fix", "builder"
+        # holds "build", "logical" holds "logic": these went to Opus at max.
+        for q in ("what does the address prefix builder do",
+                  "what is the suffix of the logical address"):
+            model, effort, _ = route_query(q)
+            self.assertNotEqual(effort, "max", msg=q)
+            self.assertNotEqual(model, MODEL_OPUS, msg=q)
+
+    def test_signals_match_words_not_parts_of_words(self):
+        print("\n  ▶ TestRouteQuery.test_signals_match_words_not_parts_of_words")
+        from llm_light.llm import _lexical_dimension_scores
+        lex = _lexical_dimension_scores("where is the listener for padding changes")
+        self.assertEqual(lex["logic"], 5.0)   # "changes" only, not "padding"
+        self.assertEqual(lex["infra"], 0.5)   # "where" only, not "listener"
+        self.assertEqual(_lexical_dimension_scores("which account owns the blueprint")["infra"], 0)
+
+    def test_inflected_signals_still_count(self):
+        print("\n  ▶ TestRouteQuery.test_inflected_signals_still_count")
+        from llm_light.llm import _lexical_dimension_scores
+        for q in ("why is the fixed version slower", "the implementation of parse",
+                  "refactoring the cache", "debugging the watcher", "it creates two threads",
+                  "updating the index", "the generated code"):
+            self.assertGreater(_lexical_dimension_scores(q)["logic"], 0, msg=q)
+        for q in ("optimizing startup", "compare both", "the architectural choice"):
+            self.assertGreater(_lexical_dimension_scores(q)["arch"], 0, msg=q)
+
     def test_high_effort_code_modification(self):
         print("\n  ▶ TestRouteQuery.test_high_effort_code_modification")
         model, effort, tokens = route_query("refactor the parse method to handle exceptions")
