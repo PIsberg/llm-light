@@ -12,12 +12,13 @@ from typing import Optional, List, Tuple
 from llm_light.ui import _T_EDIT, _T_ERR, _T_SYS, _ANSI_GREEN, _ANSI_RED, _ANSI_RESET, _ANSI_DIM, _ANSI_BOLD
 
 
-def _run_git(*args: str) -> Tuple[str, int]:
+def _run_git(*args: str, strip: bool = True) -> Tuple[str, int]:
     """
     Run a git command and return (stdout, returncode).
     
     Args:
         *args: Git subcommand and arguments.
+        strip: strip the output; off for output whose leading space matters.
         
     Returns:
         Tuple of (command output, return code).
@@ -30,7 +31,8 @@ def _run_git(*args: str) -> Tuple[str, int]:
             encoding="utf-8",
             errors="replace",
         )
-        return result.stdout.strip(), result.returncode
+        out = result.stdout or ""
+        return (out.strip() if strip else out), result.returncode
     except FileNotFoundError:
         return "", 127  # git not found
 
@@ -67,21 +69,26 @@ def get_modified_files() -> List[str]:
     Returns:
         List of file paths that have been modified or staged.
     """
-    stdout, code = _run_git("status", "--porcelain")
+    # -z: records end in NUL and paths are never quoted. Plain --porcelain
+    # quotes a path with a space or a non-ASCII character ("my file.py",
+    # "caf\303\251.py"), and without --untracked-files=all a new directory
+    # is one entry ("newpkg/"); neither string is a file name (#269).
+    stdout, code = _run_git("status", "--porcelain", "-z", "--untracked-files=all", strip=False)
     if code != 0:
         return []
 
-    # `git status --porcelain` emits lines of the form "XY path" where X is
-    # the index status and Y is the worktree status. Splitting on whitespace
-    # once is robust to both " M path" (unstaged edit, space + M) and
-    # "M  path" (staged-only), and also to _run_git's .strip() having eaten
-    # the leading space on the first line, which a naive line[3:] would
-    # mis-slice and return "ocs/..." instead of "docs/...".
     files = []
-    for line in stdout.splitlines():
-        parts = line.split(None, 1)
-        if len(parts) == 2:
-            files.append(parts[1])
+    records = stdout.split("\0")
+    i = 0
+    while i < len(records):
+        record = records[i]
+        i += 1
+        if len(record) < 4:
+            continue
+        status, path = record[:2], record[3:]
+        files.append(path)
+        if "R" in status or "C" in status:
+            i += 1  # a rename or copy is followed by its source path
     return files
 
 
@@ -93,7 +100,7 @@ def tree_state() -> Optional[dict]:
     files = {}
     for path in get_modified_files():
         try:
-            stat = Path(path.strip('"')).stat()
+            stat = Path(path).stat()
             files[path] = (stat.st_size, stat.st_mtime_ns)
         except OSError:
             files[path] = None  # deleted
