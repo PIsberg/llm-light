@@ -4,6 +4,10 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two SEARCH/REPLACE blocks for one file now both land (#260).** Each block was resolved against the file on disk, not the result of the block before it, and every result was written to the same path, so one write won and the other changes were lost while the commit message claimed them all. The system prompt asks for exactly this form ("Use multiple blocks for multiple changes, even within the same file"). A file's blocks now apply in order, the syntax check sees the combined result, and the file gets one diff, one write and one commit entry. A block whose SEARCH no longer matches after an earlier block is an error the turn retries. Tested in `tests/unit/test_editor.py` (`TestSeveralBlocksOneFile`), which failed 5 of 5 before the fix.
+
 ## [0.2.0] - 2026-11-14
 
 ### Added

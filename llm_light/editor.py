@@ -83,16 +83,25 @@ def _safe_target(path_str):
     return candidate
 
 
-def _resolve_new_content(edit):
+def _resolve_new_content(edit, current=None):
+    """Return (old, new) text for one edit block.
+
+    `current` is the file's text after the earlier blocks of the same reply
+    (apply_edits passes it); without it the file is read from disk.
+    """
     p = _safe_target(edit["path"])
     if edit["type"] == "new":
+        if current is not None:
+            return current, edit["content"]
         old = p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
         return old, edit["content"]
 
-    if not p.exists():
+    if current is not None:
+        old = current
+    elif not p.exists():
         raise FileNotFoundError(f"File not found: {edit['path']}")
-    
-    old = p.read_text(encoding="utf-8", errors="ignore")
+    else:
+        old = p.read_text(encoding="utf-8", errors="ignore")
     search = edit["search"]
     replace = edit["replace"]
     
@@ -218,34 +227,41 @@ def apply_edits(edits, check_only=False, explanation="", auto_apply=False):
             print(f"  {_T_EDIT}  No file blocks found in response.")
         return [] if check_only else None
 
-    resolved = []
+    # The system prompt asks for one block per change, even within a file, so
+    # a file's blocks apply in order, each to the result of the one before it.
+    # Each file is then checked, shown, written and committed once (#260).
+    files = {}
     lint_errors = []
     for e in edits:
         try:
-            old, new = _resolve_new_content(e)
-            if check_only:
-                err = _lint_content(e["path"], new)
-                if err:
-                    lint_errors.append(f"SyntaxError in {e['path']}:\n{err}")
-            resolved.append({**e, "_old": old, "_new": new})
+            key = _safe_target(e["path"])
+            f = files.get(key)
+            old, new = _resolve_new_content(e, current=f["_new"] if f else None)
+            if f is None:
+                files[key] = {"path": e["path"], "_old": old, "_new": new}
+            else:
+                f["_new"] = new
         except Exception as ex:
             if check_only:
                 lint_errors.append(f"Edit failed for {e['path']}: {ex}")
             else:
                 print(f"  {_T_ERR}  {ex}")
-            resolved.append({**e, "_skip": True})
 
     if check_only:
+        for f in files.values():
+            err = _lint_content(f["path"], f["_new"])
+            if err:
+                lint_errors.append(f"SyntaxError in {f['path']}:\n{err}")
         return lint_errors
 
-    applicable = [r for r in resolved if not r.get("_skip")]
+    applicable = list(files.values())
     if not applicable:
         print(f"  {_T_EDIT}  No applicable changes.\n")
         return None
 
     print()
     for r in applicable:
-        is_new = r["type"] == "new" and not Path(r["path"]).exists()
+        is_new = not Path(r["path"]).exists()
         tag = f"{_ANSI_GREEN}new file{_ANSI_RESET}" if is_new else f"{_ANSI_CYAN}edited{_ANSI_RESET}"
         print(f"  {_T_EDIT}  {r['path']}  {_ANSI_DIM}({tag}){_ANSI_RESET}")
     print()
