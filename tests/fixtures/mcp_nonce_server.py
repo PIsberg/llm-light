@@ -36,7 +36,7 @@ def big() -> str:
 @server.tool()
 def picture() -> ImageContent:
     """Return a one-pixel image."""
-    return ImageContent(type="image", data="iVBORw0KGgo=", mime_type="image/png")
+    return ImageContent(type="image", data="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", mime_type="image/png")
 
 
 if __name__ == "__main__":
