@@ -42,9 +42,19 @@ def _project_path(src) -> str:
         s = s[2:]
     return s
 
+# Bumped when chunking changes what a chunk's text is, so an unchanged file
+# cached by an older version is chunked again. 2: chunk bodies sliced by byte
+# offset (#262); before that, a non-ASCII character shifted every chunk after it.
+CHUNK_FORMAT = 2
+
+
 def _load_cache(source_files: list, embed_model: str, file_hashes: dict, quiet=False) -> tuple:
     try:
         manifest      = json.loads(CACHE_MANIFEST.read_text(encoding="utf-8"))
+        if manifest.get("chunk_format") != CHUNK_FORMAT:
+            if not quiet:
+                print(f"{_T_CACHE} Miss (chunk format changed); re-indexing everything.")
+            return {}, list(source_files)
         cached_model  = manifest.get("embed_model")
         old_hashes    = manifest["files"]
         cached_index  = _decode_index(CACHE_INDEX.read_bytes())
@@ -142,6 +152,7 @@ def _save_cache(embed_model: str) -> None:
         try:
             config.ensure_cache_dir(CACHE_DIR)
             manifest = {
+                "chunk_format": CHUNK_FORMAT,
                 "embed_model": embed_model,
                 "fast_model": config.FAST_EMBED_MODEL if config.HYBRID_RETRIEVAL else None,
                 "files": dict(state._file_hashes),
@@ -304,6 +315,8 @@ def _load_hybrid_cache(source_files, quiet):
         cached_index = _decode_index(CACHE_INDEX.read_bytes())
         old_hashes = manifest["files"]
     except Exception:
+        return {}, list(source_files)
+    if manifest.get("chunk_format") != CHUNK_FORMAT:
         return {}, list(source_files)
     keep_fast = manifest.get("fast_model") == config.FAST_EMBED_MODEL
     keep_dense = manifest.get("embed_model") == config.DENSE_EMBED_MODEL

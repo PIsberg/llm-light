@@ -260,6 +260,19 @@ class TestChunkFile(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
 
 
+    def test_non_ascii_before_symbols_keeps_chunk_bounds(self):
+        print("\n  ▶ TestChunkFile.test_non_ascii_before_symbols_keeps_chunk_bounds")
+        # tree-sitter offsets count UTF-8 bytes; slicing the str with them
+        # shifted every chunk after a non-ASCII character (#262).
+        from llm_light.parsing import chunk_file
+        e, arrow, dash, u = chr(233), chr(8594), chr(8212), chr(252)
+        src = (f"# r{e}sum{e} {arrow} caf{e} {dash} notes\n\n"
+               f"def alpha():\n    return 1\n\n\ndef beta():\n    return '{u}'\n")
+        bodies = {c["id"]: c["text"].split("\n    // ...\n", 1)[1] for c in chunk_file("demo.py", src)}
+        self.assertEqual(bodies["demo.py::alpha"], "def alpha():\n    return 1\n")
+        self.assertEqual(bodies["demo.py::beta"], f"def beta():\n    return '{u}'\n")
+
+
 # ---------------------------------------------------------------------------
 # _build_compressed_tree
 # ---------------------------------------------------------------------------

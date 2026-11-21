@@ -64,7 +64,8 @@ def _chunk_with_treesitter(filepath, source, language, node_types):
             seen[name] = 1
             uid = name
 
-        node_text  = source[node.start_byte:node.end_byte]
+        # tree-sitter offsets count UTF-8 bytes, not characters (#262).
+        node_text  = src_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
         chunk_text = (
             f"// {filepath}\n"
             + preamble + "\n"

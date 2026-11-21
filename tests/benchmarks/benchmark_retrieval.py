@@ -283,7 +283,8 @@ def _chunk_with_treesitter(filepath: str, source: str, lang_cfg: dict) -> list:
     node_types = lang_cfg["node_types"]
 
     parser = Parser(language)
-    tree = parser.parse(bytes(source, "utf-8"))
+    src_bytes = bytes(source, "utf-8")
+    tree = parser.parse(src_bytes)
 
     symbols: list = []
     _walk(tree.root_node, node_types, symbols)
@@ -305,7 +306,7 @@ def _chunk_with_treesitter(filepath: str, source: str, lang_cfg: dict) -> list:
             seen[name] = 1
             uid = name
 
-        body = source[node.start_byte:node.end_byte]
+        body = src_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
         text = f"// {filepath}\n{preamble}\n    // ...\n{body.strip()}\n"
         chunks.append({"id": f"{filepath}::{uid}", "text": text})
 
