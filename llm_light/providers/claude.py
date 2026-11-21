@@ -940,14 +940,18 @@ def _api_tool_loop(create_kwargs):
     with ResponseView("Thinking") as view:  # one view, so rounds read as one reply
         state.turn_view = view  # a question mid-turn pauses it (ui.ask_mid_turn)
         try:
-            _run_tool_rounds(kwargs, messages, usage, texts, view)
+            # The caller reads it: a reply cut off at max_tokens may end inside
+            # an edit block (#271).
+            state.last_stop_reason = _run_tool_rounds(kwargs, messages, usage, texts, view)
         finally:
             state.turn_view = None
     return "\n\n".join(texts), usage, True
 
 
 def _run_tool_rounds(kwargs, messages, usage, texts, view):
+    """Run the model and its tool calls; return the last stop_reason."""
     from llm_light import tools
+    stop = None
     for step in range(_API_TOOL_STEPS + 1):
         kwargs["messages"] = messages
         try:
@@ -969,10 +973,10 @@ def _run_tool_rounds(kwargs, messages, usage, texts, view):
         # Only a completed tool_use turn runs tools: never on max_tokens (the
         # input may be cut off) or refusal.
         if stop != "tool_use":
-            break
+            return stop
         if step == _API_TOOL_STEPS:
             print(f"  {_T_ERR}  stopped after {_API_TOOL_STEPS} rounds of tool calls", flush=True)
-            break
+            return stop
         results = []
         for block in message.content:
             if getattr(block, "type", None) != "tool_use":
@@ -997,6 +1001,7 @@ def _run_tool_rounds(kwargs, messages, usage, texts, view):
             {"role": "assistant", "content": message.content},  # thinking blocks included, unchanged
             {"role": "user", "content": results},
         ]
+    return stop
 
 
 class ClaudeProvider(Provider):
