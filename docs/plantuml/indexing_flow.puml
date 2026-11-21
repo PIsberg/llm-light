@@ -55,10 +55,8 @@ else (no: single model)
   partition "Auto-Tune Model" {
     if (Files < 50) then (small)
       :all-MiniLM-L6-v2 (22 MB);
-    elseif (Files < 200) then (medium)
+    else (50+)
       :all-mpnet-base-v2 (420 MB);
-    else (large)
-      :nomic-embed-text-v1.5;
     endif
   }
 

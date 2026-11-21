@@ -683,7 +683,8 @@ class TestAutoTune(unittest.TestCase):
             auto_tune(files, quiet=True)
             self.assertEqual(cl.EMBED_MODEL, "all-mpnet-base-v2")
 
-    def test_large_repo_selects_nomic(self):
+    def test_large_repo_selects_mpnet(self):
+        # nomic-embed-text-v1.5 fails to load with transformers 5 (#306).
         import llm_light as cl
         files = self._make_files(250)
         with patch("llm_light.SentenceTransformer") as mock_st, \
@@ -692,7 +693,7 @@ class TestAutoTune(unittest.TestCase):
             cl.EMBED_MODEL = None
             cl.embedder = None
             auto_tune(files, quiet=True)
-            self.assertEqual(cl.EMBED_MODEL, "nomic-ai/nomic-embed-text-v1.5")
+            self.assertEqual(cl.EMBED_MODEL, "all-mpnet-base-v2")
 
     def test_sets_top_k_from_chunks(self):
         import llm_light as cl
@@ -5865,8 +5866,8 @@ class TestAutoTuneBoundaries(unittest.TestCase):
             auto_tune(files, quiet=True)
         self.assertEqual(cl.EMBED_MODEL, "all-mpnet-base-v2")
 
-    def test_exactly_200_files_selects_nomic(self):
-        """Boundary: exactly 200 files should select nomic."""
+    def test_exactly_200_files_selects_mpnet(self):
+        """Boundary: 200 files and up get all-mpnet-base-v2, not nomic (#306)."""
         import llm_light as cl
         files = self._make_files(200)
         with patch("llm_light.SentenceTransformer") as mock_st:
@@ -5874,7 +5875,7 @@ class TestAutoTuneBoundaries(unittest.TestCase):
             cl.EMBED_MODEL = None
             cl.embedder = None
             auto_tune(files, quiet=True)
-        self.assertEqual(cl.EMBED_MODEL, "nomic-ai/nomic-embed-text-v1.5")
+        self.assertEqual(cl.EMBED_MODEL, "all-mpnet-base-v2")
 
     def test_top_k_clamped_to_min_2(self):
         """Very large average chunk size should clamp TOP_K to 2."""

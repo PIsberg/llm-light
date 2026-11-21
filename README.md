@@ -378,7 +378,7 @@ Code is indexed twice, by two models that are good at different questions:
 * **`static-retrieval-mrl-en-v1`** (static embeddings, no transformer): indexes this repo's 1,400 chunks in about 2 s on a CPU, so retrieval works from the first question. Best of six models measured at questions that name code ("where is `retry_with_backoff` used?").
 * **`all-mpnet-base-v2`**: about 380 s for the same chunks, so it runs in the background while you work, and its vectors are cached. Best at questions that describe behaviour without naming it ("where do we wait longer between attempts?").
 
-Once both are ready, each chunk's similarity to the question is z-scored per model and averaged. On 35 questions about this repo, the file that answers the question reached the model's context for 23, against 15 with mpnet alone (the setup before this change), and the 6 off-topic questions still got no context. Measure on your own changes with `python tests/benchmarks/benchmark_models.py`. `LLM_LIGHT_HYBRID=0` switches back to a single model picked by repository size (`all-MiniLM-L6-v2` under 50 files, `all-mpnet-base-v2` under 200, `nomic-ai/nomic-embed-text-v1.5` above).
+Once both are ready, each chunk's similarity to the question is z-scored per model and averaged. On 35 questions about this repo, the file that answers the question reached the model's context for 23, against 15 with mpnet alone (the setup before this change), and the 6 off-topic questions still got no context. Measure on your own changes with `python tests/benchmarks/benchmark_models.py`. `LLM_LIGHT_HYBRID=0` switches back to a single model picked by repository size (`all-MiniLM-L6-v2` under 50 files, `all-mpnet-base-v2` from 50 up).
 
 ### 🛡️ Security & SBOM
 

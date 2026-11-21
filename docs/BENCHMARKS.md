@@ -184,7 +184,7 @@ Retrieval modes (`--retrieval`, #69):
 
 | Mode | Models | Ranking |
 |---|---|---|
-| `auto` (default, CI) | one, by repo size (MiniLM, mpnet, nomic) | cosine, unfiltered |
+| `auto` (default, CI) | one, by repo size (MiniLM, mpnet) | cosine, unfiltered |
 | `dense` | `--dense-model` (default `DENSE_EMBED_MODEL`, mpnet) | cosine, unfiltered |
 | `static` | `FAST_EMBED_MODEL` | z-scores, `HYBRID_MIN_SCORE` floor, `HYBRID_SCORE_GAP` |
 | `hybrid` | `FAST_EMBED_MODEL` + `--dense-model` | fused z-scores, floors and gap, as llm_light's hybrid index |
@@ -278,8 +278,7 @@ python tests/benchmarks/benchmark_retrieval.py --split dev --retrieval hybrid
 |---|---|
 | HuggingFace dataset | ~50 MB |
 | Embedding model (MiniLM, < 50 files) | 22 MB |
-| Embedding model (mpnet, 50-199 files) | 420 MB |
-| Embedding model (nomic, 200+ files) | ~550 MB |
+| Embedding model (mpnet, 50+ files) | 420 MB |
 | Repo clones (treeless, all 6 repos) | ~300 MB |
 | Embedding cache | ~50–200 MB |
 

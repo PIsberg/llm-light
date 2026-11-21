@@ -39,8 +39,8 @@ METHODOLOGY
    c. Chunk files using the exact same tree-sitter logic as llm_light.py
       (lines 600-678), with whole-file fallback if tree-sitter is missing.
    d. Embed chunks with the same SentenceTransformer model that llm_light
-      would auto_tune to (lines 692-700): MiniLM for <50 files, mpnet for
-      50-199, nomic for 200+.
+      would auto_tune to: MiniLM for <50 files, mpnet from 50 up (nomic was
+      picked for 200+ until it stopped loading with transformers 5, #306).
    e. Embed the problem_statement (using the same query prefix convention).
    f. Rank chunks by cosine similarity. Extract unique file paths from top-K.
    g. Compare against gold files parsed from the instance's patch field.
@@ -170,11 +170,10 @@ SKIP_DIRS = {
 INDEXABLE_EXTENSIONS = {".java", ".py", ".js", ".go", ".rs", ".ts", ".tsx"}
 
 # Embedding model selection thresholds -- from llm_light.py auto_tune() lines 692-700
-# < 50 files -> MiniLM, 50-199 -> mpnet, 200+ -> nomic
+# < 50 files -> MiniLM, 50+ -> mpnet (nomic for 200+ until #306)
 EMBED_THRESHOLDS = [
     (50,  "all-MiniLM-L6-v2"),
-    (200, "all-mpnet-base-v2"),
-    (None, "nomic-ai/nomic-embed-text-v1.5"),
+    (None, "all-mpnet-base-v2"),
 ]
 
 # Nomic model needs explicit prefixes -- from llm_light.py lines 204-205
@@ -341,7 +340,7 @@ def select_embed_model(n_files: int) -> str:
     for threshold, model in EMBED_THRESHOLDS:
         if threshold is None or n_files < threshold:
             return model
-    return EMBED_THRESHOLDS[-1][1]  # nomic fallback
+    return EMBED_THRESHOLDS[-1][1]
 
 
 class TokenOverlapEmbedder:
