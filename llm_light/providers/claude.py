@@ -188,6 +188,7 @@ def _web_rules() -> list:
 # change routinely takes several minutes while streaming events the whole
 # time. Kill it only when it goes silent; the overall cap is a backstop.
 _CLI_IDLE_TIMEOUT_SECS = 300
+_STDERR_KEEP = 20_000  # characters of the CLI's stderr kept for error messages
 # Every built-in CLI tool, denied by name for tool-free calls.
 _ALL_CLI_TOOLS = ",".join([
     "Bash", "PowerShell", "Edit", "MultiEdit", "Write", "NotebookEdit", "Read", "Glob",
@@ -562,6 +563,36 @@ def _make_cli_subprocess_call(
                 prompt_stdin.close()
         state.turn_process = proc  # Esc on Windows kills it (esc_key.py)
 
+        # Drain stderr while the CLI runs (#273): read only after exit, a full
+        # pipe (a few KB on Windows) blocked the child's next write, stdout went
+        # quiet, and the idle watchdog killed a turn that was still working.
+        stderr_buf: list = []
+
+        def _drain_stderr():
+            try:
+                kept = 0
+                for line in proc.stderr:
+                    stderr_buf.append(line)
+                    kept += len(line)
+                    while kept > _STDERR_KEEP and len(stderr_buf) > 1:
+                        kept -= len(stderr_buf.pop(0))
+            except Exception:
+                pass
+
+        stderr_reader = _threading.Thread(target=_drain_stderr, daemon=True, name="claude-cli-stderr")
+        stderr_reader.start()
+
+        def _stderr_text() -> str:
+            stderr_reader.join(timeout=2)
+            text = "".join(stderr_buf)
+            try:  # a stream that does not iterate (a test double) still has read()
+                rest = proc.stderr.read()
+                if isinstance(rest, str):
+                    text += rest
+            except Exception:
+                pass
+            return text
+
         timed_out = _threading.Event()
         idle_out = _threading.Event()
         start_time = time.monotonic()
@@ -685,19 +716,13 @@ def _make_cli_subprocess_call(
 
         if resume and not reply_parts and not shown_tool_ids and (
                 returncode != 0 or timed_out.is_set() or idle_out.is_set()):
-            try:
-                stderr_tail = (proc.stderr.read() or "")[-2000:]
-            except Exception:
-                stderr_tail = ""
+            stderr_tail = _stderr_text()[-2000:]
             if "Not logged in" in stderr_tail or "Invalid API key" in stderr_tail:
                 raise ClaudeNotLoggedIn("Claude CLI: Not logged in. Please run 'claude auth login' in your terminal.")
             raise _ResumeRefused(stderr_tail.strip() or f"exit code {returncode}")
 
         if timed_out.is_set() or idle_out.is_set():
-            try:
-                stderr_tail = (proc.stderr.read() or "")[-2000:]
-            except Exception:
-                stderr_tail = ""
+            stderr_tail = _stderr_text()[-2000:]
             reason = (
                 f"produced no output for {_CLI_IDLE_TIMEOUT_SECS:g}s"
                 if idle_out.is_set()
@@ -709,10 +734,7 @@ def _make_cli_subprocess_call(
             )
 
         if returncode != 0:
-            try:
-                stderr_output = proc.stderr.read() or ""
-            except Exception:
-                stderr_output = ""
+            stderr_output = _stderr_text()
             error_output = stderr_output or (final_result_text or "")
             if "Not logged in" in error_output or "Invalid API key" in error_output:
                 raise ClaudeNotLoggedIn("Claude CLI: Not logged in. Please run 'claude auth login' in your terminal.")
@@ -918,14 +940,18 @@ def _api_tool_loop(create_kwargs):
     with ResponseView("Thinking") as view:  # one view, so rounds read as one reply
         state.turn_view = view  # a question mid-turn pauses it (ui.ask_mid_turn)
         try:
-            _run_tool_rounds(kwargs, messages, usage, texts, view)
+            # The caller reads it: a reply cut off at max_tokens may end inside
+            # an edit block (#271).
+            state.last_stop_reason = _run_tool_rounds(kwargs, messages, usage, texts, view)
         finally:
             state.turn_view = None
     return "\n\n".join(texts), usage, True
 
 
 def _run_tool_rounds(kwargs, messages, usage, texts, view):
+    """Run the model and its tool calls; return the last stop_reason."""
     from llm_light import tools
+    stop = None
     for step in range(_API_TOOL_STEPS + 1):
         kwargs["messages"] = messages
         try:
@@ -947,10 +973,10 @@ def _run_tool_rounds(kwargs, messages, usage, texts, view):
         # Only a completed tool_use turn runs tools: never on max_tokens (the
         # input may be cut off) or refusal.
         if stop != "tool_use":
-            break
+            return stop
         if step == _API_TOOL_STEPS:
             print(f"  {_T_ERR}  stopped after {_API_TOOL_STEPS} rounds of tool calls", flush=True)
-            break
+            return stop
         results = []
         for block in message.content:
             if getattr(block, "type", None) != "tool_use":
@@ -975,6 +1001,7 @@ def _run_tool_rounds(kwargs, messages, usage, texts, view):
             {"role": "assistant", "content": message.content},  # thinking blocks included, unchanged
             {"role": "user", "content": results},
         ]
+    return stop
 
 
 class ClaudeProvider(Provider):
@@ -1119,7 +1146,7 @@ class ClaudeProvider(Provider):
                 render=False,
                 tools=False,  # the turns may quote repo text; nothing may act on it
             )
-            return text.strip(), usage
+            return _nonempty_summary(text), usage
 
         @retry_with_backoff
         def _call_api():
@@ -1132,7 +1159,18 @@ class ClaudeProvider(Provider):
             )
 
         response = _call_api()
-        return response.content[0].text.strip(), response.usage
+        # Thinking is on, so the first block may be a thinking block (#272).
+        text = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+        return _nonempty_summary(text), response.usage
+
+
+def _nonempty_summary(text: str) -> str:
+    """The summary, stripped; an empty one is a failure, so compression falls
+    back to truncating and /compact leaves the conversation as it was."""
+    text = text.strip()
+    if not text:
+        raise ValueError("the summary came back empty")
+    return text
 
 
 PROVIDER = ClaudeProvider()

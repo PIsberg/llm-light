@@ -380,6 +380,38 @@ full text. The default sends the right file for 29 of 37 on-topic questions,
 from 26, and one more of the 6 off-topic questions now gets context. The
 per-model floors were tuned on the old vectors and were not re-swept (#287).
 
+### Budget by rendered tokens (2026-11-21, #288)
+
+`--budgets` now reports the tokens of the rendered context
+(`_dedup_retrieved_context`: each file's header once, comments stripped)
+instead of the sum of the selected chunks' full texts, which counted a
+file's preamble once per chunk. With the same metric on both sides, charging
+a second chunk of a file only its body changed, on the default static +
+all-mpnet-base-v2: right file sent at high effort 32 → 33 of 37, other
+efforts unchanged; mean rendered tokens 1,031 → 1,030 (low), 1,837 → 1,845
+(medium, median 2,022 → 2,210), 3,097 → 3,093 (high), 3,813 → 3,776 (max).
+
+### Top-level code as chunks (2026-11-21, #270)
+
+Constants after a file's first function, class headers and attributes, and
+JavaScript arrow-function modules were in no chunk: 762 of 11,874 non-blank
+lines of `llm_light/` (6.4%), 237 of them in `config.py`, `MODEL_PRICES`
+included. They are now chunks (646 to 716 on `llm_light/`, 3,375 to 3,789 on
+the whole repository); 51 lines (0.4%) remain in none. Both trees clean,
+default static + all-mpnet-base-v2, `--budgets`:
+
+| Effort | Right file sent (of 37 on-topic) | Off-topic got nothing | Tokens sent, mean |
+|---|---|---|---|
+| low | 24 → 24 | 4 → 4 of 6 | 1,153 → 1,129 |
+| medium | 29 → 31 | 4 → 4 | 1,981 → 1,974 |
+| high | 34 → 33 | 4 → 4 | 3,252 → 3,260 |
+| max | 34 → 33 | 4 → 4 | 4,103 → 4,076 |
+
+Single models alone moved by one question each way (all-mpnet-base-v2
+identifier 14 → 13, static paraphrase 3 → 2). The fixture has no question
+about a constant or an arrow-function module, so the case the change is for
+is not in these numbers.
+
 ### Results (2026-10-24, CPU)
 
 | Configuration | Answering file sent (identifier / paraphrase) | Off-topic got nothing |

@@ -114,6 +114,9 @@ def _display_path() -> str:
 # this table rather than printed: nothing from that tuple reaches the screen.
 _ACCESS_LABELS = {
     "Claude CLI (Pro Subscription)": "Claude subscription",
+    # A project's .env key is not used while there is a login (#277).
+    "Claude CLI (Pro Subscription), .env key skipped":
+        "Claude subscription (the API key in .env is not used; export ANTHROPIC_API_KEY to use it)",
     "Environment": "API key from ANTHROPIC_API_KEY",
     "Dotfile (.anthropic)": "API key from ~/.anthropic",
     "Dotfile (.env)": "API key from .env",
