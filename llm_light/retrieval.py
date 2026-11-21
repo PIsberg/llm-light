@@ -207,7 +207,7 @@ def _modified_paths():
         raw = []
     paths = set()
     for p in raw:
-        p = p.split(" -> ")[-1].strip().strip('"').replace("\\", "/")
+        p = p.replace("\\", "/")  # already unquoted, a rename's new path only (#269)
         if p:
             paths.add(p)
     _worktree_cache = (now, frozenset(paths))
