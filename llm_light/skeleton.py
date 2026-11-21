@@ -301,11 +301,15 @@ def _refresh_single_md(path_str: str) -> bool:
     return True
 
 def _refresh_tree_only() -> str:
+    # The watcher calls this on create, delete and move: walk again, or the tree
+    # keeps the list taken at startup for the whole session (#268).
+    _invalidate_path_cache()
     all_paths = _get_cached_paths()
     state._skeleton_tree = _build_compressed_tree(all_paths)
     return _assemble_skeleton()
 
 def build_skeleton() -> str:
+    _invalidate_path_cache()  # a rebuild reflects the disk now (#268)
     all_paths = _get_cached_paths()
     
     # Separate files by type for skeleton tree and markdown processing
