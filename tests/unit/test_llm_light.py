@@ -3558,7 +3558,7 @@ class TestLoadCache(unittest.TestCase):
                 import json, pickle
                 cl.CACHE_DIR.mkdir(exist_ok=True)
                 cl.CACHE_MANIFEST.write_text(
-                    json.dumps({"embed_model": "old-model", "files": {}}),
+                    json.dumps({"chunk_format": cl.indexer.CHUNK_FORMAT, "embed_model": "old-model", "files": {}}),
                     encoding="utf-8"
                 )
                 cl.CACHE_INDEX.write_bytes(_encode_index({}))
@@ -3767,7 +3767,7 @@ class TestLoadCacheHit(unittest.TestCase):
                 # Create a matching cache
                 cl.CACHE_DIR.mkdir(exist_ok=True)
                 cl.CACHE_MANIFEST.write_text(
-                    json.dumps({"embed_model": "all-MiniLM-L6-v2", "files": {"cached.py": h}}),
+                    json.dumps({"chunk_format": cl.indexer.CHUNK_FORMAT, "embed_model": "all-MiniLM-L6-v2", "files": {"cached.py": h}}),
                     encoding="utf-8"
                 )
                 import numpy as np
@@ -4191,7 +4191,7 @@ class TestIndexFilesCache(unittest.TestCase):
                 # Pre-populate cache
                 cl.CACHE_DIR.mkdir(exist_ok=True)
                 cl.CACHE_MANIFEST.write_text(
-                    json.dumps({"embed_model": "all-MiniLM-L6-v2", "files": {"cached_module.py": h}}),
+                    json.dumps({"chunk_format": cl.indexer.CHUNK_FORMAT, "embed_model": "all-MiniLM-L6-v2", "files": {"cached_module.py": h}}),
                     encoding="utf-8"
                 )
                 emb = np.zeros(3)
@@ -4378,7 +4378,7 @@ class TestLoadCacheStale(unittest.TestCase):
                 # Use a wrong hash for f2 in the manifest to simulate a stale file
                 cl.CACHE_DIR.mkdir(exist_ok=True)
                 cl.CACHE_MANIFEST.write_text(
-                    json.dumps({"embed_model": "all-MiniLM-L6-v2", "files": {"a.py": h1, "b.py": "wrong_hash"}}),
+                    json.dumps({"chunk_format": cl.indexer.CHUNK_FORMAT, "embed_model": "all-MiniLM-L6-v2", "files": {"a.py": h1, "b.py": "wrong_hash"}}),
                     encoding="utf-8"
                 )
                 cl.CACHE_INDEX.write_bytes(_encode_index({
@@ -4409,7 +4409,7 @@ class TestLoadCacheStale(unittest.TestCase):
             try:
                 cl.CACHE_DIR.mkdir(exist_ok=True)
                 cl.CACHE_MANIFEST.write_text(
-                    json.dumps({"embed_model": "old-model", "files": {}}),
+                    json.dumps({"chunk_format": cl.indexer.CHUNK_FORMAT, "embed_model": "old-model", "files": {}}),
                     encoding="utf-8"
                 )
                 cl.CACHE_INDEX.write_bytes(_encode_index({}))
@@ -6529,7 +6529,7 @@ class TestLoadCacheCorruption(unittest.TestCase):
                 h = _file_hash(f)
                 cl.CACHE_DIR.mkdir(exist_ok=True)
                 cl.CACHE_MANIFEST.write_text(
-                    json.dumps({"embed_model": "all-MiniLM-L6-v2", "files": {"a.py": h}}),
+                    json.dumps({"chunk_format": cl.indexer.CHUNK_FORMAT, "embed_model": "all-MiniLM-L6-v2", "files": {"a.py": h}}),
                     encoding="utf-8",
                 )
                 cl.CACHE_INDEX.write_bytes(b"corrupt-pickle")

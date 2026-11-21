@@ -155,7 +155,7 @@ class TestLoadCache(unittest.TestCase):
             try:
                 cl.CACHE_DIR.mkdir(exist_ok=True)
                 cl.CACHE_MANIFEST.write_text(
-                    json.dumps({"embed_model": "old-model", "files": {}}),
+                    json.dumps({"chunk_format": cl.indexer.CHUNK_FORMAT, "embed_model": "old-model", "files": {}}),
                     encoding="utf-8"
                 )
                 cl.CACHE_INDEX.write_bytes(_encode_index({}))
@@ -489,7 +489,8 @@ class TestCacheFormat(unittest.TestCase):
         CACHE_DIR.mkdir(exist_ok=True)
         Path(CACHE_DIR, "index.pkl").write_bytes(pickle.dumps(Payload()))
         ix.CACHE_INDEX.write_bytes(pickle.dumps(Payload()))
-        CACHE_MANIFEST.write_text(json.dumps({"embed_model": "m", "files": {}}), encoding="utf-8")
+        CACHE_MANIFEST.write_text(json.dumps({"chunk_format": ix.CHUNK_FORMAT, "embed_model": "m", "files": {}}),
+                                  encoding="utf-8")
         Path("x.py").write_text("def x(): pass\n", encoding="utf-8")
         with patch("builtins.print"):
             store, stale = ix._load_cache([Path("x.py")], "m", {}, quiet=True)
@@ -508,3 +509,37 @@ class TestCacheFormat(unittest.TestCase):
         ix._save_cache("m")
         self.assertFalse(legacy.exists())
         self.assertTrue(ix.CACHE_INDEX.exists())
+
+    def test_cache_from_an_older_chunk_format_is_stale(self):
+        print("\n  ▶ TestCacheFormat.test_cache_from_an_older_chunk_format_is_stale")
+        # Chunks cached before #262 were cut at the wrong place; an unchanged
+        # file must not keep them.
+        import json
+        import llm_light.indexer as ix
+        from llm_light.config import CACHE_DIR, CACHE_MANIFEST
+        Path("x.py").write_text("# " + chr(233) + "\ndef x(): pass\n", encoding="utf-8")
+        CACHE_DIR.mkdir(exist_ok=True)
+        ix.CACHE_INDEX.write_bytes(ix._encode_index({"x.py::x": {"text": "shifted"}}))
+        CACHE_MANIFEST.write_text(json.dumps(
+            {"embed_model": "m", "files": {"x.py": ix._file_hash(Path("x.py"))}}), encoding="utf-8")
+        with patch("builtins.print"):
+            store, stale = ix._load_cache([Path("x.py")], "m", {}, quiet=True)
+            hstore, hstale = ix._load_hybrid_cache([Path("x.py")], quiet=True)
+        self.assertEqual((store, stale), ({}, [Path("x.py")]))
+        self.assertEqual((hstore, hstale), ({}, [Path("x.py")]))
+
+    def test_cache_in_the_current_format_still_hits(self):
+        print("\n  ▶ TestCacheFormat.test_cache_in_the_current_format_still_hits")
+        import llm_light.indexer as ix
+        import llm_light.state as st
+        Path("x.py").write_text("def x(): pass\n", encoding="utf-8")
+        with patch.object(st, "_file_hashes", {"x.py": ix._file_hash(Path("x.py"))}), \
+             patch.object(st, "_file_stats", {}), \
+             patch.object(st, "chunk_store", {"x.py::x": {"text": "def x(): pass"}}):
+            ix._save_cache("m")
+            with patch("builtins.print"):
+                store, stale = ix._load_cache([Path("x.py")], "m", {}, quiet=True)
+                hstore, hstale = ix._load_hybrid_cache([Path("x.py")], quiet=True)
+        self.assertEqual(stale, [])
+        self.assertEqual(store["x.py::x"]["text"], "def x(): pass")
+        self.assertEqual(hstale, [])
