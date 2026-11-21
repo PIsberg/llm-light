@@ -40,6 +40,63 @@ class TestResolveApiKey(unittest.TestCase):
                 os.environ["ANTHROPIC_API_KEY"] = orig
 
 
+
+class TestProjectEnvKeyAndLogin(unittest.TestCase):
+    """A project's ./.env key does not override the subscription login (#277).
+
+    Apps built on the API keep ANTHROPIC_API_KEY in .env; llm_light read it
+    before the login and billed it per token in that one project."""
+
+    def setUp(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+        self.home = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+        Path(".env").write_text("ANTHROPIC_API_KEY=sk-ant-project-app\n", encoding="utf-8")
+        import llm_light.config as config
+        self.patches = [
+            patch.dict(os.environ, {}, clear=False),
+            patch.object(config, "is_test_mode", False),
+            patch.object(config.Path, "home", return_value=Path(self.home)),
+        ]
+        for p in self.patches:
+            p.start()
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+
+    def tearDown(self):
+        for p in reversed(self.patches):
+            p.stop()
+        os.chdir(self.orig)
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def test_login_wins_over_project_env_key(self):
+        print("\n  ▶ TestProjectEnvKeyAndLogin.test_login_wins_over_project_env_key")
+        import llm_light.config as config
+        with patch.object(config, "_get_pro_token", return_value="oauth-token"):
+            api_key, mode, source, token = config._resolve_api_key()
+        self.assertEqual((api_key, mode), ("", "OAUTH"))
+        from llm_light.ui import access_label
+        self.assertIn(".env is not used", access_label(source))  # the header says so
+
+    def test_project_env_key_used_without_a_login(self):
+        print("\n  ▶ TestProjectEnvKeyAndLogin.test_project_env_key_used_without_a_login")
+        import llm_light.config as config
+        with patch.object(config, "_get_pro_token", return_value=""):
+            api_key, mode, source, _ = config._resolve_api_key()
+        self.assertEqual((api_key, mode, source), ("sk-ant-project-app", "API_KEY", "Dotfile (.env)"))
+
+    def test_home_dotfile_still_wins_over_login(self):
+        print("\n  ▶ TestProjectEnvKeyAndLogin.test_home_dotfile_still_wins_over_login")
+        import llm_light.config as config
+        Path(self.home, ".anthropic").write_text("ANTHROPIC_API_KEY=sk-ant-mine\n", encoding="utf-8")
+        with patch.object(config, "_get_pro_token", return_value="oauth-token"):
+            api_key, mode, source, _ = config._resolve_api_key()
+        self.assertEqual((api_key, mode, source), ("sk-ant-mine", "API_KEY", "Dotfile (.anthropic)"))
+
+
 class TestLoadLanguages(unittest.TestCase):
     """Tests for language config and indexable extensions."""
 
