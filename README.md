@@ -170,8 +170,9 @@ Without tree-sitter, chunking falls back to whole-file mode. Without `rich`, out
 `llm_light` is designed to be flexible with how you pay for tokens. It resolves your identity in this order:
 
 1.  **Environment Variable**: `ANTHROPIC_API_KEY` (Standard API Key)
-2.  **Local Dotfiles**: `.anthropic` (home dir) or `.env` (project dir)
+2.  **Home dotfile**: `~/.anthropic`
 3.  **Claude CLI Config (OAuth)**: Automatically reads your Claude Pro session from `~/.claude/.credentials.json`.
+4.  **Project dotfile**: `.env` in the project, only when there is no login. Apps built on the API often keep their own key there; while you are logged in, llm_light stays on your subscription and the startup header says the `.env` key was not used. Export `ANTHROPIC_API_KEY` to use it.
 
 #### Other providers: Gemini and Codex
 `python3 llm_light.py --provider gemini` or `--provider codex` sends the same skeleton and retrieved chunks to that tool's CLI instead of Claude. Without `--provider` nothing changes.
@@ -368,7 +369,7 @@ Other flags: `--model <name>` pins the model from the start (as `/model` does), 
 The script runs three concurrent threads to keep your workflow seamless:
 
 * **Main Thread:** Handles the input loop, retrieves relevant chunks per query, and manages the conversation history.
-* **Watchdog:** Monitors your directory for file saves. If a source file changes, it automatically re-chunks and re-embeds it; if a tracked `.md` file changes, it rebuilds the skeleton cache. Files under `.git`, `.venv`, `node_modules` and other skipped directories are ignored. It reports in the toolbar (`re-indexed calc.py (2 chunks)`), never in the middle of a reply.
+* **Watchdog:** Monitors your directory for file saves. If a source file changes, it automatically re-chunks and re-embeds it; if a tracked `.md` file changes, it rebuilds the skeleton cache; and when a source file is created, deleted or moved, the directory tree in the system prompt is rebuilt from a fresh walk. Files under `.git`, `.venv`, `node_modules` and other skipped directories are ignored. It reports in the toolbar (`re-indexed calc.py (2 chunks)`), never in the middle of a reply.
 * **Heartbeat Daemon (API-key mode only):** Keeps the Anthropic prompt cache warm while you step away. Disabled in OAuth/Pro-subscription mode, where each turn spawns a fresh `claude` CLI subprocess and there is no persistent process to keep warm.
 
 ### Embedding Models (hybrid retrieval)
