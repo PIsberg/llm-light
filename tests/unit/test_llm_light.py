@@ -1173,7 +1173,7 @@ class TestResolveNewContentNewFile(unittest.TestCase):
 
     def test_new_file_overwrites_existing(self):
         from llm_light import _resolve_new_content
-        Path("existing.py").write_text("old content\n", encoding="utf-8")
+        Path("existing.py").write_bytes(b"old content\n")
         edit = {"type": "new", "path": "existing.py", "content": "new content\n"}
         old, new = _resolve_new_content(edit)
         self.assertEqual(old, "old content\n")

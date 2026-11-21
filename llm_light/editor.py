@@ -83,17 +83,46 @@ def _safe_target(path_str):
     return candidate
 
 
+def _read_text(p):
+    """A file's text as stored: its own line endings, and any byte that is not
+    UTF-8 kept as a surrogate escape, so writing it back with _encode changes
+    nothing the edit did not name (#265)."""
+    return p.read_bytes().decode("utf-8", errors="surrogateescape")
+
+
+def _encode(text):
+    return text.encode("utf-8", errors="surrogateescape")
+
+
+def _printable(text):
+    """Text safe to print, lint or send: an undecodable byte becomes U+FFFD."""
+    return _encode(text).decode("utf-8", errors="replace")
+
+
+def _uses_crlf(text):
+    crlf = text.count("\r\n")
+    return crlf > text.count("\n") - crlf
+
+
 def _resolve_new_content(edit, current=None):
     """Return (old, new) text for one edit block.
 
     `current` is the file's text after the earlier blocks of the same reply
-    (apply_edits passes it); without it the file is read from disk.
+    (apply_edits passes it); without it the file is read from disk. SEARCH
+    and REPLACE come with LF endings; a file that uses CRLF keeps CRLF.
     """
+    old, new = _resolve_raw(edit, current)
+    if old and _uses_crlf(old):
+        new = new.replace("\r\n", "\n").replace("\n", "\r\n")
+    return old, new
+
+
+def _resolve_raw(edit, current):
     p = _safe_target(edit["path"])
     if edit["type"] == "new":
         if current is not None:
             return current, edit["content"]
-        old = p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
+        old = _read_text(p) if p.exists() else ""
         return old, edit["content"]
 
     if current is not None:
@@ -101,7 +130,7 @@ def _resolve_new_content(edit, current=None):
     elif not p.exists():
         raise FileNotFoundError(f"File not found: {edit['path']}")
     else:
-        old = p.read_text(encoding="utf-8", errors="ignore")
+        old = _read_text(p)
     search = edit["search"]
     replace = edit["replace"]
     
@@ -169,7 +198,7 @@ def _resolve_new_content(edit, current=None):
     # The excerpt goes to the model: never from a file the index skips (a
     # dotfile such as .env, or anything under a hidden or vendored directory).
     from llm_light.skeleton import _is_skipped
-    hint = "" if _is_skipped(p.relative_to(Path.cwd().resolve())) else _nearest_text(s_lines, o_lines)
+    hint = "" if _is_skipped(p.relative_to(Path.cwd().resolve())) else _printable(_nearest_text(s_lines, o_lines))
     raise ValueError(
         f"SEARCH block not found in {edit['path']}: it must match the file exactly "
         f"(only indentation may differ).{hint}")
@@ -247,7 +276,7 @@ def apply_edits(edits, check_only=False, explanation="", auto_apply=False):
 
     if check_only:
         for f in files.values():
-            err = _lint_content(f["path"], f["_new"])
+            err = _lint_content(f["path"], _printable(f["_new"]))
             if err:
                 lint_errors.append(f"SyntaxError in {f['path']}:\n{err}")
         return lint_errors
@@ -265,7 +294,7 @@ def apply_edits(edits, check_only=False, explanation="", auto_apply=False):
     print()
 
     for r in applicable:
-        show_diff(r["path"], r["_new"], old_content=r["_old"])  # the panel is titled with the path
+        show_diff(r["path"], _printable(r["_new"]), old_content=_printable(r["_old"]))  # the panel is titled with the path
 
     if auto_apply or permissions.auto_edits():
         auto = True
@@ -287,7 +316,10 @@ def apply_edits(edits, check_only=False, explanation="", auto_apply=False):
     def _write_one(r):
         p = Path(r["path"])
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(r["_new"], encoding="utf-8")
+        if r["path"] in created:
+            p.write_text(r["_new"], encoding="utf-8")  # a new file: the platform's line ending
+        else:
+            p.write_bytes(_encode(r["_new"]))           # an existing one: its own endings and bytes
         return r["path"]
 
     with ToolExecutionManager(label):
