@@ -1426,7 +1426,7 @@ class TestSummarizeTurns(unittest.TestCase):
             {"role": "assistant", "content": "X is a thing."},
         ]
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Summary of conversation")]
+        mock_response.content = [MagicMock(type="text", text="Summary of conversation")]
         mock_response.usage = MagicMock()
 
         with patch("llm_light.providers.claude.client.messages.create", return_value=mock_response):
@@ -1439,7 +1439,7 @@ class TestSummarizeTurns(unittest.TestCase):
             {"role": "assistant", "content": "Answer."},
         ]
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Summary")]
+        mock_response.content = [MagicMock(type="text", text="Summary")]
         mock_response.usage = MagicMock()
 
         with patch("llm_light.providers.claude.client.messages.create", return_value=mock_response):
@@ -2415,7 +2415,7 @@ class TestSummarizeTurnsExtended(unittest.TestCase):
 
     def test_empty_messages_no_crash(self):
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Empty summary")]
+        mock_response.content = [MagicMock(type="text", text="Empty summary")]
         mock_response.usage = MagicMock()
         with patch("llm_light.providers.claude.client.messages.create", return_value=mock_response):
             summary, _ = _summarize_turns([])
