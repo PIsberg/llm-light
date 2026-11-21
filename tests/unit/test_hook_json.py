@@ -147,3 +147,48 @@ def test_broken_json_is_noted_and_does_not_block(json_hook, project, notices):
     out, is_error = _read(project)
     assert not is_error and "x = 1" in out
     assert any("not valid JSON" in text and error for text, error in notices)
+
+
+
+# --- #248: updatedInput, updatedToolOutput, continue ------------------------------------------
+
+def test_updated_input_redirects_the_call(json_hook, project, notices):
+    (project / "b.py").write_text("y = 2\n", encoding="utf-8")
+    json_hook("PreToolUse", {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                                   "permissionDecision": "allow",
+                                                   "updatedInput": {"file_path": str(project / "b.py")}}})
+    output, is_error = _read(project)
+    assert not is_error
+    assert "y = 2" in output and "x = 1" not in output
+
+
+def test_updated_input_cannot_reach_past_the_project(json_hook, project, tmp_path, notices):
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOKEN=abc\n", encoding="utf-8")
+    json_hook("PreToolUse", {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                                   "updatedInput": {"file_path": str(secret)}}})
+    output, is_error = _read(project)
+    assert is_error
+    assert "TOKEN" not in output
+    assert "outside" in output
+
+
+def test_updated_tool_output_replaces_the_result(json_hook, project, notices):
+    json_hook("PostToolUse", {"hookSpecificOutput": {"hookEventName": "PostToolUse",
+                                                    "updatedToolOutput": "[redacted by policy]"}})
+    output, is_error = _read(project)
+    assert output == "[redacted by policy]"
+    assert "x = 1" not in output
+
+
+def test_continue_false_stops_the_turn(json_hook, project, notices):
+    json_hook("PreToolUse", {"continue": False, "stopReason": "build is frozen"})
+    with pytest.raises(KeyboardInterrupt):
+        _read(project)
+    assert any("build is frozen" in text for text, _ in notices)
+
+
+def test_continue_false_after_an_edit_does_not_stop_the_commit(json_hook, project, notices):
+    # The edit is already on disk; hooks.after_edit must return so the commit still runs.
+    json_hook("PostToolUse", {"continue": False, "stopReason": "freeze"})
+    hooks.after_edit("a.py", new=False)  # no KeyboardInterrupt
