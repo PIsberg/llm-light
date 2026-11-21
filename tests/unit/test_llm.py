@@ -1995,6 +1995,50 @@ class TestReplyCutOffAtMaxTokens(unittest.TestCase):
         self.assertIn("cut off", out.getvalue())
 
 
+class TestParallelReadOnlyTools(unittest.TestCase):
+    """Read-only calls in one round run at the same time; results keep their order,
+    and a round with shell stays sequential (#196)."""
+
+    def _round(self, calls):
+        import time
+        from types import SimpleNamespace as NS
+        usage = NS(input_tokens=1, output_tokens=1, cache_read_input_tokens=0, cache_creation_input_tokens=0)
+        blocks = [NS(type="tool_use", id=f"t{i}", name=name, input={"path": f"f{i}.py"})
+                  for i, name in enumerate(calls)]
+        replies = iter([("", {"message": NS(stop_reason="tool_use", content=blocks, usage=usage)}),
+                        ("done", {"message": NS(stop_reason="end_turn", content=[], usage=usage)})])
+        sent = []
+
+        def stream(client, view=None, **kwargs):
+            sent.append(list(kwargs["messages"]))
+            return next(replies)
+
+        def slow_tool(name, tool_input, root=None):
+            time.sleep(0.4)
+            return f"out {tool_input['path']}", False
+
+        with patch.object(_claude_mod, "stream_chat_response", side_effect=stream), \
+             patch("llm_light.tools.run_tool", side_effect=slow_tool):
+            start = time.monotonic()
+            _claude_mod._run_tool_rounds({"model": "m", "messages": []}, [], _claude_mod._TurnUsage(),
+                                         [], MagicMock())
+            elapsed = time.monotonic() - start
+        results = sent[1][-1]["content"]
+        return elapsed, [(r["tool_use_id"], r["content"]) for r in results]
+
+    def test_read_only_calls_run_together_in_order(self):
+        print("\n  ▶ TestParallelReadOnlyTools.test_read_only_calls_run_together_in_order")
+        elapsed, results = self._round(["read_file", "grep", "list_files"])
+        self.assertLess(elapsed, 1.0)  # three 0.4 s calls one after another take 1.2 s
+        self.assertEqual(results, [("t0", "out f0.py"), ("t1", "out f1.py"), ("t2", "out f2.py")])
+
+    def test_a_round_with_shell_stays_in_order(self):
+        print("\n  ▶ TestParallelReadOnlyTools.test_a_round_with_shell_stays_in_order")
+        elapsed, results = self._round(["read_file", "shell"])
+        self.assertGreaterEqual(elapsed, 0.7)  # sequential: about 0.8 s; Windows timers run ~15 ms coarse
+        self.assertEqual([r[0] for r in results], ["t0", "t1"])
+
+
 class TestAgentEditsToDirtyFiles(unittest.TestCase):
     """A file the user had uncommitted work in, edited again by the agent:
     its name is in both snapshots, so the edit was neither shown nor

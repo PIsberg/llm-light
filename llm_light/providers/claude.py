@@ -948,6 +948,10 @@ def _api_tool_loop(create_kwargs):
     return "\n\n".join(texts), usage, True
 
 
+# Tools that only read: a round made of these alone runs its calls in parallel (#196).
+_PARALLEL_TOOLS = frozenset({"read_file", "grep", "list_files", "fetch_chunk"})
+
+
 def _run_tool_rounds(kwargs, messages, usage, texts, view):
     """Run the model and its tool calls; return the last stop_reason."""
     from llm_light import tools
@@ -977,13 +981,21 @@ def _run_tool_rounds(kwargs, messages, usage, texts, view):
         if step == _API_TOOL_STEPS:
             print(f"  {_T_ERR}  stopped after {_API_TOOL_STEPS} rounds of tool calls", flush=True)
             return stop
-        results = []
-        for block in message.content:
-            if getattr(block, "type", None) != "tool_use":
-                continue
+        calls = [b for b in message.content if getattr(b, "type", None) == "tool_use"]
+        for block in calls:
             view.tool(_describe_tool_call(block.name, block.input))
-            view.status("Working")
-            output, is_error = tools.run_tool(block.name, block.input)
+        view.status("Working")
+        if len(calls) > 1 and all(b.name in _PARALLEL_TOOLS for b in calls):
+            # Read-only calls do not depend on one another: run them together (#196).
+            # A round with shell or an MCP tool stays in order: one may depend on
+            # another, and an MCP call may stop to ask the user.
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(len(calls), 8)) as pool:
+                outcomes = list(pool.map(lambda b: tools.run_tool(b.name, b.input), calls))
+        else:
+            outcomes = [tools.run_tool(b.name, b.input) for b in calls]
+        results = []
+        for block, (output, is_error) in zip(calls, outcomes):
             result = {"type": "tool_result", "tool_use_id": block.id, "content": output}
             if is_error:
                 result["is_error"] = True
