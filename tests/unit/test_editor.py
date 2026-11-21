@@ -637,6 +637,18 @@ class TestSearchThatMatchesNothing(unittest.TestCase):
         self.assertEqual(len(errs), 1)
         self.assertIn("get_user", errs[0])
 
+    def test_hidden_file_gets_no_excerpt(self):
+        print("\n  ▶ TestSearchThatMatchesNothing.test_hidden_file_gets_no_excerpt")
+        # The excerpt goes to the model. A file the index skips (a dotfile,
+        # anything under a hidden directory) is not quoted, or a SEARCH aimed
+        # at .env would read it.
+        Path(".env").write_text("API_KEY=sk-live-0123456789\nDEBUG=1\n", encoding="utf-8")
+        with self.assertRaises(ValueError) as ctx:
+            _resolve_new_content({"type": "edit", "path": ".env",
+                                  "search": "API_KEY = sk-live\n", "replace": "API_KEY=x\n"})
+        self.assertNotIn("0123456789", str(ctx.exception))
+        self.assertIn(".env", str(ctx.exception))
+
     def test_indentation_only_difference_still_matches(self):
         print("\n  ▶ TestSearchThatMatchesNothing.test_indentation_only_difference_still_matches")
         Path("m.py").write_text("class A:\n    def f(self):\n        return 1\n", encoding="utf-8")

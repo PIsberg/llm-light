@@ -166,7 +166,10 @@ def _resolve_new_content(edit, current=None):
     # No guessing (#261): a near match used to be replaced too, which could
     # overwrite a different function or paste the whole REPLACE over a shorter
     # window. The retry gets the nearest text instead, to quote exactly.
-    hint = _nearest_text(s_lines, o_lines)
+    # The excerpt goes to the model: never from a file the index skips (a
+    # dotfile such as .env, or anything under a hidden or vendored directory).
+    from llm_light.skeleton import _is_skipped
+    hint = "" if _is_skipped(p.relative_to(Path.cwd().resolve())) else _nearest_text(s_lines, o_lines)
     raise ValueError(
         f"SEARCH block not found in {edit['path']}: it must match the file exactly "
         f"(only indentation may differ).{hint}")
