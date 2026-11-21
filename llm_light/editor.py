@@ -163,50 +163,45 @@ def _resolve_new_content(edit, current=None):
                     final_str += "\n"
                 return old, final_str
                 
-    if s_lines:
-        s_text = "\n".join(s_stripped)
-        best_ratio, best_idx, best_len = 0, -1, 0
-        
-        start_search = max(1, slen - 2)
-        end_search = min(len(o_stripped), slen + 2)
-        
-        for w_size in range(start_search, end_search + 1):
-            for i in range(len(o_stripped) - w_size + 1):
-                window = "\n".join(o_stripped[i:i+w_size])
-                ratio = difflib.SequenceMatcher(None, s_text, window).ratio()
-                if ratio > best_ratio:
-                    best_ratio = ratio
-                    best_idx = i
-                    best_len = w_size
-                    
-        threshold = 0.70 if slen <= 3 else 0.82
-        if best_ratio > threshold:
-            orig_lead = len(o_lines[best_idx]) - len(o_lines[best_idx].lstrip(" \t"))
-            search_lead = len(s_lines[0]) - len(s_lines[0].lstrip(" \t"))
-            
-            new_r_lines = []
-            for rl in norm_replace.splitlines():
-                r_trim = rl.lstrip(" \t")
-                if not r_trim:
-                    new_r_lines.append("")
-                    continue
-                rel_indent = max(0, len(rl) - len(r_trim) - search_lead)
-                new_r_lines.append(" " * (orig_lead + rel_indent) + r_trim)
-                
-            prefix = "\n".join(o_lines[:best_idx])
-            suffix = "\n".join(o_lines[best_idx+best_len:])
-            
-            res = []
-            if prefix: res.append(prefix)
-            res.append("\n".join(new_r_lines))
-            if suffix: res.append(suffix)
-            
-            final_str = "\n".join(res)
-            if norm_old.endswith("\n") and not final_str.endswith("\n"):
-                final_str += "\n"
-            return old, final_str
+    # No guessing (#261): a near match used to be replaced too, which could
+    # overwrite a different function or paste the whole REPLACE over a shorter
+    # window. The retry gets the nearest text instead, to quote exactly.
+    hint = _nearest_text(s_lines, o_lines)
+    raise ValueError(
+        f"SEARCH block not found in {edit['path']}: it must match the file exactly "
+        f"(only indentation may differ).{hint}")
 
-    raise ValueError(f"SEARCH block not found in {edit['path']} (even with fuzzy sequence matching)")
+
+_HINT_MAX_LINES = 40
+
+
+def _nearest_text(s_lines, o_lines):
+    """The file's lines most like the SEARCH, as a hint for the retry message.
+
+    Only ever quoted, never written. Windows of the SEARCH's line count plus or
+    to plus 2 are compared with difflib (never shorter: a shorter window drops
+    the lines the SEARCH got wrong); below a ratio of 0.5 nothing is named.
+    """
+    if not s_lines or not o_lines:
+        return ""
+    s_text = "\n".join(l.strip() for l in s_lines)
+    o_stripped = [l.strip() for l in o_lines]
+    slen = len(s_lines)
+    best_ratio, best_idx, best_len = 0.0, -1, 0
+    n = len(o_stripped)
+    for w_size in range(min(slen, n), min(n, slen + 2) + 1):
+        for i in range(len(o_stripped) - w_size + 1):
+            matcher = difflib.SequenceMatcher(None, s_text, "\n".join(o_stripped[i:i + w_size]))
+            if matcher.real_quick_ratio() <= best_ratio or matcher.quick_ratio() <= best_ratio:
+                continue
+            ratio = matcher.ratio()
+            if ratio > best_ratio:
+                best_ratio, best_idx, best_len = ratio, i, w_size
+    if best_ratio < 0.5:
+        return ""
+    shown = o_lines[best_idx:best_idx + min(best_len, _HINT_MAX_LINES)]
+    return (f"\nNearest text, lines {best_idx + 1}-{best_idx + best_len}:\n"
+            + "\n".join(shown))
 
 
 def apply_edits(edits, check_only=False, explanation="", auto_apply=False):
