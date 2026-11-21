@@ -186,26 +186,13 @@ class TestResolveNewContent(unittest.TestCase):
         self.assertIn("        a = 5", result)
         self.assertIn("        b = 5", result)
 
-    def test_resolve_fuzzy_hallucination(self):
-        # LLM hallucinates a typo combining two lines!
+    def test_resolve_typo_in_search_is_an_error(self):
+        # A typo combining two lines is not guessed at (#261): it raises.
         from llm_light import _resolve_new_content
         search = "    try:\n        a = 1, b = 2"
         replace = "    try:\n        a = 9\n        b = 9"
-        # Should catch the sequence block due to high string similarity
-        _, result = _resolve_new_content({"path": "dummy.py", "type": "edit", "search": search, "replace": replace})
-        self.assertIn("        a = 9", result)
-
-    def test_resolve_fuzzy_blank_line_in_replacement(self):
-        # Fuzzy path with a blank line in the replacement (covers lines 1395-1396).
-        # search is a typo (combines two lines) so steps 1-4 all fail → fuzzy fires.
-        from llm_light import _resolve_new_content
-        search = "    try:\n        a = 1, b = 2"
-        replace = "    try:\n        a = 9\n\n        b = 9"   # blank line in middle
-        _, result = _resolve_new_content({"path": "dummy.py", "type": "edit", "search": search, "replace": replace})
-        self.assertIn("a = 9", result)
-        self.assertIn("b = 9", result)
-        # blank line must be preserved
-        self.assertIn("\n\n", result)
+        with self.assertRaises(ValueError):
+            _resolve_new_content({"path": "dummy.py", "type": "edit", "search": search, "replace": replace})
 
     def test_autonomous_linting(self):
         # LLM generated a totally busted syntax

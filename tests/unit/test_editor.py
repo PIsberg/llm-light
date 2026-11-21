@@ -192,21 +192,16 @@ class TestResolveNewContent(unittest.TestCase):
         self.assertIn("        a = 5", result)
         self.assertIn("        b = 5", result)
 
-    def test_resolve_fuzzy_hallucination(self):
-        print("\n  ▶ TestResolveNewContent.test_resolve_fuzzy_hallucination")
+    def test_resolve_typo_in_search_is_an_error(self):
+        print("\n  ▶ TestResolveNewContent.test_resolve_typo_in_search_is_an_error")
+        # A SEARCH that is not in the file is not guessed at (#261); the error
+        # quotes the nearest lines for the retry.
         search = "    try:\n        a = 1, b = 2"
         replace = "    try:\n        a = 9\n        b = 9"
-        _, result = _resolve_new_content({"path": "dummy.py", "type": "edit", "search": search, "replace": replace})
-        self.assertIn("        a = 9", result)
-
-    def test_resolve_fuzzy_blank_line_in_replacement(self):
-        print("\n  ▶ TestResolveNewContent.test_resolve_fuzzy_blank_line_in_replacement")
-        search = "    try:\n        a = 1, b = 2"
-        replace = "    try:\n        a = 9\n\n        b = 9"
-        _, result = _resolve_new_content({"path": "dummy.py", "type": "edit", "search": search, "replace": replace})
-        self.assertIn("a = 9", result)
-        self.assertIn("b = 9", result)
-        self.assertIn("\n\n", result)
+        with self.assertRaises(ValueError) as ctx:
+            _resolve_new_content({"path": "dummy.py", "type": "edit", "search": search, "replace": replace})
+        self.assertIn("        a = 1", str(ctx.exception))
+        self.assertEqual(Path("dummy.py").read_text(encoding="utf-8"), self.original_code)
 
     def test_new_file_no_existing(self):
         print("\n  ▶ TestResolveNewContent.test_new_file_no_existing")
@@ -576,6 +571,91 @@ class TestSeveralBlocksOneFile(unittest.TestCase):
              patch("llm_light.editor.git_manager.is_git_repo", return_value=False):
             apply_edits(edits, auto_apply=True)
         self.assertEqual(Path("b.py").read_text(encoding="utf-8"), "x = 1\ny = 3\n")
+
+
+# ---------------------------------------------------------------------------
+# _resolve_new_content: a SEARCH that matches nothing is an error (#261)
+# ---------------------------------------------------------------------------
+
+class TestSearchThatMatchesNothing(unittest.TestCase):
+    """A SEARCH must match exactly, or line by line up to indentation.
+
+    Anything looser guessed: it replaced a different function, or pasted the
+    whole REPLACE over a shorter window. Now it fails, and the error names the
+    nearest text so the retry can quote it.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+
+    def tearDown(self):
+        os.chdir(self.orig)
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_search_for_missing_function_does_not_replace_another(self):
+        print("\n  ▶ TestSearchThatMatchesNothing.test_search_for_missing_function_does_not_replace_another")
+        Path("svc.py").write_text(
+            "def get_user(id):\n    return db.users.get(id)\n\n\n"
+            "def get_order(id):\n    return db.orders.get(id)\n", encoding="utf-8")
+        edit = {"type": "edit", "path": "svc.py",
+                "search": "def get_item(id):\n    return db.items.get(id)\n",
+                "replace": "def get_item(id):\n    return cache.items.get(id)\n"}
+        with self.assertRaises(ValueError) as ctx:
+            _resolve_new_content(edit)
+        msg = str(ctx.exception)
+        self.assertIn("svc.py", msg)
+        self.assertIn("lines 1-2", msg)
+        self.assertIn("def get_user(id):", msg)
+
+    def test_shorter_window_does_not_get_the_whole_replace(self):
+        print("\n  ▶ TestSearchThatMatchesNothing.test_shorter_window_does_not_get_the_whole_replace")
+        Path("calc.py").write_text(
+            "def total(items):\n"
+            "    # Skip refunded items: finance counts them separately (TICKET-812)\n"
+            "    kept = [i for i in items if not i.refunded]\n"
+            "    return sum(i.price for i in kept)  # cents, not dollars\n", encoding="utf-8")
+        edit = {"type": "edit", "path": "calc.py",
+                "search": "def total(items):\n    kept = [i for i in items if not i.refunded]\n"
+                          "    return sum(i.price for i in kept)\n",
+                "replace": "def total(items):\n    kept = [i for i in items if not i.refunded]\n"
+                           "    return sum(i.price * i.qty for i in kept)\n"}
+        with self.assertRaises(ValueError) as ctx:
+            _resolve_new_content(edit)
+        # The nearest text carries the comments the SEARCH left out, so the
+        # retry can copy it.
+        self.assertIn("TICKET-812", str(ctx.exception))
+
+    def test_check_only_reports_it_for_the_retry(self):
+        print("\n  ▶ TestSearchThatMatchesNothing.test_check_only_reports_it_for_the_retry")
+        Path("svc.py").write_text("def get_user(id):\n    return db.users.get(id)\n", encoding="utf-8")
+        errs = apply_edits([{"type": "edit", "path": "svc.py",
+                             "search": "def get_item(id):\n    return db.items.get(id)\n",
+                             "replace": "def get_item(id):\n    return 1\n"}], check_only=True)
+        self.assertEqual(len(errs), 1)
+        self.assertIn("get_user", errs[0])
+
+    def test_hidden_file_gets_no_excerpt(self):
+        print("\n  ▶ TestSearchThatMatchesNothing.test_hidden_file_gets_no_excerpt")
+        # The excerpt goes to the model. A file the index skips (a dotfile,
+        # anything under a hidden directory) is not quoted, or a SEARCH aimed
+        # at .env would read it.
+        Path(".env").write_text("API_KEY=sk-live-0123456789\nDEBUG=1\n", encoding="utf-8")
+        with self.assertRaises(ValueError) as ctx:
+            _resolve_new_content({"type": "edit", "path": ".env",
+                                  "search": "API_KEY = sk-live\n", "replace": "API_KEY=x\n"})
+        self.assertNotIn("0123456789", str(ctx.exception))
+        self.assertIn(".env", str(ctx.exception))
+
+    def test_indentation_only_difference_still_matches(self):
+        print("\n  ▶ TestSearchThatMatchesNothing.test_indentation_only_difference_still_matches")
+        Path("m.py").write_text("class A:\n    def f(self):\n        return 1\n", encoding="utf-8")
+        _, new = _resolve_new_content({"type": "edit", "path": "m.py",
+                                       "search": "def f(self):\n    return 1\n",
+                                       "replace": "def f(self):\n    return 2\n"})
+        self.assertEqual(new, "class A:\n    def f(self):\n        return 2\n")
 
 
 # ---------------------------------------------------------------------------
