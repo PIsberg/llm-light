@@ -257,9 +257,22 @@ def _hybrid_select_pairs(ids, fused, budget, k, gap=None):
     return _select_within_budget(candidates, budget, k, strong=lambda s, t: s >= t - gap / 4)
 
 
+_BODY_SEP = "\n    // ...\n"
+
+
+def _rendered_tokens(cid, text, files_in_context):
+    """What adding this chunk adds to the rendered context: its whole text for
+    a new file, only its body (and a name line) for a file already in it, since
+    _dedup_retrieved_context sends each file's header and preamble once (#288)."""
+    if _chunk_id_to_file(cid) in files_in_context and _BODY_SEP in text:
+        return _estimate_tokens(text.split(_BODY_SEP, 1)[1]) + 3
+    return _estimate_tokens(text)
+
+
 def _select_within_budget(candidates, budget, k, strong=None):
     """Pick chunks from `candidates` (best first): one per file first, then
-    extra strong chunks while the token budget allows."""
+    extra strong chunks while the token budget allows. Each is charged what it
+    adds to the rendered context."""
     if not candidates:
         return []
     strong = strong or (lambda score, top: score >= top * 0.92)
@@ -294,10 +307,11 @@ def _select_within_budget(candidates, budget, k, strong=None):
             if not strong(score, top_score) or spent_tokens >= budget * 0.9:
                 break
             text = state.chunk_store[cid]["text"]
-            chunk_tokens = _estimate_tokens(text)
+            chunk_tokens = _rendered_tokens(cid, text, selected_files)
             if spent_tokens + chunk_tokens > budget and selected:
                 continue
             selected.append((cid, score))
+            selected_files.add(_chunk_id_to_file(cid))
             spent_tokens += chunk_tokens
 
     return selected
