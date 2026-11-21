@@ -1426,7 +1426,7 @@ class TestSummarizeTurns(unittest.TestCase):
             {"role": "assistant", "content": "X is a thing."},
         ]
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Summary of conversation")]
+        mock_response.content = [MagicMock(type="text", text="Summary of conversation")]
         mock_response.usage = MagicMock()
 
         with patch("llm_light.providers.claude.client.messages.create", return_value=mock_response):
@@ -1439,7 +1439,7 @@ class TestSummarizeTurns(unittest.TestCase):
             {"role": "assistant", "content": "Answer."},
         ]
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Summary")]
+        mock_response.content = [MagicMock(type="text", text="Summary")]
         mock_response.usage = MagicMock()
 
         with patch("llm_light.providers.claude.client.messages.create", return_value=mock_response):
@@ -2415,7 +2415,7 @@ class TestSummarizeTurnsExtended(unittest.TestCase):
 
     def test_empty_messages_no_crash(self):
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Empty summary")]
+        mock_response.content = [MagicMock(type="text", text="Empty summary")]
         mock_response.usage = MagicMock()
         with patch("llm_light.providers.claude.client.messages.create", return_value=mock_response):
             summary, _ = _summarize_turns([])
@@ -5387,6 +5387,29 @@ class TestMockManager(unittest.TestCase):
         from tests.utilities.test_mocks import MockManager
         mm = MockManager("large")
         self.assertEqual(len(mm.files), 200)
+
+    def test_mock_manager_walk_lists_the_synthetic_files(self):
+        # --test-mode indexes the synthetic files. The project walk stopped
+        # using Path.rglob (#267), so patching Path alone would index the
+        # real directory instead.
+        from tests.utilities.test_mocks import MockManager
+        from llm_light import skeleton
+        mm = MockManager("small")
+        try:
+            with patch("builtins.print"):
+                mm.start()
+            skeleton._invalidate_path_cache()
+            listed = {str(p) for p in skeleton._get_cached_paths()}
+            self.assertEqual(listed, set(mm.files))
+        finally:
+            for name, value in vars(mm).items():
+                for p in (value if isinstance(value, list) else [value]):
+                    if hasattr(p, "stop") and name.endswith(("patcher", "patchers")):
+                        try:
+                            p.stop()
+                        except RuntimeError:
+                            pass
+            skeleton._invalidate_path_cache()
 
     def test_mock_manager_unknown_preset_defaults_to_small(self):
         from tests.utilities.test_mocks import MockManager
