@@ -287,7 +287,7 @@ python -m llm_light --test-mode large "Explain the request handling flow"
 ### Mocked Behaviors
 
 **MockPath:**
-- `rglob()` returns synthetic files
+- `rglob()` returns synthetic files, and `skeleton._walk_paths` is patched to list them (the project walk asks git or `os.walk`, not `rglob`)
 - `read_text()` returns generated code
 - `exists()` returns True for test paths
 - `mkdir()`/`write_text()` are no-ops

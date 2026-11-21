@@ -111,6 +111,41 @@ def chunk_file(filepath, source):
     return _chunk_with_treesitter(filepath, source, cfg["lang"], cfg["node_types"])
 
 
+def _strip_comments_by_parse(text, ext, strip_docstrings):
+    """Remove the comments tree-sitter finds in `text`, or None without a grammar.
+
+    Regexes cut string literals: "#ff8800" and every "https://" URL lost their
+    tail (#266). The parse knows a comment from a string, also in a fragment
+    such as one method body, where it recovers around the missing context.
+    Javadoc and other /** */ blocks stay unless strip_docstrings; so do Python
+    docstrings (a bare string statement).
+    """
+    cfg = _LANG_CONFIG.get(ext)
+    if not cfg:
+        return None
+    try:
+        src = text.encode("utf-8")
+        tree = TSParser(cfg["lang"]).parse(src)
+    except Exception:
+        return None
+    cuts = []
+    stack = [tree.root_node]
+    while stack:
+        node = stack.pop()
+        if node.type.endswith("comment"):
+            if strip_docstrings or not src[node.start_byte:node.end_byte].startswith(b"/**"):
+                cuts.append((node.start_byte, node.end_byte))
+            continue
+        if (strip_docstrings and ext == ".py" and node.type == "expression_statement"
+                and node.named_child_count == 1 and node.named_children[0].type == "string"):
+            cuts.append((node.start_byte, node.end_byte))
+            continue
+        stack.extend(node.children)
+    for start, end in sorted(cuts, reverse=True):
+        src = src[:start] + src[end:]
+    return src.decode("utf-8", errors="replace")
+
+
 def _strip_comments(text: str, ext: str) -> str:
     """Remove low-value comments from a code chunk to cut retrieved-context tokens.
 
@@ -124,6 +159,12 @@ def _strip_comments(text: str, ext: str) -> str:
     """
     from llm_light.config import STRIP_DOCSTRINGS
 
+    stripped = _strip_comments_by_parse(text, ext, STRIP_DOCSTRINGS)
+    if stripped is not None:
+        return re.sub(r'\n{3,}', '\n\n', stripped)
+
+    # No grammar for this language: the regex fallback, which cannot tell a
+    # comment marker inside a string from a real one.
     if ext in _COMMENT_EXTS_C:
         if STRIP_DOCSTRINGS:
             text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)   # all /* */ blocks
