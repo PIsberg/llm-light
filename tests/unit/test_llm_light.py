@@ -5388,6 +5388,29 @@ class TestMockManager(unittest.TestCase):
         mm = MockManager("large")
         self.assertEqual(len(mm.files), 200)
 
+    def test_mock_manager_walk_lists_the_synthetic_files(self):
+        # --test-mode indexes the synthetic files. The project walk stopped
+        # using Path.rglob (#267), so patching Path alone would index the
+        # real directory instead.
+        from tests.utilities.test_mocks import MockManager
+        from llm_light import skeleton
+        mm = MockManager("small")
+        try:
+            with patch("builtins.print"):
+                mm.start()
+            skeleton._invalidate_path_cache()
+            listed = {str(p) for p in skeleton._get_cached_paths()}
+            self.assertEqual(listed, set(mm.files))
+        finally:
+            for name, value in vars(mm).items():
+                for p in (value if isinstance(value, list) else [value]):
+                    if hasattr(p, "stop") and name.endswith(("patcher", "patchers")):
+                        try:
+                            p.stop()
+                        except RuntimeError:
+                            pass
+            skeleton._invalidate_path_cache()
+
     def test_mock_manager_unknown_preset_defaults_to_small(self):
         from tests.utilities.test_mocks import MockManager
         mm = MockManager("unknown")

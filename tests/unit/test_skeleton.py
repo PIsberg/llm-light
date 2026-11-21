@@ -473,5 +473,69 @@ class TestRefreshTreeOnly(unittest.TestCase):
                 os.chdir(orig)
 
 
+class TestProjectWalkRespectsGitignore(unittest.TestCase):
+    """The project walk lists what git would: tracked files and untracked
+    ones that .gitignore does not exclude (#267)."""
+
+    def setUp(self):
+        import subprocess
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+        from llm_light import skeleton
+        skeleton._invalidate_path_cache()
+        self.files = {
+            ".gitignore": "venv/\ndist/\ngenerated/\n",
+            "app.py": "x = 1\n",
+            "dist/bundle.js": "var a;\n",
+            "generated/client.py": "y = 1\n",
+            "venv/Lib/site-packages/pkg/mod.py": "z = 1\n",
+            "src/new_untracked.py": "w = 1\n",
+        }
+        for name, text in self.files.items():
+            Path(name).parent.mkdir(parents=True, exist_ok=True)
+            Path(name).write_text(text, encoding="utf-8")
+        self.git = lambda *a: subprocess.run(["git", *a], capture_output=True, check=True)
+
+    def tearDown(self):
+        os.chdir(self.orig)
+        from llm_light import skeleton
+        skeleton._invalidate_path_cache()
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _files(self):
+        from llm_light import skeleton
+        skeleton._invalidate_path_cache()
+        return {p.as_posix() for p in skeleton._get_cached_paths() if p.is_file()}
+
+    def test_git_repo_leaves_out_ignored_files(self):
+        print("\n  ▶ TestProjectWalkRespectsGitignore.test_git_repo_leaves_out_ignored_files")
+        self.git("init", "-q")
+        self.git("add", ".gitignore", "app.py")
+        self.assertEqual(self._files(), {"app.py", "src/new_untracked.py"})
+
+    def test_git_repo_tree_has_no_ignored_directories(self):
+        print("\n  ▶ TestProjectWalkRespectsGitignore.test_git_repo_tree_has_no_ignored_directories")
+        from llm_light import skeleton
+        self.git("init", "-q")
+        skeleton._invalidate_path_cache()
+        tree = skeleton._build_compressed_tree(skeleton._get_cached_paths())
+        for name in ("venv", "dist", "generated", "bundle.js"):
+            self.assertNotIn(name, tree)
+        self.assertIn("app.py", tree)
+
+    def test_git_that_fails_to_run_falls_back_to_the_walk(self):
+        print("\n  ▶ TestProjectWalkRespectsGitignore.test_git_that_fails_to_run_falls_back_to_the_walk")
+        with patch("subprocess.run", side_effect=ValueError("not a real git")):
+            self.assertEqual(self._files(), {"app.py", "generated/client.py", "src/new_untracked.py"})
+
+    def test_without_git_vendored_directories_are_skipped(self):
+        print("\n  ▶ TestProjectWalkRespectsGitignore.test_without_git_vendored_directories_are_skipped")
+        # No repository: .gitignore cannot be read, but venv and dist are
+        # skipped by name, like node_modules.
+        self.assertEqual(self._files(), {"app.py", "generated/client.py", "src/new_untracked.py"})
+
+
 if __name__ == "__main__":
     unittest.main()
