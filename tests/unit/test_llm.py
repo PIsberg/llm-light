@@ -1908,6 +1908,49 @@ class TestCliProcessIsStopped(unittest.TestCase):
         self.assertFalse(_pid_alive(agent_pid), "agent process survived the idle timeout")
 
 
+class TestAgentEditsToDirtyFiles(unittest.TestCase):
+    """A file the user had uncommitted work in, edited again by the agent:
+    its name is in both snapshots, so the edit was neither shown nor
+    committed (#275)."""
+
+    def setUp(self):
+        import subprocess
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+        self.git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True)
+        self.git("init", "-q")
+        self.git("config", "user.email", "test@example.com")
+        self.git("config", "user.name", "Test User")
+        Path("a.py").write_bytes(b"x = 1\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "init")
+
+    def tearDown(self):
+        os.chdir(self.orig)
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_edit_to_a_dirty_file_is_shown_not_committed(self):
+        print("\n  ▶ TestAgentEditsToDirtyFiles.test_edit_to_a_dirty_file_is_shown_not_committed")
+        from llm_light import llm
+        Path("a.py").write_bytes(b"x = 1\nmine = True\n")        # the user's own work
+        pre = llm._git_modified_snapshot()
+        Path("a.py").write_bytes(b"x = 99\nmine = True\n")       # the agent edits it
+        Path("b.py").write_bytes(b"y = 1\n")                      # and makes a new file
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            llm._handle_agent_edits(pre, "Agent turn", auto_apply=True)
+        printed = out.getvalue()
+        self.assertIn("x = 99", printed)                    # the agent's change is shown
+        self.assertIn("a.py", printed)
+        self.assertIn("not committed", printed)
+        committed = self.git("show", "--name-only", "--format=", "HEAD").stdout.split()
+        self.assertEqual(committed, ["b.py"])               # the mixed file stays out
+        self.assertEqual(Path("a.py").read_bytes(), b"x = 99\nmine = True\n")
+
+
 class TestAgentEditDetection(unittest.TestCase):
     """Verify _git_modified_snapshot + _commit_agent_edits — the OAUTH safety
     net that catches files the Claude CLI agent edited directly (outside our
@@ -1920,14 +1963,14 @@ class TestAgentEditDetection(unittest.TestCase):
              patch("llm_light.git_manager.get_modified_files",
                    return_value=["a.py", "b.md"]):
             snap = llm._git_modified_snapshot()
-        self.assertEqual(snap, {"a.py", "b.md"})
+        self.assertEqual(set(snap), {"a.py", "b.md"})
 
     def test_snapshot_is_empty_outside_repo(self):
         print("\n  ▶ TestAgentEditDetection.test_snapshot_is_empty_outside_repo")
         from llm_light import llm
         with patch("llm_light.git_manager.is_git_repo", return_value=False):
             snap = llm._git_modified_snapshot()
-        self.assertEqual(snap, set())
+        self.assertEqual(set(snap), set())
 
     def test_commit_agent_edits_calls_auto_commit(self):
         print("\n  ▶ TestAgentEditDetection.test_commit_agent_edits_calls_auto_commit")
