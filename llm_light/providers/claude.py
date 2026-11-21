@@ -1119,7 +1119,7 @@ class ClaudeProvider(Provider):
                 render=False,
                 tools=False,  # the turns may quote repo text; nothing may act on it
             )
-            return text.strip(), usage
+            return _nonempty_summary(text), usage
 
         @retry_with_backoff
         def _call_api():
@@ -1132,7 +1132,18 @@ class ClaudeProvider(Provider):
             )
 
         response = _call_api()
-        return response.content[0].text.strip(), response.usage
+        # Thinking is on, so the first block may be a thinking block (#272).
+        text = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+        return _nonempty_summary(text), response.usage
+
+
+def _nonempty_summary(text: str) -> str:
+    """The summary, stripped; an empty one is a failure, so compression falls
+    back to truncating and /compact leaves the conversation as it was."""
+    text = text.strip()
+    if not text:
+        raise ValueError("the summary came back empty")
+    return text
 
 
 PROVIDER = ClaudeProvider()
