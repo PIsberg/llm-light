@@ -114,13 +114,44 @@ def _get_cached_paths():
         _cached_cwd = current_cwd
     
     if _cached_paths is None:
-        all_paths = []
-        for path in sorted(Path(".").rglob("*")):
-            if not _is_skipped(path):
-                all_paths.append(path)
-        _cached_paths = all_paths
+        _cached_paths = _walk_paths()
     
     return _cached_paths
+
+
+def _git_listed_files():
+    """The files git would list under the cwd: tracked ones and untracked ones
+    .gitignore does not exclude, relative to the cwd. None outside a git work tree."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                             capture_output=True, timeout=30, check=False)
+    except Exception:  # no git, a timeout, or anything else: walk the directory instead
+        return None
+    if out.returncode != 0:
+        return None
+    return [p for p in out.stdout.decode("utf-8", "replace").split("\0") if p]
+
+
+def _walk_paths():
+    """The project's paths, sorted, without skipped names (#267).
+
+    In a git work tree, git's own list: what .gitignore excludes (a venv, build
+    output, generated code) never reaches the index or the skeleton, and nothing
+    is walked. Elsewhere, os.walk prunes skipped directories instead of
+    descending into them, as rglob did (46,102 paths visited in one Node project
+    to keep 2,759).
+    """
+    listed = _git_listed_files()
+    if listed is not None:
+        return sorted({p for p in map(Path, listed) if not _is_skipped(p) and p.is_file()})
+    found = []
+    for dirpath, dirnames, filenames in os.walk("."):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+        base = Path(dirpath)
+        found.extend(base / d for d in dirnames)
+        found.extend(p for p in (base / f for f in filenames) if not _is_skipped(p))
+    return sorted(found)
 
 def _invalidate_path_cache():
     """Invalidate the cached paths, forcing a fresh walk on next access."""
@@ -270,11 +301,15 @@ def _refresh_single_md(path_str: str) -> bool:
     return True
 
 def _refresh_tree_only() -> str:
+    # The watcher calls this on create, delete and move: walk again, or the tree
+    # keeps the list taken at startup for the whole session (#268).
+    _invalidate_path_cache()
     all_paths = _get_cached_paths()
     state._skeleton_tree = _build_compressed_tree(all_paths)
     return _assemble_skeleton()
 
 def build_skeleton() -> str:
+    _invalidate_path_cache()  # a rebuild reflects the disk now (#268)
     all_paths = _get_cached_paths()
     
     # Separate files by type for skeleton tree and markdown processing
