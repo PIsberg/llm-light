@@ -1,5 +1,5 @@
 sentence-transformers>=6.3.0
-numpy>=2.5.4
+numpy>=2.5.5
 watchdog>=7.1.0
 anthropic>=2.9.0
 certifi>=2026.10.23
