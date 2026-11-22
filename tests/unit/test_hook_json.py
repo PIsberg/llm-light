@@ -89,6 +89,22 @@ def test_ask_is_denied_since_nothing_can_be_asked_mid_turn(json_hook, project):
     assert is_error and "are you sure?" in out
 
 
+def test_defer_refuses_the_call_rather_than_running_it(json_hook, project):
+    # #308: Claude Code ends a -p turn at a deferred call so it can be resumed later.
+    # llm_light cannot resume a turn at a tool call, so the safe reading is a refusal.
+    json_hook("PreToolUse", _pre("defer", "waiting for a reviewer"))
+    out, is_error = _read(project)
+    assert is_error and "x = 1" not in out
+    assert "waiting for a reviewer" in out and "defer" in out
+
+
+def test_defer_without_a_reason_still_refuses(json_hook, project):
+    json_hook("PreToolUse", {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                                    "permissionDecision": "defer"}})
+    out, is_error = _read(project)
+    assert is_error and "x = 1" not in out and "defer" in out
+
+
 @pytest.mark.parametrize("decision", ["allow", "approve"])
 def test_allow_runs_the_call(json_hook, project, decision):
     json_hook("PreToolUse", _pre(decision) if decision == "allow"

@@ -25,10 +25,12 @@ only the keys it knows.
   A JSON object on stdout is read as Claude Code reads it, on any exit code but 2 (#227):
   PreToolUse's hookSpecificOutput.permissionDecision "deny" blocks with its
   permissionDecisionReason, and so does "ask", since nothing can be asked in the middle
-  of a turn (as in a claude -p run); the older top-level decision "block"/"approve" maps
-  to deny/allow. PostToolUse's decision "block" puts its reason next to the result.
+  of a turn (as in a claude -p run), and so does "defer" (#308): Claude Code ends a -p
+  turn there to resume it later, which llm_light cannot do, and running the call would
+  ignore the hook. The older top-level decision "block"/"approve" maps to deny/allow. PostToolUse's decision "block" puts its reason next to the result.
   additionalContext goes to the model with the result, systemMessage to the user.
-  updatedInput, updatedToolOutput, continue and "defer" are not acted on (#248).
+  updatedInput rewrites the call, updatedToolOutput its result, and continue: false ends
+  the turn (#248).
 """
 
 import json
@@ -258,6 +260,14 @@ def _apply_json_detailed(event: str, data: dict) -> tuple:
             texts.append((reason + " " if reason else "")
                          + "(The hook asked for a confirmation, which cannot be asked in the "
                            "middle of a turn, so the call was refused.)")
+        elif decision == "defer":
+            # Claude Code ends a -p turn here so the call can be resumed later; llm_light
+            # keeps no turn it could resume at a tool call, and running it would ignore
+            # the hook, so a deferred call is refused (#308).
+            blocked = True
+            texts.append((reason + " " if reason else "")
+                         + "(The hook deferred this call. llm_light cannot pause a turn and "
+                           "resume it later, so the call was refused.)")
     elif data.get("decision") == "block":
         reason = data.get("reason")
         blocked = True
