@@ -23,7 +23,7 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `FAST_EMBED_MODEL` / `DENSE_EMBED_MODEL` | `static-retrieval-mrl-en-v1` / `all-mpnet-base-v2` |
 | `HYBRID_MIN_SCORE` | Per-model cosine floor for "anything related at all" (static 0.22, mpnet 0.21). Re-swept on body-first vectors with a held-out set (#287): raising them gained nothing there, and some off-topic questions score above the weakest on-topic one, so no floor separates them all (docs/BENCHMARKS.md, section 2b) |
 | `HYBRID_SCORE_GAP` / `HYBRID_FAST_WEIGHT` | Keep chunks within this fused z-score of the top (1.5) / static model's share of the fused score (0.5) |
-| `_RETRIEVAL_BUDGET` | Per-effort token budgets: low=1500, medium=3000, high=6000, max=9000 |
+| `_RETRIEVAL_BUDGET` | Per-effort token budgets: low=1500, medium=3000, high=6000, max=9000. Charged against the rendered context: code for the chunks shown in full (0 at low, 1 at medium, 2 at high and max), one summary line for each other chunk (#329) |
 | `MAX_HISTORY_TURNS` | Compress and cap when stored turns exceed this (default 6) |
 | `HISTORY_CONTEXT_CHARS` | A turn's attachments (`@file`, piped text, `!` output, a `/review` diff) longer than this (default 1,500 characters) go with that turn in full, but the history keeps a note per attached file and the first and last half of the rest, since every later turn resends the history (#322) |
 | `SUMMARIZE_BATCH` | Old turns collapsed per summary call (default 3) |

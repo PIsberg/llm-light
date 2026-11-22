@@ -10,7 +10,7 @@ The Retrieval-Augmented Generation pipeline finds and injects only relevant code
 ### Key Optimizations
 
 1. **Hybrid Query Routing** - Keyword signals fused with embedding-based semantic scores against intent prototypes; cost-aware tier gating prevents over-spending on simple queries
-2. **Effort-Based Budget** - Low effort = 1.5K tokens, Max effort = 9K tokens (a provider without the EFFORT capability, such as Gemini or Codex, has no tool loop (agy runs as a custom agent with no tools) and so gets the medium render at low effort: summary plus the top chunk's body, see `_finish` in `retrieval.py`)
+2. **Effort-Based Budget** - Low effort = 1.5K tokens, Max effort = 9K tokens (a provider without the EFFORT capability, such as Gemini or Codex, has no tool loop (agy runs as a custom agent with no tools) and so gets the medium render at low effort: summary plus the top chunk's body, see `_render_effort` in `retrieval.py`). The budget is charged what the render shows: the chunks shown in full (none at low, one at medium, two at high and max: `_detail_count`) their code, every other pick its summary line (#329)
 3. **Two-Stage Filtering** - Absolute floor (0.35) + Relative floor (60% of top score)
 4. **Deduplication** - Shared preamble emitted once for multi-method results, comment-stripped and cut at `PREAMBLE_MAX_LINES` (25) lines or `PREAMBLE_MAX_CHARS` (1,200) characters with a note of what was left out (`_compact_header` in `retrieval.py`, #323); selection charges a new file that capped size
 4a. **Test-file exclusion** - In the hybrid path, chunks under a test directory are never selected for a question that does not mention tests (`_exclude_test_chunks` in `retrieval.py`). Measured in docs/BENCHMARKS.md.
