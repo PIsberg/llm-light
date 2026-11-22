@@ -4,6 +4,10 @@ All notable changes to `llm-light` are listed here. Versions follow [Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- **Hooks can rewrite a call, its result, or stop the turn, with an API key (#248).** A hook's JSON could block a call and add context; three more fields Claude Code honours now work too. PreToolUse `updatedInput` rewrites the call's input, which the tool then checks like the model's own, so a hook cannot widen a read past the project. PostToolUse `updatedToolOutput` (or `updatedMCPToolOutput`, as text or an object's `stdout`) replaces what the model gets back. `continue: false` ends the turn as Ctrl+C does, showing its `stopReason`. `defer` is still ignored (#308).
+
 ### Changed
 
 - **A project's `.env` key no longer overrides your subscription login (#277).** llm_light read `./.env` before the login, so in a project that keeps `ANTHROPIC_API_KEY` in `.env` for the app it builds, a subscriber was switched to that key and billed per token. The order is now `ANTHROPIC_API_KEY`, `~/.anthropic`, the login, then `./.env` only when there is no login. The startup header says when a `.env` key was not used; export `ANTHROPIC_API_KEY` to use it.

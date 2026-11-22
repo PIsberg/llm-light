@@ -181,11 +181,22 @@ def run_tool(name, tool_input, root=None):
         return _run_tool(name, tool_input, root)
     hook_name = hooks.CLI_NAMES.get(name, name)
     hook_input = hooks.tool_input_for(name, tool_input, root)
-    blocked, why = hooks.run("PreToolUse", hook_name, hook_input, root)
-    if blocked:
+    pre = hooks.run_detailed("PreToolUse", hook_name, hook_input, root)
+    if pre["stop"] is not None:
+        hooks.stop_turn(pre["stop"])
+    why = pre["text"]
+    if pre["blocked"]:
         return f"Error: a PreToolUse hook blocked this call: {why}", True
+    if pre["updated_input"] is not None:  # checked by the tool like the model's own input
+        tool_input = hooks.input_from_hook(name, pre["updated_input"], tool_input)
+        hook_input = hooks.tool_input_for(name, tool_input, root)
     output, is_error = _run_tool(name, tool_input, root)
-    _, said = hooks.run("PostToolUse", hook_name, hook_input, root, tool_response=output)
+    post = hooks.run_detailed("PostToolUse", hook_name, hook_input, root, tool_response=output)
+    if post["stop"] is not None:
+        hooks.stop_turn(post["stop"])
+    if post["updated_output"] is not None:
+        output = post["updated_output"]
+    said = post["text"]
     if why:  # a PreToolUse hook's additionalContext, which goes with the result
         output += f"\n\nPreToolUse hook: {why}"
     if said:

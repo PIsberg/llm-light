@@ -185,10 +185,60 @@ def _json_output(out: str) -> tuple:
 _LEGACY_PRE = {"block": "deny", "approve": "allow"}
 
 
+class HookStopped(KeyboardInterrupt):
+    """A hook returned "continue": false. The turn ends the way Ctrl+C ends it (#248)."""
+
+
+def stop_turn(reason: str):
+    notify(f"A hook stopped the turn: {reason}")
+    raise HookStopped(reason)
+
+
+def input_from_hook(name: str, updated: dict, original) -> dict:
+    """A hook's updatedInput as llm_light's tool input. It is merged over the call's own
+    input and Read's absolute file_path goes back to path; the tool then checks it like
+    any input from the model, so a hook cannot reach past the project either (#248)."""
+    data = dict(original) if isinstance(original, dict) else {}
+    data.update(updated)
+    if name == "read_file":
+        file_path = data.pop("file_path", None)
+        if isinstance(file_path, str):
+            data["path"] = file_path
+    return data
+
+
+def _updated_output(specific: dict, event: str):
+    for key in ("updatedToolOutput", "updatedMCPToolOutput"):
+        value = specific.get(key)
+        if value is None:
+            continue
+        if isinstance(value, dict) and isinstance(value.get("stdout"), str):
+            return value["stdout"]
+        if isinstance(value, str):
+            return value
+        notify(f"{event} hook: {key} is neither text nor an object with stdout; ignored", error=True)
+    return None
+
+
 def _apply_json(event: str, data: dict) -> tuple:
     """(blocked, texts for the model) from one hook's JSON, as Claude Code reads it."""
+    blocked, texts, _ = _apply_json_detailed(event, data)
+    return blocked, texts
+
+
+def _apply_json_detailed(event: str, data: dict) -> tuple:
+    """(blocked, texts, extras): extras holds updated_input, updated_output and stop."""
     specific = data.get("hookSpecificOutput")
     specific = specific if isinstance(specific, dict) else {}
+    extras = {"updated_input": None, "updated_output": None, "stop": None}
+    if data.get("continue") is False:
+        reason = data.get("stopReason")
+        extras["stop"] = reason.strip() if isinstance(reason, str) and reason.strip() \
+            else f"a {event} hook returned continue: false"
+    if event == "PreToolUse" and isinstance(specific.get("updatedInput"), dict):
+        extras["updated_input"] = specific["updatedInput"]
+    if event == "PostToolUse":
+        extras["updated_output"] = _updated_output(specific, event)
     message = data.get("systemMessage")
     if isinstance(message, str) and message.strip():
         notify(f"{event} hook: {message.strip()}")
@@ -216,7 +266,7 @@ def _apply_json(event: str, data: dict) -> tuple:
     context = specific.get("additionalContext")
     if isinstance(context, str) and context.strip():
         texts.append(context.strip())
-    return blocked, texts
+    return blocked, texts, extras
 
 
 def run(event: str, tool_name: str, tool_input: dict, cwd: Path, tool_response=None) -> tuple:
@@ -224,9 +274,17 @@ def run(event: str, tool_name: str, tool_input: dict, cwd: Path, tool_response=N
     blocked when one exited 2 or its JSON denied the call; text is what the model should
     read: the stderr of those that exited 2, the reasons and the additionalContext of
     those that printed JSON."""
+    result = run_detailed(event, tool_name, tool_input, cwd, tool_response)
+    return result["blocked"], result["text"]
+
+
+def run_detailed(event: str, tool_name: str, tool_input: dict, cwd: Path, tool_response=None) -> dict:
+    """run(), plus what a hook's JSON asked to change: updated_input (PreToolUse),
+    updated_output (PostToolUse) and stop (continue: false), the last one given winning."""
+    result = {"blocked": False, "text": "", "updated_input": None, "updated_output": None, "stop": None}
     groups = configured().get(event)
     if not groups:
-        return False, ""
+        return result
     payload = {"hook_event_name": event, "tool_name": tool_name, "tool_input": tool_input,
                "cwd": str(cwd)}
     if tool_response is not None:
@@ -245,13 +303,17 @@ def run(event: str, tool_name: str, tool_input: dict, cwd: Path, tool_response=N
             if problem:
                 notify(f"{event} hook printed output that is {problem}: {hook['command']}", error=True)
             if data is not None:  # the JSON decides; the exit code is ignored, as in Claude Code
-                json_blocked, texts = _apply_json(event, data)
+                json_blocked, texts, extras = _apply_json_detailed(event, data)
                 blocked = blocked or json_blocked
                 said.extend(texts)
+                for key, value in extras.items():
+                    if value is not None:
+                        result[key] = value
             elif code != 0:
                 why = f"exit {code}" if code is not None else "failed"
                 notify(f"{event} hook {why}: {err or hook['command']}", error=True)
-    return blocked, "\n".join(said)
+    result["blocked"], result["text"] = blocked, "\n".join(said)
+    return result
 
 
 def tool_input_for(name: str, tool_input, root: Path) -> dict:
