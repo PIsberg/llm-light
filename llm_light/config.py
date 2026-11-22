@@ -91,25 +91,43 @@ def _resolve_api_key() -> tuple[str, str, str, str]:
     if key:
         return key, "API_KEY", "Environment", key
     
-    # 2. Check local dotfiles
-    for dotfile in (Path.home() / ".anthropic", Path(".env")):
-        try:
-            for line in dotfile.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line.startswith("ANTHROPIC_API_KEY=") and not line.startswith("#"):
-                    k = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    if k: return k, "API_KEY", f"Dotfile ({dotfile.name})", k
-        except OSError:
-            pass
-            
-    # 3. Fallback to Claude CLI Pro subscription (via CLI subprocess)
+    # 2. The user's own dotfile
+    k = _dotfile_key(Path.home() / ".anthropic")
+    if k:
+        return k, "API_KEY", "Dotfile (.anthropic)", k
+
+    # 3. The Claude CLI Pro subscription (via CLI subprocess)
     pro_token = _get_pro_token()
+    project_key = _dotfile_key(Path(".env"))
     if pro_token:
-        # We don't actually use the token directly anymore in llm.py, 
+        # We don't actually use the token directly anymore in llm.py,
         # but presence of the token confirms the user is logged in to the CLI.
-        return "", "OAUTH", "Claude CLI (Pro Subscription)", pro_token
-        
+        # A project's .env key comes after the login: apps built on the API keep
+        # theirs there, and reading it first billed that key per token in this
+        # one project (#277). Export ANTHROPIC_API_KEY to use it.
+        source = "Claude CLI (Pro Subscription), .env key skipped" if project_key \
+            else "Claude CLI (Pro Subscription)"
+        return "", "OAUTH", source, pro_token
+
+    # 4. The project's .env, when there is no login
+    if project_key:
+        return project_key, "API_KEY", "Dotfile (.env)", project_key
+
     return "", "OAUTH", "None", ""
+
+
+def _dotfile_key(path: Path) -> str:
+    """ANTHROPIC_API_KEY from a KEY=value file, or "" when there is none."""
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("ANTHROPIC_API_KEY=") and not line.startswith("#"):
+                k = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if k:
+                    return k
+    except OSError:
+        pass
+    return ""
 
 API_KEY, AUTH_MODE, API_KEY_SOURCE, AUTH_TOKEN = _resolve_api_key()
 ECONOMY_MODE = "USD" if AUTH_MODE == "API_KEY" else "TOKENS"
