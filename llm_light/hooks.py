@@ -16,7 +16,10 @@ only the keys it knows.
 - Subscription: the hooks go into the claude CLI agent's --settings file, after
   llm_light's own shell guard, and the CLI runs every event as Claude Code would. The
   agent runs with HOME pointed at an empty temp dir, so a command should not rely on `~`.
-- API key: llm_light runs PreToolUse and PostToolUse itself, around its tools and after
+- API key: llm_light runs the events itself. UserPromptSubmit, Stop and PreCompact run
+  from llm.py through run_event (#226), SessionStart and SessionEnd from
+  main._session_hook (#311); Notification runs only on a subscription.
+  PreToolUse and PostToolUse run around its tools and after
   it writes a SEARCH/REPLACE edit, under Claude Code's tool names (Read, Grep, Glob, Bash,
   Edit, Write, mcp__...) so one matcher serves both modes. A command gets the event as
   JSON on stdin. Exit 2 blocks a PreToolUse call, and its stderr tells the model why; on

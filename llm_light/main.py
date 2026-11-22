@@ -340,6 +340,29 @@ def heartbeat():
             last_warm = time.time()
 
 
+def _session_hook(event: str, value: str, file=None) -> str:
+    """Run the user's SessionStart (value: its source) or SessionEnd (value: its reason)
+    hooks with an API key (#311); on a subscription the claude CLI agent runs them. Returns
+    what a SessionStart hook said for the model, which goes with the next question: the
+    cached system prompt must stay byte-identical. Exit 2 only shows its stderr, as in
+    Claude Code: neither event can stop anything."""
+    from llm_light import llm as _llm
+    if _llm._agent_oauth() or not hooks.configured().get(event):
+        return ""
+    field = "source" if event == "SessionStart" else "reason"
+    result = hooks.run_event(event, Path.cwd(), match_value=value, **{field: value})
+    if result["text"]:
+        print(f"  {_T_SYS}  {event} hook: {result['text']}", file=file or sys.stdout)
+    return f"SessionStart hook:\n{result['context']}" if result["context"] else ""
+
+
+def _queue_session_start(source: str) -> None:
+    context = _session_hook("SessionStart", source)
+    if context:
+        with state.lock:
+            state.pending_context.append(context)
+
+
 def _setup_signal_handlers():
     """Ctrl+C interrupts the current turn; SIGTERM exits.
 
@@ -538,6 +561,8 @@ def start_chat(auto_apply=False, resume=False, pick=False, load_compressor=None)
     elif resume:
         print(f"  {_T_SYS}  {session.restore()}")
     _setup_signal_handlers()
+    _queue_session_start("resume" if resume or pick else "startup")
+    end_reason = "other"  # SIGTERM or an error, unless the user left the prompt
 
     # Indexing runs in the background so the prompt appears at once. Any query submitted
     # before it completes waits at that point; the toolbar says so meanwhile.
@@ -651,6 +676,7 @@ def start_chat(auto_apply=False, resume=False, pick=False, load_compressor=None)
             try:
                 query = _get_input()
             except (KeyboardInterrupt, EOFError):
+                end_reason = "prompt_input_exit"
                 break
             _start_background_once()  # in case no frame was drawn
 
@@ -658,6 +684,7 @@ def start_chat(auto_apply=False, resume=False, pick=False, load_compressor=None)
                 continue
 
             if query.lower() in ("exit", "quit", "/exit", "/quit"):
+                end_reason = "prompt_input_exit"
                 break
             if query.startswith("!!"):
                 print(f"  {_T_SYS}  {commands.run_interactive(query[2:])}")
@@ -723,6 +750,7 @@ def start_chat(auto_apply=False, resume=False, pick=False, load_compressor=None)
                 print(f"  {_T_SYS}  {commands.diff_command()}")
                 continue
             if query == "/clear":
+                _session_hook("SessionEnd", "clear")
                 state.conversation_history.clear()
                 state.cli_session = None
                 state.session_model = None
@@ -731,6 +759,7 @@ def start_chat(auto_apply=False, resume=False, pick=False, load_compressor=None)
                 state.checkpoints.clear()
                 session.clear()
                 print(f"  {_T_SYS}  Conversation cleared.")
+                _queue_session_start("clear")
                 continue
             if name == "/compact":
                 try:
@@ -839,8 +868,12 @@ def start_chat(auto_apply=False, resume=False, pick=False, load_compressor=None)
 
             _ask(query, auto_apply=auto_apply)
     except KeyboardInterrupt:
-        pass
+        end_reason = "prompt_input_exit"
     finally:
+        try:
+            _session_hook("SessionEnd", end_reason)
+        except (Exception, KeyboardInterrupt):  # a second Ctrl+C must not skip the cleanup below
+            pass
         state.stop_event.set()
         for thread in watcher_thread:  # none when the session ended before the first frame
             thread.join(timeout=5)  # a quick exit may beat its start
@@ -1290,19 +1323,23 @@ def main():
     images, problems = commands.attach_images(prompt)
     for problem in problems:
         print(f"  {_T_SYS}  Not attached: {problem}", file=sys.stderr)
-    context = "\n\n".join(c for c in (piped, mentioned) if c)
+    started = _session_hook("SessionStart", "resume" if args.resume else "startup", file=sys.stderr)
+    context = "\n\n".join(c for c in (piped, mentioned, started) if c)
     extra = {"context": context} if context else {}
     if images:
         extra["images"] = images
-    if args.resume or args.output_format:
-        turn = continue_turn if args.resume else one_shot
-        raise SystemExit(headless.run(args.output_format or "text",
-                                      lambda: turn(prompt, auto_apply=args.yes, **extra)))
     try:
-        one_shot(prompt, auto_apply=args.yes, **extra)
-    except KeyboardInterrupt:
-        print(f"\n  {_T_ERR}  Interrupted.", file=sys.stderr)
-        raise SystemExit(130)
+        if args.resume or args.output_format:
+            turn = continue_turn if args.resume else one_shot
+            raise SystemExit(headless.run(args.output_format or "text",
+                                          lambda: turn(prompt, auto_apply=args.yes, **extra)))
+        try:
+            one_shot(prompt, auto_apply=args.yes, **extra)
+        except KeyboardInterrupt:
+            print(f"\n  {_T_ERR}  Interrupted.", file=sys.stderr)
+            raise SystemExit(130)
+    finally:
+        _session_hook("SessionEnd", "other", file=sys.stderr)
 
 if __name__ == "__main__":
     main()
