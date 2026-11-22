@@ -1223,9 +1223,30 @@ def _build_parser():
     return parser
 
 
+def _refuse_unknown(parser, unknown):
+    """Stop on a flag the parser does not know (#321). parse_known_args() alone dropped
+    it: `--plan` started in the writable default mode, and `--modle haiku hi` sent
+    "haiku hi" as a billed question. Names the closest flag, if one is close."""
+    import difflib
+    known = [s for action in parser._actions for s in action.option_strings if s.startswith("--")]
+    hints = []
+    for arg in unknown:
+        flag = arg.split("=", 1)[0]
+        close = difflib.get_close_matches(flag, known, n=1, cutoff=0.75) if flag.startswith("--") else []
+        if close:
+            hints.append(f"did you mean {close[0]}?")
+    message = "unrecognized arguments: " + " ".join(unknown)
+    if hints:
+        message += " (" + "; ".join(hints) + ")"
+    message += ". A question that starts with - goes after --, e.g. llm-light -- \"-x: what is it?\""
+    parser.error(message)
+
+
 def main():
     parser = _build_parser()
     args, unknown = parser.parse_known_args()
+    if unknown:
+        _refuse_unknown(parser, unknown)
     if args.completion:
         print(completions.script(args.completion, parser), end="")
         raise SystemExit(0)
