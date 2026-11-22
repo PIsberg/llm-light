@@ -16,8 +16,7 @@ Every chunk gets two vectors (#61). `indexer._index_files_hybrid()` first embeds
 | Repo Size | Model | Size | Use Case |
 |-----------|-------|------|----------|
 | < 50 files | all-MiniLM-L6-v2 | 22 MB | Fast startup |
-| 50-199 files | all-mpnet-base-v2 | 420 MB | Better depth |
-| 200+ files | nomic-embed-text-v1.5 | 275 MB | Optimal recall |
+| 50+ files | all-mpnet-base-v2 | 420 MB | Better depth; nomic-embed-text-v1.5 was picked above 200 files until it stopped loading with transformers 5 (#306) |
 
 ### Method-Level Chunking
 
@@ -112,10 +111,8 @@ else (no: single model)
   partition "Auto-Tune Model" {
     if (Files < 50) then (small)
       :all-MiniLM-L6-v2 (22 MB);
-    elseif (Files < 200) then (medium)
+    else (50+)
       :all-mpnet-base-v2 (420 MB);
-    else (large)
-      :nomic-embed-text-v1.5;
     endif
   }
 

@@ -197,8 +197,9 @@ class TestAutoTune(unittest.TestCase):
             auto_tune(files, quiet=True)
         self.assertEqual(_state.EMBED_MODEL, "all-mpnet-base-v2")
 
-    def test_large_repo_selects_nomic(self):
-        print("\n  ▶ TestAutoTune.test_large_repo_selects_nomic")
+    def test_large_repo_selects_mpnet(self):
+        # nomic-embed-text-v1.5 fails to load with transformers 5 (#306).
+        print("\n  ▶ TestAutoTune.test_large_repo_selects_mpnet")
         files = self._make_files(250)
         _state.EMBED_MODEL = None
         _state.embedder = None
@@ -206,7 +207,7 @@ class TestAutoTune(unittest.TestCase):
              patch("llm_light.executor._Spinner"):
             mock_st.return_value = MagicMock()
             auto_tune(files, quiet=True)
-        self.assertEqual(_state.EMBED_MODEL, "nomic-ai/nomic-embed-text-v1.5")
+        self.assertEqual(_state.EMBED_MODEL, "all-mpnet-base-v2")
 
     def test_sets_top_k_from_chunks(self):
         print("\n  ▶ TestAutoTune.test_sets_top_k_from_chunks")

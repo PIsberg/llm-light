@@ -308,10 +308,11 @@ def auto_tune(source_files, chunks=None, quiet=False, load_model=True):
     n = len(source_files)
     if n < 50:
         chosen_model = "all-MiniLM-L6-v2"
-    elif n < 200:
-        chosen_model = "all-mpnet-base-v2"
     else:
-        chosen_model = "nomic-ai/nomic-embed-text-v1.5"
+        # Not nomic-embed-text-v1.5 above 200 files any more: with transformers 5
+        # it fails on its first encode (#306). all-mpnet-base-v2 is the dense
+        # model the default hybrid mode uses.
+        chosen_model = "all-mpnet-base-v2"
 
     # Only load model if explicitly requested AND (model changed or not loaded)
     # This prevents loading on warm cache hits
