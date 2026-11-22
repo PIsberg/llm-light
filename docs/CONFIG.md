@@ -25,6 +25,7 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `HYBRID_SCORE_GAP` / `HYBRID_FAST_WEIGHT` | Keep chunks within this fused z-score of the top (1.5) / static model's share of the fused score (0.5) |
 | `_RETRIEVAL_BUDGET` | Per-effort token budgets: low=1500, medium=3000, high=6000, max=9000 |
 | `MAX_HISTORY_TURNS` | Compress and cap when stored turns exceed this (default 6) |
+| `HISTORY_CONTEXT_CHARS` | A turn's attachments (`@file`, piped text, `!` output, a `/review` diff) longer than this (default 1,500 characters) go with that turn in full, but the history keeps a note per attached file and the first and last half of the rest, since every later turn resends the history (#322) |
 | `SUMMARIZE_BATCH` | Old turns collapsed per summary call (default 3) |
 | `GLOBAL_STATS_FILE` | Path to global savings persistence (`~/.llm_light_stats.json`; override with `LLM_LIGHT_STATS_FILE`) |
 | `SESSION_DIR` | Where `session.py` saves each project's conversation for `--continue`, one file per project named by a hash of its path (`~/.llm_light_sessions`; override with `LLM_LIGHT_SESSION_DIR`). In the home directory so a cloned repo cannot supply a conversation. `/clear` keeps the old one next to it as `<name>.saved-<stamp>.json` for `/resume` |

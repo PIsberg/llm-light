@@ -166,6 +166,11 @@ def _env_int(name: str, default: int) -> int:
 # 0 turns the heartbeat off. LLM_LIGHT_MAX_IDLE_WARMS.
 MAX_IDLE_WARMS          = _env_int("MAX_IDLE_WARMS", 20)
 ENABLE_STREAMING        = True         # enable real-time token streaming
+# An attachment longer than this (an @file, piped text, !command output, a /review
+# diff) goes with its own question in full, but the history keeps only a note per
+# attached file and the start and end of the rest, since every later turn resends
+# the history (#322).
+HISTORY_CONTEXT_CHARS   = 1_500
 TARGET_RETRIEVED_TOKENS = 6_000   # desired context size per query in tokens
 # Absolute similarity floor. Natural questions score lower against code than
 # keyword queries (all-mpnet-base-v2: 0.38 for "In which file and function is
