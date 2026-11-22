@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "sentence-transformers>=6.2.0",
+    "sentence-transformers>=6.3.0",
     "numpy>=2.5.4",
     "watchdog>=7.1.0",
     "anthropic>=2.8.0",
