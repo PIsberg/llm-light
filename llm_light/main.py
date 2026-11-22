@@ -438,9 +438,10 @@ def _resume_picker() -> None:
     print(f"  {_T_SYS}  {session.resume(entries[int(picked)]['path'])}")
 
 
-def _ask(query, auto_apply=False, mentions=True) -> bool:
-    """Send one question as a turn, with queued !command output and any @file contents
-    after it, and save the conversation. Returns whether the turn completed.
+def _ask(query, auto_apply=False, mentions=True, attachment="") -> bool:
+    """Send one question as a turn, with `attachment` (a /review diff, /run output), queued
+    !command output and any @file contents after it, and save the conversation. Returns
+    whether the turn completed. Routing and retrieval see `query` only (#320).
 
     The prompt, /run and /loop all come through here, so they treat the budget prompt,
     attachments and a missing login the same way.
@@ -468,7 +469,7 @@ def _ask(query, auto_apply=False, mentions=True) -> bool:
             print(f"  {_T_SYS}  Not attached: {problem}")
         if images:
             print(f"  {_T_SYS}  Attached {', '.join(i['path'] for i in images)}")
-    context = "\n\n".join(c for c in (commands.take_pending(), mentioned) if c)
+    context = "\n\n".join(c for c in (attachment, commands.take_pending(), mentioned) if c)
     extra = {"context": context} if context else {}
     if images:
         extra["images"] = images
@@ -487,7 +488,7 @@ def _ask(query, auto_apply=False, mentions=True) -> bool:
     return done
 
 
-def _review_turn(question: str, auto_apply) -> bool:
+def _review_turn(question: str, diff: str, auto_apply) -> bool:
     """A /review turn, read-only whatever the session's mode: the diff may be someone else's
     pull request, so being told not to edit is not enough. The mode comes back afterwards.
     mentions=False: an "@" in a diff is not the user attaching a file."""
@@ -495,7 +496,7 @@ def _review_turn(question: str, auto_apply) -> bool:
     with state.lock:
         state.permission_mode = permissions.PLAN
     try:
-        return _ask(question, auto_apply=auto_apply, mentions=False)
+        return _ask(question, auto_apply=auto_apply, mentions=False, attachment=diff)
     finally:
         with state.lock:
             state.permission_mode = mode
@@ -742,10 +743,10 @@ def start_chat(auto_apply=False, resume=False, pick=False, load_compressor=None)
                 _ask(commands.init_prompt(), auto_apply=auto_apply, mentions=False)
                 continue
             if name == "/review" and not _replaced("/review"):
-                question, line = commands.review_prompt(arg)
+                question, diff, line = commands.review_prompt(arg)
                 print(f"  {_T_SYS}  {line}")
                 if question:
-                    _review_turn(question, auto_apply)
+                    _review_turn(question, diff, auto_apply)
                 continue
             if query == "/vim":
                 print(f"  {_T_SYS}  {commands.vim_command()}")
@@ -814,8 +815,12 @@ def start_chat(auto_apply=False, resume=False, pick=False, load_compressor=None)
                     print(f"  {_T_SYS}  Stopped. Nothing was sent.")
                     continue
                 # mentions=False: an "@" in a command's output is not the user attaching a file.
-                _ask(f"I ran the following command and got this output. Please help me understand or fix any issues:\n\n```\n{transcript}\n```",
-                     auto_apply=auto_apply, mentions=False)
+                # The output goes after the question, not in it (#320): a failing test log
+                # routed as a long, file-naming question and pulled the top retrieval budget.
+                _ask(f"I ran `{cmd}` and its output is attached below. Please help me "
+                     "understand or fix any issues.",
+                     auto_apply=auto_apply, mentions=False,
+                     attachment="Output of the command:\n" + commands.fenced(transcript))
                 continue
             if name == "/allow":
                 print(f"  {_T_SYS}  {commands.allow_command(arg)}")

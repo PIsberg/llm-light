@@ -6341,8 +6341,11 @@ class TestStartChatLoop(unittest.TestCase):
 
         mock_run.assert_called_once_with("echo hello")
         self.assertTrue(mock_chat.called)
-        # Transcript should be embedded in the chat message
-        self.assertIn("cmd output", mock_chat.call_args[0][0])
+        # The transcript goes after the question as context, not in it (#320):
+        # routing and retrieval read the question only.
+        self.assertNotIn("cmd output", mock_chat.call_args[0][0])
+        self.assertIn("echo hello", mock_chat.call_args[0][0])
+        self.assertIn("cmd output", mock_chat.call_args.kwargs["context"])
 
     def test_run_command_empty_cmd_no_crash(self):
         """/run with no command prints error but does not crash."""
