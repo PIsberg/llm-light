@@ -852,8 +852,6 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
     another turn (/loop) can only learn of them from the result."""
     routed_model, effort, max_tok = _finalize_route(*route_query(query))
     token_budget = _RETRIEVAL_BUDGET[effort]
-    from llm_light.commands import checkpoint
-    turn_checkpoint = checkpoint(query)
 
     from llm_light.indexer import _chunk_label
     skipped_reason = None
@@ -897,6 +895,10 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
         skeleton = state.skeleton_context
 
     _maybe_compress_history()
+    # After compressing: it shortens the history and clears the checkpoints,
+    # and /rewind cuts the history at this length (#274).
+    from llm_light.commands import checkpoint
+    turn_checkpoint = checkpoint(query)
     trimmed = state.conversation_history[-(MAX_HISTORY_TURNS * 2):]
 
     if trimmed:
