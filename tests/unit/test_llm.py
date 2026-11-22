@@ -394,6 +394,58 @@ class TestAccumulateUsage(unittest.TestCase):
 # _summarize_turns
 # ---------------------------------------------------------------------------
 
+class TestSummaryAfterThinking(unittest.TestCase):
+    """The summary model thinks first: content[0] can be a thinking block (#272)."""
+
+    def setUp(self):
+        from types import SimpleNamespace as NS
+        self.response = NS(
+            content=[NS(type="thinking", thinking="Let me summarise."),
+                     NS(type="text", text="They fixed the parser.")],
+            usage=NS(input_tokens=10, output_tokens=5,
+                     cache_read_input_tokens=0, cache_creation_input_tokens=0))
+        self.saved = list(_state.conversation_history)
+
+    def tearDown(self):
+        _state.conversation_history = self.saved
+
+    def _turns(self, n):
+        out = []
+        for i in range(n):
+            out += [{"role": "user", "content": f"q{i}"}, {"role": "assistant", "content": f"a{i}"}]
+        return out
+
+    def test_compression_keeps_the_summary(self):
+        print("\n  ▶ TestSummaryAfterThinking.test_compression_keeps_the_summary")
+        _state.conversation_history = self._turns(_llm.MAX_HISTORY_TURNS + 1)
+        with patch.object(_claude_mod, "AUTH_MODE", "API_KEY"), \
+             patch("llm_light.providers.claude.client.messages.create", return_value=self.response), \
+             patch("sys.stdout", io.StringIO()):
+            _llm._maybe_compress_history()
+        first = _state.conversation_history[0]["content"]
+        self.assertIn("They fixed the parser.", first)
+
+    def test_compact_uses_the_text_block(self):
+        print("\n  ▶ TestSummaryAfterThinking.test_compact_uses_the_text_block")
+        _state.conversation_history = self._turns(3)
+        with patch.object(_claude_mod, "AUTH_MODE", "API_KEY"), \
+             patch("llm_light.providers.claude.client.messages.create", return_value=self.response):
+            self.assertEqual(_llm.compact_history(), 3)
+        self.assertIn("They fixed the parser.", _state.conversation_history[0]["content"])
+
+    def test_empty_summary_is_a_failure(self):
+        print("\n  ▶ TestSummaryAfterThinking.test_empty_summary_is_a_failure")
+        from types import SimpleNamespace as NS
+        self.response.content = [NS(type="thinking", thinking="...")]
+        _state.conversation_history = self._turns(3)
+        before = list(_state.conversation_history)
+        with patch.object(_claude_mod, "AUTH_MODE", "API_KEY"), \
+             patch("llm_light.providers.claude.client.messages.create", return_value=self.response):
+            with self.assertRaises(Exception):
+                _llm.compact_history()
+        self.assertEqual(_state.conversation_history, before)  # /compact leaves it unchanged
+
+
 class TestSummarizeTurns(unittest.TestCase):
 
     def test_summarize_turns_calls_api(self):
@@ -403,7 +455,7 @@ class TestSummarizeTurns(unittest.TestCase):
             {"role": "assistant", "content": "X is a thing."},
         ]
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Summary of conversation")]
+        mock_response.content = [MagicMock(type="text", text="Summary of conversation")]
         mock_response.usage = MagicMock()
 
         with patch("llm_light.providers.claude.client.messages.create", return_value=mock_response):
@@ -417,7 +469,7 @@ class TestSummarizeTurns(unittest.TestCase):
             {"role": "assistant", "content": "Answer."},
         ]
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Summary")]
+        mock_response.content = [MagicMock(type="text", text="Summary")]
         mock_response.usage = MagicMock()
 
         with patch("llm_light.providers.claude.client.messages.create", return_value=mock_response):
@@ -448,7 +500,7 @@ class TestSummarizeTurns(unittest.TestCase):
     def test_empty_messages_no_crash(self):
         print("\n  ▶ TestSummarizeTurns.test_empty_messages_no_crash")
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Empty summary")]
+        mock_response.content = [MagicMock(type="text", text="Empty summary")]
         mock_response.usage = MagicMock()
         with patch("llm_light.providers.claude.client.messages.create", return_value=mock_response):
             summary, _ = _summarize_turns([])
