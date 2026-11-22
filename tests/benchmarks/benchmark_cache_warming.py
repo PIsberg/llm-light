@@ -15,7 +15,7 @@ Scenario per row: start the session (startup warm), ask one question on the
 opening model at minute 1, let the file watcher rebuild the skeleton
 --changes times (a file added, deleted or renamed; each is a new prefix), stay
 idle for --idle hours with the heartbeat running, then ask a second question on
-the same model. Rows:
+the same model (or, with --no-return, never ask it: a forgotten terminal). Rows:
 
   routed, opens on <model>   ROUTE_ONCE session, first question routes there
   pinned <model>             --model pins it; no routing
@@ -27,6 +27,7 @@ cost model of the warming policy, not a live measurement.
     python tests/benchmarks/benchmark_cache_warming.py
     python tests/benchmarks/benchmark_cache_warming.py --idle 8
     python tests/benchmarks/benchmark_cache_warming.py --idle 0 --changes 3
+    python tests/benchmarks/benchmark_cache_warming.py --idle 60 --no-return
 
 Not collected by pytest. Run from the repo root. No API key, no network.
 """
@@ -102,7 +103,7 @@ class FakeCache:
             cache_read_input_tokens=0, cache_creation={}))
 
 
-def run(opener, pinned, idle_hours, prefix, changes=0):
+def run(opener, pinned, idle_hours, prefix, changes=0, turns=2):
     clock = Clock()
     cache = FakeCache(clock, prefix)
     client = SimpleNamespace(messages=SimpleNamespace(create=cache.create))
@@ -121,7 +122,7 @@ def run(opener, pinned, idle_hours, prefix, changes=0):
              patch.object(llm, "_refresh_tree_only", lambda: next(trees)):
             state.last_interaction = clock.now
             llm.warm_cache(quiet=True)                    # startup, as full_refresh()
-            for turn in range(2):
+            for turn in range(turns):
                 clock.now += 60
                 model = pinned or opener
                 if not pinned:
@@ -145,16 +146,20 @@ def main_():
     ap.add_argument("--idle", type=float, default=1.0, help="idle hours between the two questions (default 1)")
     ap.add_argument("--changes", type=int, default=0,
                     help="skeleton changes (files added, deleted or renamed) between the questions (default 0)")
+    ap.add_argument("--no-return", action="store_true",
+                    help="no second question: the session is left open and idle")
     args = ap.parse_args()
+    turns = 1 if args.no_return else 2
     prefix = prefix_tokens()
-    print(f"prefix {prefix:,} tokens; idle {args.idle:g} h and {args.changes} skeleton changes between two questions; "
+    after = "after one question, never returning" if args.no_return else "between two questions"
+    print(f"prefix {prefix:,} tokens; idle {args.idle:g} h and {args.changes} skeleton changes {after}; "
           f"heartbeat every {config.HEARTBEAT_SECS} s, warm after {config.CACHE_TTL_SECS} s")
     print(f"  {'session':28} {'warms':>6} {'warm $':>9} {'turn $':>9} {'total $':>9}")
     rows = [(f"routed, opens on {m.split('-')[1]}", m, None)
             for m in (config.MODEL_HAIKU, config.MODEL_SONNET, config.MODEL_OPUS)]
     rows += [(f"pinned {m.split('-')[1]}", None, m) for m in (config.MODEL_HAIKU, config.MODEL_OPUS)]
     for label, opener, pinned in rows:
-        c = run(opener, pinned, args.idle, prefix, args.changes)
+        c = run(opener, pinned, args.idle, prefix, args.changes, turns)
         total = c.cost["warm"] + c.cost["turn"]
         print(f"  {label:28} {c.calls['warm']:>6} {c.cost['warm']:>9.4f} {c.cost['turn']:>9.4f} {total:>9.4f}")
 

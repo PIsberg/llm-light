@@ -26,6 +26,7 @@ from llm_light import (commands, completions, doctor, esc_key, headless, hooks, 
                        providers, proxy, session, settings)
 from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, TOP_TIER, USD_BUDGET
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
+from llm_light.config import CACHE_LIFETIME_SECS, MAX_IDLE_WARMS
 from llm_light.ui import (
     _ANSI_BOLD, _ANSI_RESET, _ANSI_CYAN, _ANSI_DIM, _ANSI_GREEN, _ANSI_RED, _T_SYS, _T_ERR,
     _UNICODE, access_label, choose, current_notice, notify, turn_finished, print_session_summary, print_session_footer, print_startup_header,
@@ -326,18 +327,32 @@ def heartbeat():
     CACHE_TTL_SECS since the last turn or warm is enough. Measured from the
     last turn alone, an idle session warmed on every tick after the threshold
     (112 warms in an idle hour, tests/benchmarks/benchmark_cache_warming.py).
+
+    It stops after MAX_IDLE_WARMS warms with no turn, so a forgotten terminal
+    stops spending, and it never warms an entry that has already expired (the
+    machine slept past its hour): that warm is a 1-hour write, which the next
+    turn pays anyway if there is one (#319). warm_cache() also sends nothing at
+    the /budget cap. Counted per turn (state.turn_count), not per
+    last_interaction, which a skeleton change from the watcher also moves.
     """
     if AUTH_MODE == "OAUTH" or not providers.active().has(CACHING):
         return
     import time
     last_warm = 0.0
+    seen_turn = None
+    idle_warms = 0
     while not state.stop_event.is_set():
         state.stop_event.wait(HEARTBEAT_SECS)
         with state.lock:
+            turn = state.turn_count
             idle = time.time() - max(state.last_interaction, last_warm)
-        if idle > CACHE_TTL_SECS and not state.stop_event.is_set():
+        if turn != seen_turn:
+            seen_turn, idle_warms = turn, 0
+        if (CACHE_TTL_SECS < idle < CACHE_LIFETIME_SECS and idle_warms < MAX_IDLE_WARMS
+                and not state.stop_event.is_set()):
             warm_cache(quiet=True)  # a background thread: no print over the prompt
             last_warm = time.time()
+            idle_warms += 1
 
 
 def _session_hook(event: str, value: str, file=None) -> str:
