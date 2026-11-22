@@ -380,6 +380,17 @@ full text. The default sends the right file for 29 of 37 on-topic questions,
 from 26, and one more of the 6 off-topic questions now gets context. The
 per-model floors were tuned on the old vectors and were not re-swept (#287).
 
+### Budget by rendered tokens (2026-11-21, #288)
+
+`--budgets` now reports the tokens of the rendered context
+(`_dedup_retrieved_context`: each file's header once, comments stripped)
+instead of the sum of the selected chunks' full texts, which counted a
+file's preamble once per chunk. With the same metric on both sides, charging
+a second chunk of a file only its body changed, on the default static +
+all-mpnet-base-v2: right file sent at high effort 32 → 33 of 37, other
+efforts unchanged; mean rendered tokens 1,031 → 1,030 (low), 1,837 → 1,845
+(medium, median 2,022 → 2,210), 3,097 → 3,093 (high), 3,813 → 3,776 (max).
+
 ### Top-level code as chunks (2026-11-21, #270)
 
 Constants after a file's first function, class headers and attributes, and

@@ -43,8 +43,10 @@ def test_evaluate_reports_tokens_sent_per_question(bench, store):
 
     r = bench.evaluate("t", list(store), ["a.py", "b.py"], questions, select)
 
-    expected = sum(retrieval._estimate_tokens(store[c]["text"]) for c in store)
+    # The rendered context the model is sent, each file's header once (#288).
+    expected = retrieval._estimate_tokens(retrieval._dedup_retrieved_context(select(0, 0)))
     assert r["tokens_sent"] == [expected]
+    assert expected > 0
 
 
 def test_evaluate_counts_no_tokens_for_unrelated_question(bench, store):
