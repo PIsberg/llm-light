@@ -13,21 +13,6 @@ except ImportError:  # the Claude provider is optional for other providers (FR-0
 
 is_test_mode = False
 
-_ORIG_PATH_UNLINK = Path.unlink
-
-
-def _safe_unlink(self, missing_ok=False):
-    try:
-        return _ORIG_PATH_UNLINK(self, missing_ok=missing_ok)
-    except PermissionError:
-        # Workspace sandbox on Windows allows writes but may block deletes.
-        # Tests only require cleanup not to explode between cases.
-        return None
-
-
-Path.unlink = _safe_unlink
-
-
 def _refresh_exports():
     export_dict = {
         "Path": Path,
