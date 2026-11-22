@@ -1,0 +1,135 @@
+{
+  "_comment": "Held-out questions for tests/benchmarks/benchmark_models.py (#287): written after the floors were tuned on repo_questions.json and never used to pick a threshold. Run with --fixture tests/fixtures/repo_questions_heldout.json to check that a floor or gap change chosen on the tuning set holds on questions it was not fitted to. 'unrelated' questions should retrieve nothing.",
+  "questions": [
+    {
+      "question": "How is the model's network traffic sent through a firewall without changing the environment other programs see?",
+      "file": "llm_light/proxy.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "Where are the user's own scripts that run before and after the assistant uses a tool loaded from?",
+      "file": "llm_light/hooks.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "How is the chat saved so it can be picked up again the next time the program starts?",
+      "file": "llm_light/session.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "How does the program decide whether it may change files without asking me first?",
+      "file": "llm_light/permissions.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "What lets me press Escape to stop an answer that is still being written?",
+      "file": "llm_light/esc_key.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "How does a picture copied to the clipboard end up attached to my question?",
+      "file": "llm_light/clipboard.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "How does it find the functions that call the one the question is about?",
+      "file": "llm_light/callgraph.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "After an edit, how does it choose which tests to run instead of the whole suite?",
+      "file": "llm_light/affected_tests.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "Where is the script that lets my shell complete the command-line options produced?",
+      "file": "llm_light/completions.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "What checks whether the installation and the sign-in are working?",
+      "file": "llm_light/doctor.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "What stops the subscription agent from chaining a second command after an allowed one?",
+      "file": "llm_light/cli_shell_guard.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "Where are the preferences kept that should survive a restart?",
+      "file": "llm_light/settings.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "How do my personal guidelines for every project get added to what the model is told?",
+      "file": "llm_light/instructions.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "How are external tool servers listed in my home folder started and offered to the model?",
+      "file": "llm_light/mcp_servers.py",
+      "kind": "paraphrase"
+    },
+    {
+      "question": "good morning",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "thanks, that's all for now",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "what is the capital of Australia",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "recommend a good science fiction novel",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "how many calories are in a banana",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "translate 'where is the train station' into German",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "what time is it in Tokyo right now",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "write a haiku about autumn leaves",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "how do I change a flat tyre on a bicycle",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "who painted the Mona Lisa",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "what's a good name for a grey cat",
+      "file": null,
+      "kind": "unrelated"
+    },
+    {
+      "question": "how tall is Mount Everest",
+      "file": null,
+      "kind": "unrelated"
+    }
+  ]
+}

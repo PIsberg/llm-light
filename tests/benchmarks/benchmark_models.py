@@ -69,31 +69,44 @@ def file_of(chunk_id):
     return chunk_id.split("::")[0].replace("\\", "/")
 
 
-def embed(model_name, chunks, questions, cache_dir):
-    """(chunk matrix, question matrix) for a model, cached on disk by chunk ids."""
+def _digest(texts):
     import hashlib
+    return hashlib.sha256("\0".join(texts).encode("utf-8")).hexdigest()
+
+
+def embed(model_name, chunks, questions, cache_dir):
+    """(chunk matrix, question matrix) for a model, cached on disk.
+
+    Chunks and questions are cached apart, so switching --fixture embeds only the new
+    questions, not the repository (minutes with a dense model). Each is keyed on the
+    embedded texts, not just the ids: an edited function keeps its id, and its stale
+    vector would be reused silently. What llm_light embeds: the dense models get path
+    and body (#264), the static model the full chunk text.
+    """
     key = model_name.replace("/", "__")
-    ids_path = cache_dir / f"{key}.ids.json"
-    # Keyed on the embedded texts and questions, not just the ids: an edited
-    # function keeps its id, and its stale vector would be reused silently.
-    # What llm_light embeds: the dense models get path and body (#264), the
-    # static model the full chunk text.
     texts = [c["text"] if model_name == FAST else embed_text(c["text"]) for c in chunks]
-    digest = hashlib.sha256("\0".join(texts + [q["question"] for q in questions])
-                            .encode("utf-8")).hexdigest()
-    if ids_path.exists() and json.loads(ids_path.read_text()) == digest:
-        return np.load(cache_dir / f"{key}.chunks.npy"), np.load(cache_dir / f"{key}.questions.npy")
-    from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(model_name, device="cpu")
-    print(f"  embedding {len(chunks)} chunks with {model_name}...", flush=True)
-    E = model.encode([_DOC_PREFIX.get(model_name, "") + t for t in texts],
-                     normalize_embeddings=True, batch_size=64)
-    Q = model.encode([_QUERY_PREFIX.get(model_name, "") + q["question"] for q in questions],
-                     normalize_embeddings=True)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    np.save(cache_dir / f"{key}.chunks.npy", E)
-    np.save(cache_dir / f"{key}.questions.npy", Q)
-    ids_path.write_text(json.dumps(digest))
+    asked = [q["question"] for q in questions]
+    model = None
+
+    def cached(name, inputs, prefix, **kw):
+        nonlocal model
+        digest_path, vec_path = cache_dir / f"{key}.{name}.digest", cache_dir / f"{key}.{name}.npy"
+        digest = _digest(inputs)
+        if digest_path.exists() and vec_path.exists() and digest_path.read_text() == digest:
+            return np.load(vec_path)
+        if model is None:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer(model_name, device="cpu")
+        if name == "chunks":
+            print(f"  embedding {len(chunks)} chunks with {model_name}...", flush=True)
+        V = model.encode([prefix + t for t in inputs], normalize_embeddings=True, **kw)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        np.save(vec_path, V)
+        digest_path.write_text(digest)
+        return V
+
+    E = cached("chunks", texts, _DOC_PREFIX.get(model_name, ""), batch_size=64)
+    Q = cached(f"questions-{_digest(asked)[:16]}", asked, _QUERY_PREFIX.get(model_name, ""))
     return E, Q
 
 
@@ -124,9 +137,12 @@ def report(r):
           f"  | unrelated got nothing {u[0]}/{u[1]}  | files sent median {np.median(r['files_sent']):.0f}")
 
 
-def main():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cache-dir", type=Path, default=ROOT / ".llm_light_cache" / "bench")
+    ap.add_argument("--fixture", type=Path, default=FIXTURE,
+                    help="question set; tests/fixtures/repo_questions_heldout.json checks a floor "
+                         "or gap chosen on the default set against questions it was not tuned on")
     ap.add_argument("--sweep", action="store_true", help="also sweep HYBRID_SCORE_GAP and the floors")
     ap.add_argument("--budgets", action="store_true", help="also report recall and tokens per effort budget")
     ap.add_argument("--worktree", action="store_true",
@@ -136,10 +152,14 @@ def main():
                     help="for chunks under tests/: keep them, drop them, or subtract --test-penalty "
                          "from their fused score. Not applied when the question mentions tests.")
     ap.add_argument("--test-penalty", type=float, default=1.0, help="fused z-score units (penalty policy)")
-    args = ap.parse_args()
+    return ap.parse_args(argv)
+
+
+def main():
+    args = parse_args()
     TEST_POLICY["policy"], TEST_POLICY["penalty"] = args.test_policy, args.test_penalty
 
-    questions = json.loads(FIXTURE.read_text(encoding="utf-8"))["questions"]
+    questions = json.loads(args.fixture.read_text(encoding="utf-8"))["questions"]
     chunks = collect_chunks()
     ids = [c["id"] for c in chunks]
     files = [file_of(c) for c in ids]
