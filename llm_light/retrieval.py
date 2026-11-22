@@ -325,7 +325,7 @@ def _select_within_budget(candidates, budget, k, strong=None):
             if file_id in selected_files:
                 continue
             text = state.chunk_store[cid]["text"]
-            chunk_tokens = _estimate_tokens(text)
+            chunk_tokens = _rendered_tokens(cid, text, selected_files)
             if spent_tokens + chunk_tokens > budget and selected:
                 continue
             selected.append((cid, score))

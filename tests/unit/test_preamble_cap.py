@@ -70,6 +70,19 @@ def test_selection_charges_the_capped_preamble(store):
     assert retrieval._rendered_tokens("pkg/big.py::helper", text, set()) < retrieval._estimate_tokens(text) / 2
 
 
+def test_the_first_pass_charges_the_capped_preamble_too(store):
+    # The second file is not a "strong" extra chunk (its score is well below the top),
+    # so only the first, one-chunk-per-file pass can pick it: that pass must charge
+    # the capped size too, or the first file's raw preamble crowds it out.
+    a = _chunk("pkg/a.py", LONG_PREAMBLE, BODY)
+    b = _chunk("pkg/b.py", LONG_PREAMBLE, "def other():\n    return 1")
+    store.update({"pkg/a.py::helper": {"text": a}, "pkg/b.py::other": {"text": b}})
+    budget = int(retrieval._estimate_tokens(a) * 1.2)
+    picked = retrieval._select_within_budget([("pkg/a.py::helper", 0.9), ("pkg/b.py::other", 0.5)],
+                                             budget, k=5)
+    assert [cid for cid, _ in picked] == ["pkg/a.py::helper", "pkg/b.py::other"]
+
+
 def test_a_big_preamble_no_longer_crowds_out_the_next_file(store):
     # Two files whose raw chunks overflow the budget together but fit once capped.
     a = _chunk("pkg/a.py", LONG_PREAMBLE, BODY)
