@@ -21,7 +21,7 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `RELATIVE_SCORE_FLOOR` | Drop chunks below this fraction of the top chunk's score (default 0.60) |
 | `HYBRID_RETRIEVAL` | Static + dense index (default on); `LLM_LIGHT_HYBRID=0` restores one auto-tuned model and the two floors above |
 | `FAST_EMBED_MODEL` / `DENSE_EMBED_MODEL` | `static-retrieval-mrl-en-v1` / `all-mpnet-base-v2` |
-| `HYBRID_MIN_SCORE` | Per-model cosine floor for "anything related at all" (static 0.22, mpnet 0.21: just above the best chunk for off-topic questions) |
+| `HYBRID_MIN_SCORE` | Per-model cosine floor for "anything related at all" (static 0.22, mpnet 0.21). Re-swept on body-first vectors with a held-out set (#287): raising them gained nothing there, and some off-topic questions score above the weakest on-topic one, so no floor separates them all (docs/BENCHMARKS.md, section 2b) |
 | `HYBRID_SCORE_GAP` / `HYBRID_FAST_WEIGHT` | Keep chunks within this fused z-score of the top (1.5) / static model's share of the fused score (0.5) |
 | `_RETRIEVAL_BUDGET` | Per-effort token budgets: low=1500, medium=3000, high=6000, max=9000 |
 | `MAX_HISTORY_TURNS` | Compress and cap when stored turns exceed this (default 6) |

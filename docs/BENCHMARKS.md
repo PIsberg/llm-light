@@ -332,7 +332,7 @@ that answers the question reach the context the model is given?
 
 ### Methodology
 
-* `tests/fixtures/repo_questions.json` holds 41 questions: 23 that name code
+* `tests/fixtures/repo_questions.json` holds 43 questions: 25 that name code
   ("Where is exponential backoff for transient API errors implemented?"), 12
   paraphrases with no identifiers ("Where do we wait longer and longer between
   attempts after the server says it is overloaded?") and 6 off-topic ones
@@ -353,6 +353,7 @@ python tests/benchmarks/benchmark_models.py          # all configurations
 python tests/benchmarks/benchmark_models.py --sweep  # also sweep the gap and floors
 python tests/benchmarks/benchmark_models.py --budgets  # recall and tokens sent per effort budget
 python tests/benchmarks/benchmark_models.py --worktree   # working-tree boost, right file or unrelated file modified
+python tests/benchmarks/benchmark_models.py --sweep --fixture tests/fixtures/repo_questions_heldout.json  # held-out check
 python tests/benchmarks/benchmark_router.py            # effort and model per question
 python tests/benchmarks/benchmark_router.py --margin 0.30  # replay with another escalation margin
 ```
@@ -377,7 +378,49 @@ Body-first for the static model too lost the off-topic check (static alone: 5
 → 1 of 6 got nothing; the default hybrid: 5 → 0), so the static model keeps the
 full text. The default sends the right file for 29 of 37 on-topic questions,
 from 26, and one more of the 6 off-topic questions now gets context. The
-per-model floors were tuned on the old vectors and were not re-swept (#287).
+per-model floors were tuned on the old vectors and were not re-swept here; see
+the next section.
+
+### Floors re-swept on body-first vectors, with a held-out set (2026-11-22, #287)
+
+Sweeping on the 43 questions that measured a change fits the thresholds to that
+answer key. `tests/fixtures/repo_questions_heldout.json` holds 26 questions the
+sweep never saw: 14 paraphrases of files the tuning set does not ask about
+(`proxy.py`, `hooks.py`, `session.py`, `esc_key.py`, ...) and 12 off-topic ones
+("write a haiku about autumn leaves", "thanks, that's all for now").
+`tests/unit/test_benchmark_models_fixture.py` checks it shares no question with
+the tuning set and that every answer file exists. `--fixture` picks the set;
+chunk vectors are cached apart from question vectors, so a second set does not
+re-embed the repository.
+
+Clean worktree (167 files, 3,889 chunks), static + all-mpnet-base-v2, medium
+budget, `--sweep` on both sets:
+
+| Floors (static / mpnet) | Tuning: right file sent | Tuning: off-topic got nothing | Held-out: right file sent | Held-out: off-topic got nothing |
+|---|---|---|---|---|
+| 0.22 / 0.21 (configured) | 31 of 37 | 4 of 6 | 11 of 14 | 10 of 12 |
+| 0.22 / 0.23 | 31 | 5 | 11 | 10 |
+| 0.24 / 0.23 | 31 | 6 | 11 | 10 |
+| 0.24 / 0.25 | 31 | 6 | 11 | 10 |
+| 0.20 / 0.19 | 31 | 4 | 11 | 6 |
+| 0.18 / 0.17 | 31 | 2 | 11 | 5 |
+
+Raising the floors to 0.24 / 0.23 restores 6 of 6 on the tuning set and changes
+nothing on the held-out set, so the floors stay where they are: the gain shows
+only on the questions it was fitted to. The best-chunk scores say why. The two
+tuning questions that get context clear the floors by 0.002 ("hello there",
+static 0.222; "what's the weather like in Paris today", mpnet 0.212). The two
+held-out ones score static 0.292 / mpnet 0.268 ("write a haiku about autumn
+leaves") and mpnet 0.275 ("thanks, that's all for now"), above the lowest
+on-topic question (static 0.281 / mpnet 0.256, "How are the most relevant
+pieces of code picked for a question?"). No pair of floors separates the two
+groups. Lowering them is worse on both sets.
+
+The gap sweep agrees: 1.5 keeps the most answers on the tuning set. On the
+held-out set 1.0 sends a median of 2 files instead of 4 with the same 11 of 14,
+but it loses a tuning paraphrase (11 to 10 of 12), so the gap stays at 1.5.
+The per-model scores come from a scratch script over the benchmark's cached
+vectors, not from a flag of the benchmark.
 
 ### Budget by rendered tokens (2026-11-21, #288)
 
