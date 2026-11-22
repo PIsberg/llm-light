@@ -172,6 +172,13 @@ def all_tools(model=None):
     return TOOLS + extra if extra else TOOLS
 
 
+def _with_text(output, text):
+    """Add a note to a tool result: a string, or a list of content blocks (#222)."""
+    if isinstance(output, list):
+        return output + [{"type": "text", "text": text}]
+    return f"{output}\n\n{text}"
+
+
 def run_tool(name, tool_input, root=None):
     """Run one tool call, between the user's PreToolUse and PostToolUse hooks (hooks.py).
     Returns (output_text, is_error); never raises."""
@@ -198,9 +205,9 @@ def run_tool(name, tool_input, root=None):
         output = post["updated_output"]
     said = post["text"]
     if why:  # a PreToolUse hook's additionalContext, which goes with the result
-        output += f"\n\nPreToolUse hook: {why}"
+        output = _with_text(output, f"PreToolUse hook: {why}")
     if said:
-        output += f"\n\nPostToolUse hook: {said}"
+        output = _with_text(output, f"PostToolUse hook: {said}")
     return output, is_error
 
 

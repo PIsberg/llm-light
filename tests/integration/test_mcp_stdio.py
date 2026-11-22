@@ -75,9 +75,14 @@ class TestMcpStdio(unittest.TestCase):
         self.assertFalse(is_error)
         self.assertLess(len(text), 41_000)
 
-    def test_an_image_result_is_described(self):
-        print("\n  ▶ TestMcpStdio.test_an_image_result_is_described")
-        self.assertEqual(tools.run_tool("mcp__nonce__picture", {}), ("[image/png image omitted]", False))
+    def test_an_image_result_reaches_the_model_as_an_image(self):
+        print("\n  ▶ TestMcpStdio.test_an_image_result_reaches_the_model_as_an_image")
+        # Through the real mcp SDK and a stdio server (#222): an image block, not a note.
+        content, is_error = tools.run_tool("mcp__nonce__picture", {})
+        self.assertFalse(is_error)
+        self.assertEqual(content, [{"type": "image", "source": {
+            "type": "base64", "media_type": "image/png",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="}}])
 
     def test_an_unknown_tool_is_an_error(self):
         print("\n  ▶ TestMcpStdio.test_an_unknown_tool_is_an_error")

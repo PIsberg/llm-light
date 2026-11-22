@@ -224,17 +224,46 @@ def exposed_name(server: str, tool: str):
     return name if len(name) <= _TOOL_NAME_MAX else None
 
 
+_MAX_IMAGES = 5  # per result, as for @image attachments
+
+
+def _image_block(block):
+    """An API image block for an MCP image, or None when it is not a PNG, JPEG, GIF or
+    WebP image of at most 5 MB. The type comes from the bytes, as for @image (#222)."""
+    import base64
+    import binascii
+    from llm_light.commands import IMAGE_MAX_BYTES, _image_type
+    data = getattr(block, "data", None)
+    if not isinstance(data, str):
+        return None
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    media_type = _image_type(raw) if len(raw) <= IMAGE_MAX_BYTES else None
+    if media_type is None:
+        return None
+    return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}}
+
+
 def result_text(result) -> tuple:
-    """(text, is_error) for a CallToolResult. Text goes through; an image or a binary
-    resource is named, not sent, so a tool cannot flood the context with base64."""
+    """(content, is_error) for a CallToolResult. Text goes through. Up to five images
+    within the @image limits go to the model as image blocks, and then content is a
+    list of blocks (#222); any other image, audio or binary resource is named, not
+    sent, so a tool cannot flood the context with base64."""
     from llm_light.tools import _cap
     parts = []
+    images = 0
     for block in getattr(result, "content", None) or []:
         kind = getattr(block, "type", None)
         if kind == "text":
             parts.append(block.text)
+        elif kind == "image" and images < _MAX_IMAGES and (image := _image_block(block)):
+            parts.append(image)
+            images += 1
         elif kind in ("image", "audio"):
-            parts.append(f"[{getattr(block, 'mime_type', kind)} {kind} omitted]")
+            mime = getattr(block, "mimeType", None) or getattr(block, "mime_type", None) or kind
+            parts.append(f"[{mime} {kind} omitted]")
         elif kind == "resource":
             resource = block.resource
             text = getattr(resource, "text", None)
@@ -245,7 +274,21 @@ def result_text(result) -> tuple:
     structured = getattr(result, "structured_content", None)
     if not parts and structured is not None:
         parts.append(json.dumps(structured))
-    return _cap("\n".join(parts)), bool(getattr(result, "is_error", False))
+    is_error = bool(getattr(result, "is_error", False))
+    if not images:
+        return _cap("\n".join(parts)), is_error
+    blocks, texts = [], []
+    for part in parts:
+        if isinstance(part, dict):
+            if texts:
+                blocks.append({"type": "text", "text": _cap("\n".join(texts))})
+                texts = []
+            blocks.append(part)
+        else:
+            texts.append(part)
+    if texts:
+        blocks.append({"type": "text", "text": _cap("\n".join(texts))})
+    return blocks, is_error
 
 
 def _describe(exc: BaseException) -> str:

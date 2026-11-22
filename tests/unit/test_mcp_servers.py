@@ -438,3 +438,48 @@ def test_a_failed_call_does_not_tell_the_model_a_secret(monkeypatch, secret):
         manager.loop.call_soon_threadsafe(manager.loop.stop)
     assert is_error and "401" in text
     assert secret not in text and secret not in status
+
+
+
+# --- #222: an MCP image result reaches the model as an image block --------------------------
+
+import base64 as _b64
+
+_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+_JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+
+
+def _image(raw, mime="image/png"):
+    return SimpleNamespace(type="image", data=_b64.b64encode(raw).decode("ascii"), mimeType=mime)
+
+
+def test_an_image_result_is_sent_as_an_image_block():
+    result = SimpleNamespace(content=[_text("chart:"), _image(_PNG)], is_error=False, structured_content=None)
+    content, is_error = mcp_servers.result_text(result)
+    assert not is_error
+    assert content == [
+        {"type": "text", "text": "chart:"},
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                     "data": _b64.b64encode(_PNG).decode("ascii")}},
+    ]
+
+
+def test_the_media_type_comes_from_the_bytes():
+    result = SimpleNamespace(content=[_image(_JPEG, mime="image/png")], is_error=False, structured_content=None)
+    content, _ = mcp_servers.result_text(result)
+    assert content[0]["source"]["media_type"] == "image/jpeg"
+
+
+def test_an_image_over_the_limit_is_still_named_not_sent():
+    big = _PNG + b"\x00" * (5 * 1024 * 1024)
+    result = SimpleNamespace(content=[_image(big)], is_error=False, structured_content=None)
+    content, _ = mcp_servers.result_text(result)
+    assert isinstance(content, str) and "omitted" in content
+
+
+def test_hook_text_is_added_to_a_block_result():
+    from llm_light import tools
+    blocks = [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "x"}}]
+    out = tools._with_text(blocks, "PostToolUse hook: checked")
+    assert out[-1] == {"type": "text", "text": "PostToolUse hook: checked"}
+    assert tools._with_text("a", "b") == "a\n\nb"
