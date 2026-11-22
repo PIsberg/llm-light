@@ -129,6 +129,53 @@ def test_other_arguments_are_not_completed():
     assert _complete("/run py") == []
 
 
+# #332: second arguments, live lists and paths.
+
+def test_config_values_complete_for_the_key_typed():
+    assert _complete("/config effort h") == ["high"]
+    assert set(_complete("/config vim ")) == {"on", "off"}
+
+
+def test_config_keys_still_complete():
+    assert "effort" in _complete("/config ef")
+
+
+def test_an_unknown_config_key_completes_nothing():
+    assert _complete("/config nosuch ") == []
+
+
+def test_disallow_completes_the_allowed_prefixes(monkeypatch):
+    from llm_light import config
+    monkeypatch.setattr(config, "ALLOWED_COMMANDS", ["python -m pytest", "npm test"])
+    assert _complete("/disallow py") == ["python -m pytest"]
+    assert _complete("/disallow python -m") == ["python -m pytest"]   # spaces in the value
+
+
+def test_resume_completes_named_conversations(monkeypatch):
+    from llm_light import session
+    monkeypatch.setattr(session, "conversations", lambda: [
+        {"name": "auth-fix"}, {"name": None}, {"name": "auth-tests"}, {"name": "perf"}])
+    assert _complete("/resume auth") == ["auth-fix", "auth-tests"]
+
+
+def test_memory_completes_user():
+    assert _complete("/memory u") == ["user"]
+
+
+def test_add_dir_completes_directories_only(tmp_path, monkeypatch):
+    (tmp_path / "shared-lib").mkdir()
+    (tmp_path / "shared.txt").write_text("x", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert _complete("/add-dir sha") == ["red-lib"]          # prompt_toolkit completes the rest
+
+
+def test_export_completes_files_and_directories(tmp_path, monkeypatch):
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert set(_complete("/export no")) == {"tes", "tes.txt"}
+
+
 def _project(tmp_path):
     for name in ("src/deep/order_service.py", "src/other.py", "README.md", "node_modules/x/order_mod.js"):
         path = tmp_path / name
