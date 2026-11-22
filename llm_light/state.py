@@ -51,6 +51,9 @@ turn_process = None
 # question in the middle of a turn pauses (ui.ask_mid_turn).
 esc_listener = None
 turn_view = None
+# The API turn's final stop_reason ("end_turn", "max_tokens", "refusal", ...), or
+# None when the provider does not report one; chat() reads it after each reply (#271).
+last_stop_reason = None
 # The API-key turn's open response stream, which Esc on Windows closes (#229).
 turn_stream = None
 # MCP tools the user answered "don't ask again" for, by name, for this session (#234).

@@ -1944,6 +1944,57 @@ class TestCliStderrIsDrained(unittest.TestCase):
         self.assertEqual(text, "ok")
 
 
+class TestReplyCutOffAtMaxTokens(unittest.TestCase):
+    """A reply that stops at max_tokens may end inside an edit block; the
+    blocks before the cut were applied and committed with no word (#271)."""
+
+    def setUp(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+        self.saved = (list(_state.conversation_history), _state.turn_count, list(_state.checkpoints))
+
+    def tearDown(self):
+        os.chdir(self.orig)
+        _state.conversation_history[:], _state.turn_count, _state.checkpoints[:] = self.saved
+        _state.last_stop_reason = None
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_tool_loop_reports_the_stop_reason(self):
+        print("\n  ▶ TestReplyCutOffAtMaxTokens.test_tool_loop_reports_the_stop_reason")
+        from types import SimpleNamespace as NS
+        message = NS(stop_reason="max_tokens", content=[],
+                     usage=NS(input_tokens=1, output_tokens=1,
+                              cache_read_input_tokens=0, cache_creation_input_tokens=0))
+        with patch.object(_claude_mod, "stream_chat_response", return_value=("partial", {"message": message})), \
+             patch.object(_claude_mod, "ResponseView"):
+            _claude_mod._api_tool_loop({"model": "claude-sonnet-5-5", "messages": []})
+        self.assertEqual(_state.last_stop_reason, "max_tokens")
+
+    def test_edits_from_a_cut_off_reply_are_not_applied(self):
+        print("\n  ▶ TestReplyCutOffAtMaxTokens.test_edits_from_a_cut_off_reply_are_not_applied")
+        from llm_light.providers.claude import ClaudeProvider
+        Path("a.py").write_text("x = 1\n", encoding="utf-8")
+        fence = "```"
+        reply = (f"{fence}python:a.py\n<<<<<<< SEARCH\nx = 1\n=======\nx = 2\n>>>>>>> REPLACE\n{fence}\n\n"
+                 f"{fence}python:b.py\n<<<<<<< SEARCH\ny = 1\n=======\n")   # cut here
+
+        def complete(_self, request):
+            _state.last_stop_reason = "max_tokens"
+            return reply, None, True
+
+        out = io.StringIO()
+        with patch.object(ClaudeProvider, "complete", complete), \
+             patch.object(ClaudeProvider, "turn_done"), \
+             patch.object(_llm, "_record_usage", return_value=False), \
+             patch("llm_light.session.save"), patch("sys.stdout", out):
+            _llm.chat("refactor a and b", auto_apply=True, use_index=False)
+        self.assertEqual(Path("a.py").read_text(encoding="utf-8"), "x = 1\n")
+        self.assertIn("cut off", out.getvalue())
+
+
 class TestAgentEditsToDirtyFiles(unittest.TestCase):
     """A file the user had uncommitted work in, edited again by the agent:
     its name is in both snapshots, so the edit was neither shown nor

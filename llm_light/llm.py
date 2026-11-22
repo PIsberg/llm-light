@@ -612,6 +612,28 @@ def _snapshot_of(path):
         return None
 
 
+def _drop_cut_off_edits(edits):
+    """Edits from a reply that stopped at max_tokens are not applied (#271).
+
+    The cut may fall inside a block, and parse_edit_blocks needs the closing
+    fence, so only the blocks before it come back: half of a two-file refactor
+    is worse than none. A refusal gets a line too.
+    """
+    stop = state.last_stop_reason
+    if stop == "refusal":
+        print(f"  {_T_ERR}  The model declined to answer (stop reason: refusal).")
+    if stop != "max_tokens":
+        return edits
+    if edits:
+        n = len(edits)
+        print(f"  {_T_ERR}  The reply was cut off at the output limit; its {n} complete edit "
+              f"block{'s' if n != 1 else ''} {'were' if n != 1 else 'was'} not applied. "
+              f"Ask again, or for a smaller change.")
+        return []
+    print(f"  {_ANSI_DIM}The reply was cut off at the output limit.{_ANSI_RESET}")
+    return edits
+
+
 def _agent_edits_since(pre):
     """(files the agent made dirty, files dirty before that it changed)."""
     post = _git_modified_snapshot()
@@ -942,9 +964,11 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
         for attempt in range(3):
             # Esc stops the turn like Ctrl+C, only while the model answers (esc_key.py).
             with esc_key.listening():
+                state.last_stop_reason = None
                 reply, usage, was_streamed = providers.active().complete(create_kwargs)
 
             planned, edits = _plan_split(parse_edit_blocks(reply))
+            edits = _drop_cut_off_edits(edits)
 
             if edits:
                 lint_errs = apply_edits(edits, check_only=True)
@@ -1131,9 +1155,11 @@ def _one_shot_turn(prompt, auto_apply, use_index, context="", images=()):
 
     try:
         for attempt in range(3):
+            state.last_stop_reason = None
             reply, usage, was_streamed = providers.active().complete(create_kwargs)
 
             planned, edits = _plan_split(parse_edit_blocks(reply))
+            edits = _drop_cut_off_edits(edits)
 
             if edits:
                 lint_errs = apply_edits(edits, check_only=True)
