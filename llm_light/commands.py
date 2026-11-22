@@ -455,7 +455,13 @@ _MAX_WALKED_FILES = 20_000
 @functools.lru_cache(maxsize=4)
 def _project_files(root: str, _minute: int = 0) -> tuple:
     """The project's files, relative with forward slashes, skipping hidden and build
-    directories. Cached per minute: the completer runs on every keystroke."""
+    directories and, in a git work tree, what .gitignore excludes (#325). Cached per
+    minute: the completer runs on every keystroke."""
+    from llm_light.skeleton import git_visible
+    visible = git_visible(root)
+    if visible is not None:
+        # git's list is the answer; walking as well only cost time (#325).
+        return tuple(visible.unskipped()[:_MAX_WALKED_FILES])
     found = []
     for folder, dirs, files in os.walk(root):
         dirs[:] = sorted(d for d in dirs if d not in config.SKIP_DIRS and not d.startswith("."))

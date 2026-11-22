@@ -119,18 +119,57 @@ def _get_cached_paths():
     return _cached_paths
 
 
-def _git_listed_files():
-    """The files git would list under the cwd: tracked ones and untracked ones
-    .gitignore does not exclude, relative to the cwd. None outside a git work tree."""
+def _git_listed_files(cwd=None):
+    """The files git would list under `cwd` (default: the cwd): tracked ones and untracked
+    ones .gitignore does not exclude, relative to it. None outside a git work tree."""
     import subprocess
     try:
         out = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-                             capture_output=True, timeout=30, check=False)
+                             capture_output=True, timeout=30, check=False, cwd=cwd)
     except Exception:  # no git, a timeout, or anything else: walk the directory instead
         return None
     if out.returncode != 0:
         return None
     return [p for p in out.stdout.decode("utf-8", "replace").split("\0") if p]
+
+
+def _visible_key(rel: str) -> str:
+    rel = rel.replace("\\", "/").strip("/")
+    return rel.lower() if os.name == "nt" else rel
+
+
+class GitVisible:
+    """What git lists under a root, for the walkers that do not use _walk_paths(): API-key
+    grep and list_files, @ completion and the affected-test search (#325). A directory
+    with no listed file under it (a gitignored build folder) is pruned, not descended."""
+
+    def __init__(self, listed):
+        self.paths = sorted(p.replace("\\", "/") for p in listed)   # relative, posix, as git gives them
+        self._files = {_visible_key(p) for p in listed}
+        self._dirs = set()
+        for f in self._files:
+            parts = f.split("/")[:-1]
+            for i in range(1, len(parts) + 1):
+                self._dirs.add("/".join(parts[:i]))
+
+    def has_file(self, rel) -> bool:
+        return _visible_key(str(rel)) in self._files
+
+    def has_dir(self, rel) -> bool:
+        key = _visible_key(str(rel))
+        return key in ("", ".") or key in self._dirs
+
+    def unskipped(self):
+        """`paths` without SKIP_DIRS and dot names, the rules the walks apply."""
+        return [p for p in self.paths
+                if not any(part in SKIP_DIRS or part.startswith(".") for part in p.split("/"))]
+
+
+def git_visible(root):
+    """A GitVisible for `root`, or None outside a git work tree: then nothing is
+    filtered beyond SKIP_DIRS and dot names, as before."""
+    listed = _git_listed_files(cwd=root)
+    return None if listed is None else GitVisible(listed)
 
 
 def _walk_paths():
