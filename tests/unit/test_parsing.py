@@ -168,6 +168,55 @@ class TestStripCommentsKeepsStrings(unittest.TestCase):
         self.assertNotIn("old", out)
 
 
+class TestTopLevelCodeIsChunked(unittest.TestCase):
+    """Code outside functions was in no chunk: module constants after the
+    first function, class headers, JS arrow-function modules (#270)."""
+
+    def _ids(self, path, src):
+        return {c["id"]: c["text"] for c in chunk_file(path, src)}
+
+    def test_python_constants_between_functions(self):
+        print("\n  ▶ TestTopLevelCodeIsChunked.test_python_constants_between_functions")
+        src = ("import os\n\n\ndef a():\n    return 1\n\n\n"
+               "MODEL_PRICES = {\n    \"haiku\": 1,\n    \"opus\": 5,\n}\n\n\n"
+               "def b():\n    return 2\n")
+        chunks = self._ids("cfg.py", src)
+        self.assertIn("cfg.py::MODEL_PRICES", chunks)
+        self.assertIn('"opus": 5', chunks["cfg.py::MODEL_PRICES"])
+        self.assertIn("cfg.py::a", chunks)
+        self.assertIn("cfg.py::b", chunks)
+
+    def test_class_header_with_docstring(self):
+        print("\n  ▶ TestTopLevelCodeIsChunked.test_class_header_with_docstring")
+        src = ("def helper():\n    return 0\n\n\n"
+               "class Router:\n    \"\"\"Picks a model per question.\"\"\"\n    limit = 3\n\n"
+               "    def route(self):\n        return 1\n")
+        chunks = self._ids("r.py", src)
+        self.assertIn("r.py::Router", chunks)
+        self.assertIn("Picks a model", chunks["r.py::Router"])
+
+    def test_one_line_gap_makes_no_chunk(self):
+        print("\n  ▶ TestTopLevelCodeIsChunked.test_one_line_gap_makes_no_chunk")
+        src = "def a():\n    return 1\n\nX = 1\n\ndef b():\n    return 2\n"
+        self.assertEqual(set(self._ids("m.py", src)), {"m.py::a", "m.py::b"})
+
+    def test_js_arrow_function_module(self):
+        print("\n  ▶ TestTopLevelCodeIsChunked.test_js_arrow_function_module")
+        src = ("export const load = async (id) => {\n  return fetch(id);\n};\n\n"
+               "function helper() { return 1; }\n")
+        chunks = self._ids("a.js", src)
+        self.assertIn("a.js::load", chunks)
+        self.assertIn("export const load = async (id)", chunks["a.js::load"])
+        self.assertIn("a.js::helper", chunks)
+
+    def test_module_extensions_use_the_javascript_grammar(self):
+        print("\n  ▶ TestTopLevelCodeIsChunked.test_module_extensions_use_the_javascript_grammar")
+        from llm_light.config import INDEXABLE_EXTENSIONS
+        for ext in (".jsx", ".mjs", ".cjs"):
+            self.assertIn(ext, INDEXABLE_EXTENSIONS)
+            self.assertIn(f"m{ext}::helper", self._ids(f"m{ext}", "function helper() { return 1; }\n"))
+
+
 # ---------------------------------------------------------------------------
 # _walk
 # ---------------------------------------------------------------------------

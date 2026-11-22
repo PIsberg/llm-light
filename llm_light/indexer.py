@@ -46,7 +46,8 @@ def _project_path(src) -> str:
 # cached by an older version is chunked again. 2: chunk bodies sliced by byte
 # offset (#262); before that, a non-ASCII character shifted every chunk after it.
 # 3: vectors embed the path and body, not the file preamble (#264).
-CHUNK_FORMAT = 3
+# 4: top-level code between symbols and bound arrow functions are chunks (#270).
+CHUNK_FORMAT = 4
 
 
 def _load_cache(source_files: list, embed_model: str, file_hashes: dict, quiet=False) -> tuple:
