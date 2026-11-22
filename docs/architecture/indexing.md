@@ -40,7 +40,7 @@ text: // filepath
 **Benefits:**
 - Self-contained: each chunk has full context
 - Precise retrieval: fetch only relevant methods
-- Deduplication: shared preamble emitted once
+- Deduplication: shared preamble emitted once, comment-stripped and capped at 25 lines (#323)
 - Token efficiency: 5-10x reduction vs whole files
 
 ### Incremental Indexing
