@@ -217,6 +217,31 @@ def _result_reply(stdout: str, home=None) -> str:
     return reply.strip()
 
 
+def _reply_deltas(show):
+    """An on_line for run_cli: the text of agy's agent_response steps, passed to show as it
+    arrives. On agy 1.5.14 those deltas join up to the result's response; no other step
+    type carries text_delta. A new step's text starts a new paragraph."""
+    last_step = [None]
+
+    def on_line(line):
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return
+        step = event.get("step_update") if isinstance(event, dict) else None
+        if not isinstance(step, dict) or step.get("step_type") != "agent_response":
+            return
+        delta = step.get("text_delta")
+        if not isinstance(delta, str) or not delta:
+            return
+        index = step.get("step_index")
+        if last_step[0] is not None and index != last_step[0]:
+            show("\n\n")
+        last_step[0] = index
+        show(delta)
+    return on_line
+
+
 def _count(value) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(value)
@@ -269,8 +294,9 @@ class GeminiProvider(Provider):
             print(f"\n  {_T_ERR}  {_MISSING}", file=sys.stderr)
             sys.exit(1)
 
-    def _run(self, stdin_text: str) -> tuple:
-        """(reply, usage) of one agy run; usage is None when agy printed none."""
+    def _run(self, stdin_text: str, show=None) -> tuple:
+        """(reply, usage) of one agy run; usage is None when agy printed none. show, when
+        given, gets the reply's text deltas as agy prints them (#328)."""
         binary = shutil.which(BINARY)
         if not binary:
             raise ProviderError(_MISSING)
@@ -279,15 +305,27 @@ class GeminiProvider(Provider):
             _install_agent(home)
             _carry_sign_in(home)
             out = run_cli(self.name, argv, _stdin_line(stdin_text), cwd=cwd,
-                          env=_isolated_env(home))
+                          env=_isolated_env(home),
+                          **({"on_line": _reply_deltas(show)} if show else {}))
             return _result_reply(out, home), _usage(out)
 
     def complete(self, request: dict):
-        from llm_light.ui import _Spinner
+        """The reply streams into the view as agy prints it (#328). It is checked as a whole
+        afterwards (_result_reply): a forbidden tool still fails the turn, and its text is
+        not kept, though it was on screen."""
+        from llm_light.ui import ResponseView
         system_text, prompt = transcript(request)
-        with _Spinner("Waiting for gemini"):
-            reply, usage = self._run(system_text + "\n\n" + prompt)
-        return reply, usage, False
+        shown = []
+
+        def show(text):
+            shown.append(text)
+            view.text(text)
+
+        with ResponseView("Waiting for gemini") as view:
+            reply, usage = self._run(system_text + "\n\n" + prompt, show=show)
+            if not shown:  # an agy that sends no deltas: show the reply whole
+                view.text(reply)
+        return reply, usage, True
 
     def summarize(self, instructions: str):
         from llm_light.ui import _Spinner

@@ -103,11 +103,12 @@ def test_us1s1_gemini_identity_and_label():
 
 # --- complete: argv, stdin, reply (US1 s1, FR-007, FR-010) --------------------
 
-def test_us1s1_complete_returns_the_result_response_with_no_usage_and_not_printed():
+def test_us1s1_complete_returns_the_result_response_with_no_usage_and_shown():
+    # The reply streams into the view (#328), so chat() must not print it again.
     (reply, usage, printed), _, _ = _complete()
     assert reply == "an answer"
     assert usage is None
-    assert printed is False
+    assert printed is True
 
 
 def test_us1s1_non_json_lines_between_events_are_skipped():
