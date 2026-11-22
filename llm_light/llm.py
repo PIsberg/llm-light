@@ -199,7 +199,7 @@ def route_query(query: str) -> tuple[str, str, int]:
     word_count = len(words)
 
     # 1. Meta quick-route — short greetings/commands → Haiku immediately
-    if word_count < 5 and q.strip(" ?!.") in _META_SIGNALS:
+    if _is_meta(query):
         return MODEL_HAIKU, "low", 2_048
 
     # 2. Fused intent scores (keyword + semantic, additive)
@@ -809,6 +809,18 @@ _CLARIFY_PHRASES = frozenset({
 _PRONOUN_REFS = frozenset({"that", "this", "it", "those", "these", "them"})
 
 
+def _is_meta(query: str) -> bool:
+    """A greeting or a request about the session ("hi", "help", "compact"), as a whole:
+    routed to Haiku at low effort, and given no retrieved code (#324)."""
+    q = query.lower()
+    return len(q.split()) < 5 and q.strip(" ?!.") in _META_SIGNALS
+
+
+def _attached_files(context: str) -> set:
+    """The paths of the files attached whole in `context` (@path), which retrieval skips."""
+    return {path for path, _ in _FILE_BLOCK.findall(context)} if context else set()
+
+
 def _is_followup_clarification(query: str) -> bool:
     """Detect short pronoun-reference follow-ups that don't need fresh RAG.
 
@@ -964,8 +976,13 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
         print(
             f"  {_T_RAG}  {_ANSI_DIM}skipping retrieval — clarification follow-up{_ANSI_RESET}"
         )
+    elif _is_meta(query):
+        retrieved_ctx, hits = "", []
+        skipped_reason = "greeting or meta request"
     else:
-        retrieved_ctx, hits = retrieve(query, token_budget=token_budget, effort=effort)
+        attached = _attached_files(context)
+        retrieved_ctx, hits = retrieve(query, token_budget=token_budget, effort=effort,
+                                       **({"exclude_files": attached} if attached else {}))
 
     compression_info = None
     if retrieved_ctx and config.LLMLINGUA_ENABLED:
@@ -1193,8 +1210,10 @@ def _with_index(turn):
 
 def _one_shot_turn(prompt, auto_apply, use_index, context="", images=()):
     routed_model, effort, max_tok = _finalize_route(*route_query(prompt))
-    if use_index:
-        retrieved_ctx, hits = retrieve(prompt, token_budget=_RETRIEVAL_BUDGET[effort], effort=effort)
+    if use_index and not _is_meta(prompt):
+        attached = _attached_files(context)
+        retrieved_ctx, hits = retrieve(prompt, token_budget=_RETRIEVAL_BUDGET[effort], effort=effort,
+                                       **({"exclude_files": attached} if attached else {}))
     else:
         retrieved_ctx, hits = "", []
 
