@@ -1908,6 +1908,42 @@ class TestCliProcessIsStopped(unittest.TestCase):
         self.assertFalse(_pid_alive(agent_pid), "agent process survived the idle timeout")
 
 
+class TestCliStderrIsDrained(unittest.TestCase):
+    """A real child process that writes more to stderr than a pipe holds (#273).
+
+    stderr was read only after the process exited, so the child blocked on a
+    full pipe, stdout went quiet, and the idle watchdog killed it."""
+
+    def test_large_stderr_does_not_stall_the_turn(self):
+        print("\n  ▶ TestCliStderrIsDrained.test_large_stderr_does_not_stall_the_turn")
+        import shutil
+        import subprocess
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        fake = Path(tmp, "fake_claude.py")
+        fake.write_text(
+            "import json, sys\n"
+            "sys.stderr.write('x' * 200000)\n"
+            "sys.stderr.flush()\n"
+            "print(json.dumps({'type': 'result', 'subtype': 'success', 'result': 'ok',\n"
+            "                  'usage': {'input_tokens': 1, 'output_tokens': 1}}), flush=True)\n",
+            encoding="utf-8")
+        real_popen, real_which = subprocess.Popen, shutil.which
+
+        def popen(command, **kwargs):
+            kwargs["shell"] = False
+            return real_popen([sys.executable, str(fake)], **kwargs)
+
+        with patch("subprocess.Popen", side_effect=popen), \
+             patch("shutil.which", side_effect=lambda n, *a, **k: str(fake) if n == "claude" else real_which(n, *a, **k)), \
+             patch.object(_claude_mod, "_CLI_IDLE_TIMEOUT_SECS", 5), \
+             patch("sys.stdout", io.StringIO()):
+            text, _usage, *_ = _claude_mod._make_cli_subprocess_call(
+                "hi", model="claude-haiku-5-5", render=False, tools=False)
+        self.assertEqual(text, "ok")
+
+
 class TestAgentEditsToDirtyFiles(unittest.TestCase):
     """A file the user had uncommitted work in, edited again by the agent:
     its name is in both snapshots, so the edit was neither shown nor
