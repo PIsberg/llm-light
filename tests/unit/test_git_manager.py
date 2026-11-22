@@ -145,5 +145,72 @@ class TestModifiedFilesInRealRepo(unittest.TestCase):
         self.assertEqual(sorted(p for p in shown if p), sorted(["my file.py", self.cafe, "newpkg/mod.py"]))
 
 
+class TestAutoCommitFailures(unittest.TestCase):
+    """auto_commit against a real repository: an ignored file among the
+    edits, and a pre-commit hook that rejects the commit (#276)."""
+
+    def setUp(self):
+        import subprocess
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+        self.git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True)
+        self.git("init", "-q")
+        self.git("config", "user.email", "test@example.com")
+        self.git("config", "user.name", "Test User")
+        Path(".gitignore").write_text("local_settings.py\n", encoding="utf-8")
+        Path("a.py").write_text("x = 1\n", encoding="utf-8")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "init")
+
+    def tearDown(self):
+        os.chdir(self.orig)
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _commit(self, files):
+        import io
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            ok = git_manager.auto_commit(files, "Claude edit")
+        return ok, out.getvalue()
+
+    def test_ignored_file_is_left_out_and_the_rest_committed(self):
+        print("\n  ▶ TestAutoCommitFailures.test_ignored_file_is_left_out_and_the_rest_committed")
+        Path("a.py").write_text("x = 2\n", encoding="utf-8")
+        Path("local_settings.py").write_text("SECRET = 1\n", encoding="utf-8")
+        ok, printed = self._commit(["a.py", "local_settings.py"])
+        self.assertTrue(ok, printed)
+        self.assertIn("local_settings.py", printed)
+        self.assertIn("ignored", printed)
+        self.assertEqual(self.git("status", "--porcelain").stdout.strip(), "")
+        self.assertEqual(self.git("show", "--name-only", "--format=", "HEAD").stdout.split(), ["a.py"])
+
+    def test_only_ignored_files_means_no_commit(self):
+        print("\n  ▶ TestAutoCommitFailures.test_only_ignored_files_means_no_commit")
+        # False: the caller then offers no revert of "the last commit", an older one.
+        Path("local_settings.py").write_text("SECRET = 1\n", encoding="utf-8")
+        head = self.git("rev-parse", "HEAD").stdout
+        ok, printed = self._commit(["local_settings.py"])
+        self.assertFalse(ok)
+        self.assertIn("ignored", printed)
+        self.assertEqual(self.git("rev-parse", "HEAD").stdout, head)
+
+    def test_rejected_commit_says_why_and_unstages(self):
+        print("\n  ▶ TestAutoCommitFailures.test_rejected_commit_says_why_and_unstages")
+        hook = Path(".git", "hooks", "pre-commit")
+        hook.write_text("#!/bin/sh\necho 'lint: a.py line 1 uses a magic number' >&2\nexit 1\n",
+                        encoding="utf-8", newline="\n")
+        os.chmod(hook, 0o755)
+        Path("a.py").write_text("x = 2\n", encoding="utf-8")
+        ok, printed = self._commit(["a.py"])
+        self.assertFalse(ok)
+        self.assertIn("magic number", printed)
+        # Nothing this call staged stays staged; the edit stays on disk.
+        self.assertEqual(self.git("diff", "--cached", "--name-only").stdout.strip(), "")
+        self.assertEqual(Path("a.py").read_text(encoding="utf-8"), "x = 2\n")
+
+
 if __name__ == "__main__":
     unittest.main()
