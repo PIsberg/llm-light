@@ -360,7 +360,13 @@ def _finalize_route(model, effort, max_tokens) -> tuple[str, str, int]:
     extra = ""
     if budget is not None:
         est = _estimate_query_cost(max_tokens, _RETRIEVAL_BUDGET[effort], model)
-        extra = f"  ·  ~${est:.3f}" + ("  ·  over budget" if over_budget else "")
+        extra = f"  ·  ~${est:.3f}"
+        if config.WEB_ACCESS and config.AUTH_MODE == "API_KEY":
+            # How many searches the model makes is its choice: show the range up to
+            # the per-request cap instead of guessing a rate (#245).
+            from llm_light.tools import WEB_SEARCH_MAX_USES
+            extra += f" to ${est + WEB_SEARCH_MAX_USES * config.WEB_SEARCH_PRICE_USD:.3f}"
+        extra += "  ·  over budget" if over_budget else ""
     print(
         f"  {_ANSI_DIM}◆  {model_short}  ·  {color}{effort}{_ANSI_RESET}{_ANSI_DIM}{extra}{_ANSI_RESET}",
         file=sys.stderr,

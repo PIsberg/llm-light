@@ -61,5 +61,34 @@ class TestBudget(unittest.TestCase):
         self.assertEqual(model, llm.MODEL_SONNET)
 
 
+class TestEstimateWithWebSearch(unittest.TestCase):
+    """With --web the model may search, at $0.01 each and at most 5 per request; the
+    route line's estimate shows that as a range instead of tokens only (#245)."""
+
+    def setUp(self):
+        self._saved = (state.session_budget, state.session_cost, state.budget_asked)
+        state.session_budget, state.session_cost, state.budget_asked = 5.0, 0.0, True
+
+    def tearDown(self):
+        state.session_budget, state.session_cost, state.budget_asked = self._saved
+
+    def _route_line(self, web):
+        import io
+        import re
+        from unittest.mock import patch
+        import llm_light.config as config
+        err = io.StringIO()
+        with patch.object(config, "WEB_ACCESS", web), patch("sys.stderr", err):
+            llm._finalize_route(llm.MODEL_SONNET, "high", 8_192)
+        return [float(x) for x in re.findall(r"\$(\d+\.\d+)", err.getvalue())]
+
+    def test_web_access_shows_the_search_ceiling(self):
+        low, high = self._route_line(web=True)
+        self.assertAlmostEqual(high - low, 0.05, places=3)
+
+    def test_without_web_one_figure(self):
+        self.assertEqual(len(self._route_line(web=False)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
