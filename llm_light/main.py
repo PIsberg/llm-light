@@ -24,7 +24,7 @@ from pathlib import Path
 import llm_light.state as state
 from llm_light import (commands, completions, doctor, esc_key, headless, hooks, mcp_servers, permissions,
                        providers, proxy, session, settings)
-from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, SHELL, TOP_TIER, USD_BUDGET
+from llm_light.providers.base import USAGE, NotLoggedIn, AGENT, CACHING, EFFORT, SHELL, TOP_TIER, USD_BUDGET
 from llm_light.config import MODEL, CACHE_DIR, HEARTBEAT_SECS, CACHE_TTL_SECS, AUTH_MODE, ECONOMY_MODE, API_KEY_SOURCE
 from llm_light.config import CACHE_LIFETIME_SECS, MAX_IDLE_WARMS
 from llm_light.ui import (
@@ -270,6 +270,15 @@ def _status_text(columns: int | None = None) -> str:
     return " <ansicyan>◆</ansicyan> " + _SEP.join(html(t, s) for t, s in parts)
 
 
+def _parse_dollars(text: str):
+    """A positive, finite amount of dollars from "2", "0.50" or "$2"; None if it is not one."""
+    try:
+        value = float(text.strip().lstrip("$"))
+    except ValueError:
+        return None
+    return value if 0 < value < float("inf") else None
+
+
 def _budget_command(arg: str) -> str:
     """Handle `/budget [dollars|off]`; returns the line to show."""
     provider = providers.active()
@@ -282,11 +291,8 @@ def _budget_command(arg: str) -> str:
     if arg.lower() in ("off", "none", "0"):
         state.session_budget = None
         return "Budget removed."
-    try:
-        value = float(arg.lstrip("$"))
-    except ValueError:
-        return "Usage: /budget <dollars> | off"
-    if not value > 0 or value == float("inf"):
+    value = _parse_dollars(arg)
+    if value is None:
         return "Usage: /budget <dollars> | off"
     state.session_budget = value
     state.budget_asked = False
@@ -1178,6 +1184,12 @@ def _build_parser():
     parser.add_argument("--model", metavar="NAME",
                         help="Run every question on this model instead of routing: opus, sonnet, "
                              "haiku, fable or a full model id. /model changes it.")
+    parser.add_argument("--effort", choices=commands.EFFORTS,
+                        help="Run every question at this effort instead of routing it, as /effort "
+                             "does; it also sets how much code retrieval sends.")
+    parser.add_argument("--budget", metavar="DOLLARS",
+                        help="Cap this session's spend, as /budget does: once it is reached, "
+                             "questions go to the cheapest model. Not with Gemini or Codex.")
     parser.add_argument("-p", "--print", dest="print_mode", action="store_true",
                         help="Answer one question and exit; the question comes from the arguments "
                              "or stdin.")
@@ -1293,6 +1305,13 @@ def main():
             parser.error(f"--model {args.model!r}: choose " + ", ".join(commands.MODEL_ALIASES)
                          + " or a full model id")
         state.pinned_model = pinned
+    if args.effort:
+        state.pinned_effort = args.effort
+    if args.budget is not None:
+        budget = _parse_dollars(args.budget)
+        if budget is None:
+            parser.error(f"--budget {args.budget!r}: give a positive amount of dollars, e.g. 0.50")
+        state.session_budget = budget
 
     query_str = " ".join(args.query).strip()
     if args.print_mode and not query_str and sys.stdin.isatty():
@@ -1341,6 +1360,12 @@ def main():
     if state.pinned_model and not provider.has(TOP_TIER):
         print(f"  {_T_SYS}  --model ignored: {provider.name} picks its own model.", file=sys.stderr)
         state.pinned_model = None
+    if args.effort and not provider.has(EFFORT):
+        print(f"  {_T_SYS}  --effort ignored: {provider.name} has no effort setting.", file=sys.stderr)
+        state.pinned_effort = None
+    if args.budget is not None and not provider.has(USD_BUDGET):
+        print(f"  {_T_SYS}  --budget ignored: {provider.name} has no dollar pricing.", file=sys.stderr)
+        state.session_budget = None
     # Before the first turn: with an API key the servers' tools join the cached tool list.
     for line in mcp_servers.startup_lines(provider) + hooks.problems():
         print(f"  {_T_SYS}  {line}", file=sys.stderr)
@@ -1349,6 +1374,8 @@ def main():
         set_by_flag.add("permission_mode")
     if args.model:
         set_by_flag.add("model")
+    if args.effort:
+        set_by_flag.add("effort")
     settings.apply_at_startup(provider, skip=set_by_flag)
     if interactive:
         start_chat(auto_apply=args.yes, resume=args.resume, pick=args.pick,

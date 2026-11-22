@@ -59,8 +59,10 @@ python3 llm_light.py -c -p "and then?"
 # Check the install, login and tools, even with no login
 python3 llm_light.py --doctor
 
-# Pin the model instead of routing; print the version
+# Pin the model or the effort instead of routing; cap the spend; print the version
 python3 llm_light.py --model opus
+python3 llm_light.py --effort low -p "list the modules"
+python3 llm_light.py --budget 2.50
 python3 llm_light.py --version
 
 # Tests (see TESTING.md for the full picture)
