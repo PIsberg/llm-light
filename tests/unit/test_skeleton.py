@@ -537,5 +537,66 @@ class TestProjectWalkRespectsGitignore(unittest.TestCase):
         self.assertEqual(self._files(), {"app.py", "generated/client.py", "src/new_untracked.py"})
 
 
+class TestTreeFollowsTheDisk(unittest.TestCase):
+    """The skeleton tree is rebuilt from a fresh walk, not the one taken at
+    startup: the watcher refreshes it on create, delete and move (#268)."""
+
+    def setUp(self):
+        import llm_light.state as st
+        from llm_light import skeleton
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig = os.getcwd()
+        os.chdir(self.tmpdir)
+        self.saved = (st._skeleton_tree, dict(st._skeleton_md_hashes), dict(st._skeleton_md_stats))
+        skeleton._invalidate_path_cache()
+        Path("a.py").write_text("def a():\n    return 1\n", encoding="utf-8")
+
+    def tearDown(self):
+        import llm_light.state as st
+        from llm_light import skeleton
+        os.chdir(self.orig)
+        st._skeleton_tree = self.saved[0]
+        st._skeleton_md_hashes.clear(); st._skeleton_md_hashes.update(self.saved[1])
+        st._skeleton_md_stats.clear(); st._skeleton_md_stats.update(self.saved[2])
+        skeleton._invalidate_path_cache()
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _change_files(self):
+        Path("brand_new_module.py").write_text("def b():\n    return 2\n", encoding="utf-8")
+        Path("a.py").unlink()
+
+    def test_tree_refresh_sees_new_and_deleted_files(self):
+        print("\n  ▶ TestTreeFollowsTheDisk.test_tree_refresh_sees_new_and_deleted_files")
+        from llm_light import skeleton
+        self.assertIn("a.py", skeleton.build_skeleton())
+        self._change_files()
+        text = skeleton._refresh_tree_only()
+        self.assertIn("brand_new_module.py", text)
+        self.assertNotIn("a.py", text)
+
+    def test_watcher_create_event_puts_the_file_in_the_prompt(self):
+        print("\n  ▶ TestTreeFollowsTheDisk.test_watcher_create_event_puts_the_file_in_the_prompt")
+        from llm_light import indexer, skeleton
+        skeleton.build_skeleton()
+        Path("brand_new_module.py").write_text("def b():\n    return 2\n", encoding="utf-8")
+        event = type("Event", (), {"is_directory": False,
+                                   "src_path": str(Path(self.tmpdir, "brand_new_module.py"))})()
+        with patch("llm_light.indexer._debounce"), \
+             patch("llm_light.llm._apply_skeleton") as apply:
+            indexer.SourceHandler().on_created(event)
+        apply.assert_called_once()
+        self.assertIn("brand_new_module", apply.call_args.args[0])  # the tree may write {a,brand_new_module}.py
+
+    def test_full_build_sees_new_and_deleted_files(self):
+        print("\n  ▶ TestTreeFollowsTheDisk.test_full_build_sees_new_and_deleted_files")
+        from llm_light import skeleton
+        skeleton.build_skeleton()
+        self._change_files()
+        text = skeleton.build_skeleton()
+        self.assertIn("brand_new_module.py", text)
+        self.assertNotIn("a.py", text)
+
+
 if __name__ == "__main__":
     unittest.main()
