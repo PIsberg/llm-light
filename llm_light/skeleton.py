@@ -124,7 +124,9 @@ def _git_listed_files(cwd=None):
     ones .gitignore does not exclude, relative to it. None outside a git work tree."""
     import subprocess
     try:
-        out = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        # core.fsmonitor off: it names a command git would run to list changes.
+        out = subprocess.run(["git", "-c", "core.fsmonitor=false", "ls-files", "-z", "--cached",
+                              "--others", "--exclude-standard"],
                              capture_output=True, timeout=30, check=False, cwd=cwd)
     except Exception:  # no git, a timeout, or anything else: walk the directory instead
         return None

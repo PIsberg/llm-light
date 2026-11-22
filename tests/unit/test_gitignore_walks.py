@@ -101,6 +101,39 @@ def test_affected_tests_skip_gitignored_tests(repo):
     assert affected_tests.find_affected_tests(["src/service.py"], root=repo) == ["tests/test_service.py"]
 
 
+# --- --add-dir: read-only, so git is never run there --------------------------------------
+
+def test_no_git_runs_in_an_added_directory(repo, tmp_path_factory, monkeypatch):
+    # An --add-dir directory is granted for reading only. Running git there would read
+    # that repository's own config, which can name commands git runs; the project's own
+    # git already runs at startup, the added directory's must not (#325 review).
+    from llm_light import config, skeleton
+    shared = _project(tmp_path_factory.mktemp("shared"), git=True).resolve()
+    monkeypatch.setattr(config, "EXTRA_DIRS", [str(shared)])
+    seen = []
+    real = skeleton._git_listed_files
+    monkeypatch.setattr(skeleton, "_git_listed_files",
+                        lambda cwd=None: seen.append(Path(cwd).resolve() if cwd else None) or real(cwd))
+    out, failed = tools.run_tool("grep", {"pattern": "needle", "glob": shared.as_posix() + "/*"}, root=repo)
+    assert not failed and "build_out" in out          # walked as before, nothing filtered
+    out, failed = tools.run_tool("list_files", {"path": shared.as_posix()}, root=repo)
+    assert not failed and "build_out" in out.replace("\\", "/")
+    assert shared not in seen
+
+
+def test_listing_the_project_runs_no_fsmonitor_command(repo):
+    # core.fsmonitor names a program git runs to learn what changed; listing files must
+    # not run one from the repository's config.
+    from llm_light import skeleton
+    marker = repo / "fsmonitor-ran"
+    script = repo / "fsmon.sh"
+    script.write_text(f"#!/bin/sh\necho ran > '{marker.as_posix()}'\n", encoding="utf-8")
+    script.chmod(0o755)
+    _git(repo, "config", "core.fsmonitor", script.as_posix())
+    assert skeleton.git_visible(repo) is not None
+    assert not marker.exists()
+
+
 # --- outside git: nothing to honour, nothing lost ---------------------------------------
 
 def test_outside_git_grep_and_list_files_see_everything(plain):
