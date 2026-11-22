@@ -316,6 +316,48 @@ def run_detailed(event: str, tool_name: str, tool_input: dict, cwd: Path, tool_r
     return result
 
 
+# Events whose plain stdout on exit 0 goes to the model, as in Claude Code.
+_STDOUT_IS_CONTEXT = {"UserPromptSubmit", "SessionStart"}
+
+
+def run_event(event: str, cwd: Path, match_value=None, **fields) -> dict:
+    """Run the hooks of a non-tool event (#226) with Claude Code's payload: the
+    event name, cwd and `fields`. Returns {"blocked", "text", "context"}: blocked
+    when one exited 2 or its JSON said decision "block" (text: the reasons), and
+    context, what goes to the model (additionalContext, or plain stdout for
+    UserPromptSubmit). match_value None runs every group, as Claude Code ignores
+    matchers for UserPromptSubmit and Stop."""
+    result = {"blocked": False, "text": "", "context": ""}
+    groups = configured().get(event)
+    if not groups:
+        return result
+    payload = {"hook_event_name": event, "cwd": str(cwd), **fields}
+    said, context = [], []
+    for group in groups:
+        if match_value is not None and not _matches(group.get("matcher"), match_value):
+            continue
+        for hook in group["hooks"]:
+            code, err, out = _run_one(hook, payload, cwd)
+            if code == 2:
+                result["blocked"] = True
+                said.append(err or f"{hook['command']} exited 2")
+                continue
+            data, problem = _json_output(out) if code is not None else (None, None)
+            if problem:
+                notify(f"{event} hook printed output that is {problem}: {hook['command']}", error=True)
+            if data is not None:
+                blocked, texts, _ = _apply_json_detailed(event, data)
+                result["blocked"] = result["blocked"] or blocked
+                (said if blocked else context).extend(texts)
+            elif code == 0 and event in _STDOUT_IS_CONTEXT and out.strip():
+                context.append(out.strip())
+            elif code != 0:
+                why = f"exit {code}" if code is not None else "failed"
+                notify(f"{event} hook {why}: {err or hook['command']}", error=True)
+    result["text"], result["context"] = "\n".join(said), "\n".join(context)
+    return result
+
+
 def tool_input_for(name: str, tool_input, root: Path) -> dict:
     """A tool call's input as a hook sees it: Read gets an absolute file_path."""
     data = dict(tool_input) if isinstance(tool_input, dict) else {}
