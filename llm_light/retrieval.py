@@ -152,7 +152,7 @@ def _dedup_retrieved_context(top_pairs):
     return "\n\n".join(parts)
 
 
-def _adaptive_select_pairs(ids, scores, budget, k):
+def _adaptive_select_pairs(ids, scores, budget, k, detail=None):
     import numpy as np
     ranked = [(ids[i], float(scores[i])) for i in np.argsort(-scores) if scores[i] >= MIN_SCORE]
     if not ranked:
@@ -160,7 +160,7 @@ def _adaptive_select_pairs(ids, scores, budget, k):
 
     threshold = ranked[0][1] * RELATIVE_SCORE_FLOOR
     candidates = [(cid, score) for cid, score in ranked if score >= threshold]
-    return _select_within_budget(candidates, budget, k)
+    return _select_within_budget(candidates, budget, k, detail=detail)
 
 
 def _zscore(scores):
@@ -276,7 +276,7 @@ def _same_or_inside(chunk_file, git_path):
     return f == git_path or f.endswith("/" + git_path) or git_path.endswith("/" + f)
 
 
-def _hybrid_select_pairs(ids, fused, budget, k, gap=None):
+def _hybrid_select_pairs(ids, fused, budget, k, gap=None, detail=None):
     """Chunks within HYBRID_SCORE_GAP of the top fused score, then the usual
     budget and file-diversity selection."""
     import numpy as np
@@ -284,7 +284,8 @@ def _hybrid_select_pairs(ids, fused, budget, k, gap=None):
     order = np.argsort(-fused)
     top = float(fused[order[0]])
     candidates = [(ids[i], float(fused[i])) for i in order if fused[i] >= top - gap]
-    return _select_within_budget(candidates, budget, k, strong=lambda s, t: s >= t - gap / 4)
+    return _select_within_budget(candidates, budget, k, strong=lambda s, t: s >= t - gap / 4,
+                                 detail=detail)
 
 
 _BODY_SEP = "\n    // ...\n"
@@ -304,10 +305,41 @@ def _rendered_tokens(cid, text, files_in_context):
     return _estimate_tokens(_compact_header(header, ext)) + _estimate_tokens(body) + 3
 
 
-def _select_within_budget(candidates, budget, k, strong=None):
+def _render_effort(effort: str) -> str:
+    """The effort the context is rendered at. A provider without the EFFORT capability
+    (Gemini, Codex) runs with tools off, so a summary-only low-effort context could never
+    be followed up with fetch_chunk; it gets the medium render instead."""
+    if effort == "low":
+        from llm_light import providers
+        from llm_light.providers import base
+        if base.EFFORT not in providers.active().capabilities:
+            return "medium"
+    return effort
+
+
+def _detail_count(effort: str) -> int:
+    """How many of the selected chunks _render_retrieved_context shows in full."""
+    return {"low": 0, "medium": 1}.get(_render_effort(effort), 2)
+
+
+def _summary_tokens(cid, text, listed_files):
+    """A chunk's line in the file summary list, plus its file's line if it is new there."""
+    cost = _estimate_tokens(_render_chunk_summary(cid, text))
+    if _chunk_id_to_file(cid) not in listed_files:
+        cost += _estimate_tokens(f"* {_chunk_id_to_file(cid)}")
+    return cost
+
+
+def _select_within_budget(candidates, budget, k, strong=None, detail=None):
     """Pick chunks from `candidates` (best first): one per file first, then
     extra strong chunks while the token budget allows. Each is charged what it
-    adds to the rendered context."""
+    adds to the rendered context.
+
+    `detail` is how many of the picked chunks are shown in full (_detail_count); every
+    pick also gets a line in the summary list, so the rest are charged that line only
+    (#329). Charged their full bodies, a single long function used a whole low-effort
+    budget, and the context named one file where six would fit. None charges every pick
+    in full, as before, for callers that do not know the effort."""
     if not candidates:
         return []
     strong = strong or (lambda score, top: score >= top * 0.92)
@@ -315,8 +347,26 @@ def _select_within_budget(candidates, budget, k, strong=None):
     selected = []
     selected_ids = set()
     selected_files = set()
+    detailed_files = set()
     spent_tokens = 0
     top_score = candidates[0][1]
+
+    def charge(cid, text):
+        if detail is None:
+            return _rendered_tokens(cid, text, selected_files)
+        cost = _summary_tokens(cid, text, selected_files)
+        if len(selected) < detail:
+            cost += _rendered_tokens(cid, text, detailed_files)
+        return cost
+
+    def take(cid, score, cost):
+        nonlocal spent_tokens
+        if detail is not None and len(selected) < detail:
+            detailed_files.add(_chunk_id_to_file(cid))
+        selected.append((cid, score))
+        selected_ids.add(cid)
+        selected_files.add(_chunk_id_to_file(cid))
+        spent_tokens += cost
 
     with state.lock:
         # First pass: maximize file diversity.
@@ -325,13 +375,10 @@ def _select_within_budget(candidates, budget, k, strong=None):
             if file_id in selected_files:
                 continue
             text = state.chunk_store[cid]["text"]
-            chunk_tokens = _rendered_tokens(cid, text, selected_files)
+            chunk_tokens = charge(cid, text)
             if spent_tokens + chunk_tokens > budget and selected:
                 continue
-            selected.append((cid, score))
-            selected_ids.add(cid)
-            selected_files.add(file_id)
-            spent_tokens += chunk_tokens
+            take(cid, score, chunk_tokens)
             if len(selected) >= k or spent_tokens >= budget:
                 break
 
@@ -342,12 +389,10 @@ def _select_within_budget(candidates, budget, k, strong=None):
             if not strong(score, top_score) or spent_tokens >= budget * 0.9:
                 break
             text = state.chunk_store[cid]["text"]
-            chunk_tokens = _rendered_tokens(cid, text, selected_files)
+            chunk_tokens = charge(cid, text)
             if spent_tokens + chunk_tokens > budget and selected:
                 continue
-            selected.append((cid, score))
-            selected_files.add(_chunk_id_to_file(cid))
-            spent_tokens += chunk_tokens
+            take(cid, score, chunk_tokens)
 
     return selected
 
@@ -359,12 +404,7 @@ def _finish(top_pairs, effort):
     off, so a summary-only low-effort context could never be followed up with
     fetch_chunk. It gets the medium render instead.
     """
-    if effort == "low":
-        from llm_light import providers
-        from llm_light.providers import base
-        if base.EFFORT not in providers.active().capabilities:
-            effort = "medium"
-    return _render_retrieved_context(top_pairs, effort), top_pairs
+    return _render_retrieved_context(top_pairs, _render_effort(effort)), top_pairs
 
 
 def _render_retrieved_context(top_pairs, effort: str) -> str:
@@ -499,7 +539,8 @@ def _retrieve_hybrid(query, budget, k, effort, exclude_files=None):
     if fused is None:
         return "", []
     fused = _boost_modified_chunks(_exclude_test_chunks(fused, ids, query), ids)
-    top_pairs = _without_files(_hybrid_select_pairs(ids, fused, budget, k), exclude_files)
+    top_pairs = _without_files(_hybrid_select_pairs(ids, fused, budget, k, detail=_detail_count(effort)),
+                               exclude_files)
     return _finish(top_pairs, effort)
 
 
@@ -536,5 +577,6 @@ def retrieve(query, token_budget=None, effort="medium", exclude_files=None):
         q_emb    = state.embedder.encode(query_prefix + query, normalize_embeddings=True)
     scores       = embs @ q_emb
 
-    top_pairs = _without_files(_adaptive_select_pairs(ids, scores, budget, k), exclude_files)
+    top_pairs = _without_files(_adaptive_select_pairs(ids, scores, budget, k, detail=_detail_count(effort)),
+                               exclude_files)
     return _finish(top_pairs, effort)
