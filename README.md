@@ -364,7 +364,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 
 One-shot runs write only the answer to stdout, as plain text; progress and tool lines go to stderr, so `llm_light.py "question" > answer.md` holds just the answer. `-p` (`--print`) asks for one-shot mode explicitly, as in `claude -p`; `@path` mentions work there too. A flag llm-light does not know stops the run with a usage error, naming the flag you probably meant, rather than being dropped; a question that starts with `-` goes after `--` (`llm-light -- "-x: what does it do?"`).
 
-Other flags: `--model <name>` pins the model from the start (as `/model` does), `--permission-mode <mode>` starts in a permission mode, and `--version` prints the version.
+Other flags: `--model <name>` pins the model from the start (as `/model` does), `--effort low|medium|high|max` pins the effort (as `/effort` does), `--budget <dollars>` starts with a spend cap (as `/budget` does; not with Gemini or Codex), `--permission-mode <mode>` starts in a permission mode, and `--version` prints the version. Both flags beat `~/.llm_light/settings.json`. A budget applies once the session's spend reaches it, so it cannot stop a single `-p` answer partway; on a longer session or a `/loop` it moves later questions to the cheapest model.
 
 The script runs three concurrent threads to keep your workflow seamless:
 
