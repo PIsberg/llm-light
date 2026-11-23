@@ -223,9 +223,34 @@ def _build_compressed_tree(paths):
         else:
             node.setdefault(last, None)
 
+    dropped = _drop_sidecars(root_node)
     lines = []
     _render_compressed_node(root_node, lines, "")
+    if dropped:
+        lines.append(f"Not listed: {dropped:,} generated sidecar file{'' if dropped == 1 else 's'} "
+                     f"({', '.join(_SIDECAR_SUFFIXES)}) beside the files and folders they belong to.")
     return "Directory structure:\n" + "\n".join(lines)
+
+
+# Files an engine writes beside each file or folder, repeating its name: Godot 4's .uid
+# (scripts, scenes) and .import (assets), Unity's .meta (files and folders).
+_SIDECAR_SUFFIXES = (".uid", ".import", ".meta")
+
+
+def _drop_sidecars(node) -> int:
+    """Remove from the tree every sidecar whose own file or folder is listed beside it
+    (#351); one with nothing beside it stays, or a file would vanish. Returns how many
+    were removed. In one Godot game they were 40% of a ~15,000-token tree."""
+    dropped = 0
+    for name in [k for k, v in node.items() if v is None]:
+        stem, suffix = os.path.splitext(name)
+        if suffix.lower() in _SIDECAR_SUFFIXES and stem in node:
+            del node[name]
+            dropped += 1
+    for child in node.values():
+        if isinstance(child, dict):
+            dropped += _drop_sidecars(child)
+    return dropped
 
 def _render_compressed_node(node, lines, indent):
     dirs  = {k: v for k, v in node.items() if isinstance(v, dict)}
