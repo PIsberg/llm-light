@@ -686,7 +686,7 @@ Prices the startup warm and the idle heartbeat, which `benchmark_session_cache.p
 
 ### Methodology
 
-Runs the real `warm_cache()` and `heartbeat()` against a fake API client and a fake clock, so the policy measured is whatever the code on the current commit does. The fake client keeps a 1-hour prompt cache per model for the prefix (skeleton, tools and system prompt, measured from this repo at 4 characters per token) and prices each request with `MODEL_PRICES`: a read when that model's entry is alive, a 1-hour write when it is not. Each scenario starts the session (the startup warm `full_refresh()` sends), asks one question at minute 1, stays idle for `--idle` hours with the heartbeat running, then asks a second question on the same model. A turn is priced as one prefix read or write on its model. History, retrieved chunks and output are the same under every warming policy and are left out.
+Runs the real `warm_cache()` and `heartbeat()` against a fake API client and a fake clock, so the policy measured is whatever the code on the current commit does. The fake client keeps a 1-hour prompt cache per model for the prefix (skeleton, tools and system prompt, measured from this repo at 4 characters per token) and prices each request with `MODEL_PRICES`: a read when that model's entry is alive, a 1-hour write when it is not. Each scenario starts the session (the startup warm `full_refresh()` sends), asks one question at minute 1, stays idle for `--idle` hours with the heartbeat running, then asks a second question on the same model; with `--no-return` it never asks it (a terminal left open). A turn is priced as one prefix read or write on its model. History, retrieved chunks and output are the same under every warming policy and are left out.
 
 ### Running
 
@@ -694,6 +694,7 @@ Runs the real `warm_cache()` and `heartbeat()` against a fake API client and a f
 python tests/benchmarks/benchmark_cache_warming.py
 python tests/benchmarks/benchmark_cache_warming.py --idle 8
 python tests/benchmarks/benchmark_cache_warming.py --idle 0 --changes 3
+python tests/benchmarks/benchmark_cache_warming.py --idle 60 --no-return
 ```
 
 `--changes N` has the file watcher rebuild the skeleton N times between the two questions (a file added, deleted or renamed), each a new prefix in the fake cache.
@@ -725,6 +726,21 @@ Skeleton changes between the two questions, no idle time, before and after the w
 | routed, opens on Sonnet | 1 | $0.1364 | $0.1347 | -1% |
 | routed, opens on Opus | 1 | $0.2728 | $0.2695 | -1% |
 | routed, opens on Sonnet | 3 | $0.2711 | $0.1347 | -50% |
+
+### Results (2026-11-22): the idle cap (#319)
+
+The heartbeat warmed every 55 minutes for as long as the session stayed open. It now stops after `MAX_IDLE_WARMS` (20) warms with no question, sends none at the `/budget` cap, and none once the entry has expired. The cap follows the rent-or-buy rule: a warm reads the prefix, and the turn it saves would write it for an hour, 20 reads on Haiku and 40 on Sonnet and Opus (`MODEL_PRICES`), so warming stops once it has cost about one write. A cap of 2, tried first, made an 8-hour gap cost 68% more on Sonnet ($0.0306 to $0.0515) and was dropped. Prefix 6,247 tokens before, 6,282 after (the working tree had more files):
+
+| Session | Idle | Second question | Warms before | Warms after | Before | After | Change |
+|---|---|---|---|---|---|---|---|
+| routed, opens on Sonnet | 8 h | yes | 8 | 8 | $0.0306 | $0.0308 | 0% |
+| routed, opens on Sonnet | 20 h | yes | 21 | 20 | $0.0387 | $0.0628 | +62% |
+| routed, opens on Sonnet | 60 h | yes | 64 | 20 | $0.0656 | $0.0628 | -4% |
+| routed, opens on Sonnet | 60 h | no | 64 | 20 | $0.0650 | $0.0377 | -42% |
+| routed, opens on Opus | 60 h | no | 64 | 20 | $0.1299 | $0.0754 | -42% |
+| pinned Opus (`--model opus`) | 60 h | no | 65 | 21 | $0.1312 | $0.0766 | -42% |
+
+Before the change the no-return cost grew by one read every 55 minutes without end; after it stops at 20 warms whatever the idle time. The 20-hour row is the price: a question shortly after the cap writes the entry again. The expiry rule (no warm after the machine slept past the hour) is not in this model, whose clock never jumps; `tests/unit/test_cache_warming.py` covers it. A cost model, not a live run.
 | routed, opens on Opus | 3 | $0.5423 | $0.2695 | -50% |
 | pinned Opus | 3 | $0.5456 | $0.2728 | -50% |
 

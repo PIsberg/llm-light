@@ -144,6 +144,27 @@ HEARTBEAT_SECS          = 30
 # re-reads the skeleton entry: five minutes inside its 1-hour TTL, which is
 # counted from the start of the request that last used it.
 CACHE_TTL_SECS          = 3_300
+# The entry's lifetime: turns and warms write it with a 1-hour TTL. Past this
+# the entry is gone and a warm would be a 1-hour write at twice the input
+# price, so the heartbeat leaves it to the next turn (#319).
+CACHE_LIFETIME_SECS     = 3_600
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(0, int(env_get(name, str(default))))
+    except ValueError:
+        return default
+
+
+# Warms the heartbeat sends after the last turn before it stops, so a
+# forgotten terminal stops spending (#319). A warm reads the prefix and the
+# turn it saves would write it for an hour: 20x a read on Haiku, 40x on Sonnet
+# and Opus (MODEL_PRICES). So warm until the warms have cost about one write
+# and then stop, the rent-or-buy rule: 20 warms keep the entry for about 18
+# idle hours, an overnight gap, and a forgotten weekend sends 20 instead of 65.
+# 0 turns the heartbeat off. LLM_LIGHT_MAX_IDLE_WARMS.
+MAX_IDLE_WARMS          = _env_int("MAX_IDLE_WARMS", 20)
 ENABLE_STREAMING        = True         # enable real-time token streaming
 TARGET_RETRIEVED_TOKENS = 6_000   # desired context size per query in tokens
 # Absolute similarity floor. Natural questions score lower against code than

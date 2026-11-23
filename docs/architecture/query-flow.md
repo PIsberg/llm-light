@@ -18,7 +18,7 @@ This sequence diagram illustrates the complete flow from user query to response,
 
 ### Background Processes
 
-- **Heartbeat Daemon** - Wakes every 30 seconds and warms the cache once `CACHE_TTL_SECS` (55 minutes) have passed since the last turn or warm, so one cache read per idle hour keeps the 1-hour skeleton entry alive
+- **Heartbeat Daemon** - Wakes every 30 seconds and warms the cache once `CACHE_TTL_SECS` (55 minutes) have passed since the last turn or warm, so one cache read per idle hour keeps the 1-hour skeleton entry alive. It stops after `MAX_IDLE_WARMS` (20) warms with no turn, at the `/budget` cap, and once the entry has expired (`CACHE_LIFETIME_SECS`, the machine slept), when a warm would be a full 1-hour write (#319)
 - **File Watcher** - Re-indexes changed files automatically and rebuilds the skeleton when a file is added, deleted or renamed or a `.md` file changes. It sends no cache warm: the next turn writes the new skeleton's entry
 
 ### Interactive Commands
@@ -131,7 +131,7 @@ deactivate LLM
 note over Main : Heartbeat daemon (wakes every 30s)
 loop Every HEARTBEAT_SECS
   Main -> Main : Time since last turn or warm
-  alt > CACHE_TTL_SECS (55 min)
+  alt > CACHE_TTL_SECS (55 min), < 1 h, fewer than MAX_IDLE_WARMS since the last turn, under /budget
     Main -> API : warm_cache()
     note right : One cache read resets the\n1 h TTL; the next turn avoids\na fresh 1 h write
   end

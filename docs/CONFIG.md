@@ -33,6 +33,8 @@ Constants live in `llm_light/config.py`. Environment variables override the defa
 | `SESSION_KEEP` | Earlier conversations kept per project and provider after `/clear`, for `/resume` and `--resume` (default 10; the oldest is deleted beyond that). A conversation named with `/rename` is not counted and never deleted |
 | `HEARTBEAT_SECS` | How often the heartbeat thread wakes (default 30) |
 | `CACHE_TTL_SECS` | Seconds since the last turn or warm before the heartbeat warms the cache again (default 3300, five minutes inside the skeleton's 1-hour TTL) |
+| `CACHE_LIFETIME_SECS` | The cache entry's lifetime (3600, the 1-hour TTL). Once this much time has passed since the last turn or warm (the machine slept), the heartbeat leaves the expired entry to the next turn instead of paying a 1-hour write for it |
+| `MAX_IDLE_WARMS` | Warms the heartbeat sends after the last question before it stops, so a forgotten terminal stops spending (default 20, about 18 idle hours: the warms then have cost about one 1-hour write, 20x a read on Haiku and 40x on Sonnet and Opus). `0` turns warming off. Override with `LLM_LIGHT_MAX_IDLE_WARMS`. No warm is sent once `/budget` is reached either |
 | `MODEL_HAIKU` / `MODEL_SONNET` / `MODEL_OPUS` | Model ID constants used by the router |
 | `MODEL_FABLE` | `claude-fable-5-1`. Never routed to: offered, with Opus 5.5 and Sonnet 5.5, when a question routes to Opus |
 | `SUMMARY_MODEL` | Model used for history compression (set to `MODEL_HAIKU`) |

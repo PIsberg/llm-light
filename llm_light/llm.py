@@ -763,6 +763,11 @@ def _update_skeleton():
     _apply_skeleton(build_skeleton())
 
 def warm_cache(quiet=False):
+    # A warm is spend the user did not ask for: none at the /budget cap (#319).
+    with state.lock:
+        budget, spent = state.session_budget, state.session_cost
+    if budget is not None and spent >= budget:
+        return
     providers.active().warm(quiet=quiet)
 
 def full_refresh(quiet=False):

@@ -86,7 +86,7 @@ deactivate LLM
 note over Main : Heartbeat daemon (wakes every 30s)
 loop Every HEARTBEAT_SECS
   Main -> Main : Time since last turn or warm
-  alt > CACHE_TTL_SECS (55 min)
+  alt > CACHE_TTL_SECS (55 min), < 1 h, fewer than MAX_IDLE_WARMS since the last turn, under /budget
     Main -> API : warm_cache()
     note right : One cache read resets the\n1 h TTL; the next turn avoids\na fresh 1 h write
   end
