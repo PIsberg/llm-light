@@ -5,7 +5,7 @@
 
 `route_query()` (`llm.py`) classifies every query into one of the four effort tiers using a two-signal hybrid:
 
-**0. Greetings** — a question that is, as a whole, one of `_META_SIGNALS` (`hi`, `hello`, `help`, `who are you`, ...; a trailing `?`, `!` or `.` is ignored) goes to Haiku at low effort before any scoring. It used to be any short question *containing* one, so "fix this bug" (`this` holds `hi`) went to Haiku.
+**0. Greetings** — a question that is, as a whole, one of `_META_SIGNALS` (`hi`, `hello`, `help`, `who are you`, ...; a trailing `?`, `!` or `.` is ignored) goes to Haiku at low effort before any scoring, and gets no retrieved code (`llm._is_meta`, #324). It used to be any short question *containing* one, so "fix this bug" (`this` holds `hi`) went to Haiku.
 
 **1. Lexical signals** — whole-word matching over three module-level dicts (`llm._word_signals`). Each entry lists the word forms it stands for (`fix` is `fix|fixes|fixed|fixing`, `implement` is `implement\w*`) and scores once per question. A part of a word does not count: `address` is not `add`, `prefix` is not `fix`, `builder` is not `build`, `listener` is not `list` (#263). The edit verbs in `_EDIT_VERB_RE` add one more Logic match.
 

@@ -1,3 +1,4 @@
+import os
 import re
 
 from pathlib import Path
@@ -414,7 +415,25 @@ def record_retrieval(query, model, effort, token_budget, hits,
     }
 
 
-def _retrieve_hybrid(query, budget, k, effort):
+def _file_key(path: str) -> str:
+    """A file path compared across the index (backslashes on Windows) and @ mentions."""
+    key = path.replace("\\", "/").removeprefix("./")
+    return key.lower() if os.name == "nt" else key
+
+
+def _without_files(top_pairs, exclude_files):
+    """`top_pairs` without the chunks of `exclude_files`: files the request already holds
+    whole, such as an @file attachment, whose chunks would send the same code twice (#324).
+    Dropped after selection, not before: on six @file questions about this repository,
+    letting other files take the freed slots added 15% more context, mostly the same few
+    loosely related files, while dropping only removes the copies."""
+    if not exclude_files:
+        return top_pairs
+    drop = {_file_key(p) for p in exclude_files}
+    return [(cid, s) for cid, s in top_pairs if _file_key(cid.split("::", 1)[0]) not in drop]
+
+
+def _retrieve_hybrid(query, budget, k, effort, exclude_files=None):
     import numpy as np
     with state.lock:
         if not state.chunk_store:
@@ -446,11 +465,12 @@ def _retrieve_hybrid(query, budget, k, effort):
     if fused is None:
         return "", []
     fused = _boost_modified_chunks(_exclude_test_chunks(fused, ids, query), ids)
-    top_pairs = _hybrid_select_pairs(ids, fused, budget, k)
+    top_pairs = _without_files(_hybrid_select_pairs(ids, fused, budget, k), exclude_files)
     return _finish(top_pairs, effort)
 
 
-def retrieve(query, token_budget=None, effort="medium"):
+def retrieve(query, token_budget=None, effort="medium", exclude_files=None):
+    """(context, hits) for `query`, leaving out the chunks of `exclude_files`."""
     import numpy as np
     budget = token_budget or TARGET_RETRIEVED_TOKENS
     base_k = state.TOP_K or 4
@@ -461,7 +481,7 @@ def retrieve(query, token_budget=None, effort="medium"):
         state.fast_ready.wait()  # loading in the background after a warm start
         if state.fast_embedder is None:
             raise RuntimeError("the static embedding model failed to load")
-        return _retrieve_hybrid(query, budget, k, effort)
+        return _retrieve_hybrid(query, budget, k, effort, exclude_files)
 
     with state.lock:
         if not state.chunk_store:
@@ -482,5 +502,5 @@ def retrieve(query, token_budget=None, effort="medium"):
         q_emb    = state.embedder.encode(query_prefix + query, normalize_embeddings=True)
     scores       = embs @ q_emb
 
-    top_pairs = _adaptive_select_pairs(ids, scores, budget, k)
+    top_pairs = _without_files(_adaptive_select_pairs(ids, scores, budget, k), exclude_files)
     return _finish(top_pairs, effort)
