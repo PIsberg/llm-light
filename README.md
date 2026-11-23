@@ -318,7 +318,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `/clear` | Start a new conversation; the old one stays available to `/resume`; the next question also picks the model again, which the session then keeps (`LLM_LIGHT_ROUTE_ONCE=0` picks it per question) |
 | `/compact [focus]` | Replace the conversation so far with a summary, so later turns send fewer tokens; a focus says what to keep in detail |
 | `/config [key value]` | Show the saved settings, or save one: `vim`, `theme` (`dark`, `light`), `notify` (`off`, `bell`), `permission_mode`, `model`, `effort`. They live in `~/.llm_light/settings.json`, and a flag beats them. A file in the project is never read, and `bypassPermissions` cannot be saved |
-| `/context` | What the next turn would send, by part, as an estimate. The agent's own prompt, tools and reads come on top of it on a subscription |
+| `/context` | What the next turn would send, by part, as an estimate: the system prompt (the agent's when it may run commands), the skeleton, your `instructions.md`, `--append-system-prompt`, the tool definitions, the conversation and queued output, then what the last question retrieved. The agent's own prompt, tools and reads come on top of it on a subscription |
 | `/copy [n]` | Copy the latest reply, or the n-th latest, to the clipboard, code blocks included. Uses `clip` on Windows, `pbcopy` on macOS and `wl-copy`, `xclip` or `xsel` on Linux; without one (over SSH, say) it sends an OSC 52 escape, which many terminals copy locally |
 | `/cost` | Token usage and cost for this session, and lifetime savings |
 | `/diff` | The uncommitted changes under the current directory, one diff per file, and the untracked files |

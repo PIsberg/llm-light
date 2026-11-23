@@ -213,6 +213,61 @@ def test_context_counts_each_part():
     assert rows["Queued output"] == 100
 
 
+def test_context_counts_your_instructions_and_the_appended_prompt(monkeypatch):
+    # Both go with every turn (llm._build_system_blocks) but /context left them out (#331).
+    from llm_light import instructions
+    monkeypatch.setattr(instructions, "text", lambda: "i" * 400)
+    monkeypatch.setattr(state, "extra_system", "x" * 800)
+    rows = dict(doctor.context_rows())
+    assert rows["Your instructions"] == 100
+    assert rows["--append-system-prompt"] == 200
+
+
+def test_context_leaves_out_empty_instructions(monkeypatch):
+    from llm_light import instructions
+    monkeypatch.setattr(instructions, "text", lambda: "")
+    monkeypatch.setattr(state, "extra_system", "")
+    rows = dict(doctor.context_rows())
+    assert "Your instructions" not in rows and "--append-system-prompt" not in rows
+
+
+def test_context_counts_the_agent_prompt_when_the_agent_gets_it(monkeypatch):
+    # With commands allowed, the subscription agent gets AGENT_SYSTEM_PROMPT instead.
+    from llm_light import permissions
+    monkeypatch.setattr(doctor, "_agent_adds_its_own", lambda: True)
+    monkeypatch.setattr(config, "ALLOWED_COMMANDS", ["python -m pytest"])
+    permissions.set_mode(permissions.DEFAULT)
+    assert dict(doctor.context_rows())["System prompt"] == len(config.AGENT_SYSTEM_PROMPT) // 4
+    monkeypatch.setattr(config, "ALLOWED_COMMANDS", [])
+    assert dict(doctor.context_rows())["System prompt"] == len(config.SYSTEM_PROMPT) // 4
+
+
+def test_context_names_what_the_last_question_retrieved(capsys, monkeypatch):
+    monkeypatch.setattr(state, "last_retrieval", {"hits": [("a.py::f", 1.0)] * 5, "retrieved_tokens": 1234})
+    doctor.print_context()
+    out = capsys.readouterr().out
+    assert "1,234" in out and "5 chunks" in out
+
+
+def test_context_says_which_parts_repeat_every_turn(capsys):
+    doctor.print_context()
+    out = capsys.readouterr().out
+    assert "every turn" in out and "conversation grows" in out
+
+
+def test_a_turn_records_how_much_it_retrieved(monkeypatch):
+    usage = MagicMock(input_tokens=1, output_tokens=1, cache_creation_input_tokens=0,
+                      cache_read_input_tokens=0)
+    with patch.object(llm, "retrieve", return_value=("c" * 4000, [("a.py::f", 1.0)])), \
+            patch("llm_light.providers.claude._make_streaming_api_call",
+                  return_value=("answer", usage, False)), \
+            patch.object(llm, "parse_edit_blocks", return_value=[]), \
+            patch.object(llm, "_print_reply"), patch.object(llm, "print_stats"), \
+            patch("llm_light.config.LLMLINGUA_ENABLED", False):
+        llm.chat("where is the retry loop?")
+    assert state.last_retrieval["retrieved_tokens"] == 1000
+
+
 def test_context_only_counts_tools_where_llm_light_sends_them():
     with patch.object(doctor, "_sends_own_tools", return_value=True):
         assert dict(doctor.context_rows())["Tool definitions"] > 0

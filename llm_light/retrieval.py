@@ -475,7 +475,7 @@ def explain_last_retrieval() -> str:
 
 
 def record_retrieval(query, model, effort, token_budget, hits,
-                     compression=None, skipped_reason=None, routing=None):
+                     compression=None, skipped_reason=None, routing=None, retrieved_tokens=0):
     """Store diagnostics for the last query so /why can explain it."""
     state.last_retrieval = {
         "query": query,
@@ -486,6 +486,7 @@ def record_retrieval(query, model, effort, token_budget, hits,
         "compression": compression,
         "skipped_reason": skipped_reason,
         "routing": routing,
+        "retrieved_tokens": retrieved_tokens,   # the context as sent, for /context (#331)
     }
 
 
