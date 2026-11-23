@@ -106,7 +106,7 @@ def _encode_index(store: dict) -> bytes:
     """
     import numpy as np
     ids = list(store)
-    meta = json.dumps({"ids": ids, "texts": [store[cid]["text"] for cid in ids]}).encode("utf-8")
+    meta = json.dumps(_split_texts(ids, store)).encode("utf-8")
     arrays = {"meta": np.frombuffer(meta, dtype=np.uint8)}
     for field in _VECTOR_FIELDS:
         rows = [n for n, cid in enumerate(ids) if store[cid].get(field) is not None]
@@ -118,13 +118,45 @@ def _encode_index(store: dict) -> bytes:
     return buf.getvalue()
 
 
+_HEADER_SEP = "\n    // ...\n"   # parsing's mark between a chunk's header and its body
+
+
+def _split_texts(ids, store) -> dict:
+    """The chunk texts for the index, each distinct header (path line and file preamble)
+    stored once (#343). Every chunk of a file repeats its header: 68% of the chunk text
+    on this repository, 86% on one of 20,000 chunks."""
+    heads, head_of, bodies, seen = [], [], [], {}
+    for cid in ids:
+        text = store[cid]["text"]
+        head, sep, body = text.partition(_HEADER_SEP)
+        if not sep:
+            head_of.append(-1)
+            bodies.append(text)
+            continue
+        if head not in seen:
+            seen[head] = len(heads)
+            heads.append(head)
+        head_of.append(seen[head])
+        bodies.append(body)
+    return {"ids": ids, "heads": heads, "head_of": head_of, "bodies": bodies}
+
+
+def _joined_texts(meta: dict) -> list:
+    """The chunk texts back from _split_texts' form, or from the older one with "texts"."""
+    if "texts" in meta:
+        return meta["texts"]
+    heads = meta["heads"]
+    return [body if n < 0 else heads[n] + _HEADER_SEP + body
+            for n, body in zip(meta["head_of"], meta["bodies"])]
+
+
 def _decode_index(data: bytes) -> dict:
     """Inverse of _encode_index. allow_pickle=False: object arrays raise."""
     import numpy as np
     with np.load(io.BytesIO(data), allow_pickle=False) as z:
         meta = json.loads(z["meta"].tobytes().decode("utf-8"))
         ids = meta["ids"]
-        store = {cid: {"text": text} for cid, text in zip(ids, meta["texts"])}
+        store = {cid: {"text": text} for cid, text in zip(ids, _joined_texts(meta))}
         for field in _VECTOR_FIELDS:
             if field in z.files:
                 for row, vec in zip(z[f"{field}_rows"], z[field]):
