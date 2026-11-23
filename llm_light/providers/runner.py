@@ -41,10 +41,12 @@ def empty_temp_dir():
 
 
 def run_cli(provider: str, argv: list, stdin_text: str, timeout: float = TIMEOUT_SECS,
-            cwd=None, env=None) -> str:
+            cwd=None, env=None, on_line=None) -> str:
     """Run a provider CLI, feed it stdin_text and return its stdout.
 
-    env replaces the child's environment when given (None inherits ours).
+    env replaces the child's environment when given (None inherits ours). on_line, when
+    given, gets each stdout line as the CLI prints it (#328), so a reply can stream;
+    without it the output is read once the CLI exits.
 
     A non-zero exit, a timeout or a missing binary raise ProviderError naming
     the provider. KeyboardInterrupt stops the whole process tree and is re-raised.
@@ -61,7 +63,10 @@ def run_cli(provider: str, argv: list, stdin_text: str, timeout: float = TIMEOUT
     from llm_light import esc_key
     try:
         with esc_key.running(proc):  # Esc on Windows kills it
-            stdout, stderr = proc.communicate(stdin_text, timeout)
+            if on_line is None:
+                stdout, stderr = proc.communicate(stdin_text, timeout)
+            else:
+                stdout, stderr = _read_lines(proc, stdin_text, timeout, on_line)
     except subprocess.TimeoutExpired:
         kill_process_tree(proc)
         raise ProviderError(f"{provider} timed out after {timeout:g} s. "
@@ -77,6 +82,54 @@ def run_cli(provider: str, argv: list, stdin_text: str, timeout: float = TIMEOUT
         raise ProviderError(f"{provider} failed (exit {proc.returncode}): {last}. "
                             f"Run {binary} on its own to see the full error.")
     return stdout
+
+
+def _read_lines(proc, stdin_text: str, timeout: float, on_line) -> tuple:
+    """communicate() that hands each stdout line to on_line as it arrives. stdin is written
+    and stderr drained on their own threads, so neither pipe can fill and stall the CLI.
+    Raises subprocess.TimeoutExpired, as communicate() does, once `timeout` has passed."""
+    import threading
+
+    def feed():
+        try:
+            proc.stdin.write(stdin_text)
+            proc.stdin.close()
+        except (OSError, ValueError):  # the CLI exited or closed its stdin early
+            pass
+
+    err: list = []
+
+    def drain():
+        try:
+            err.append(proc.stderr.read())
+        except (OSError, ValueError):
+            pass
+
+    expired = threading.Event()
+
+    def expire():
+        expired.set()
+        kill_process_tree(proc)
+
+    threads = [threading.Thread(target=feed, daemon=True), threading.Thread(target=drain, daemon=True)]
+    for t in threads:
+        t.start()
+    timer = threading.Timer(timeout, expire)
+    timer.daemon = True
+    timer.start()
+    out: list = []
+    try:
+        for line in proc.stdout:
+            out.append(line)
+            on_line(line)
+        proc.wait()
+    finally:
+        timer.cancel()
+    for t in threads:
+        t.join(timeout=5)
+    if expired.is_set():
+        raise subprocess.TimeoutExpired(proc.args, timeout)
+    return "".join(out), "".join(err)
 
 
 def kill_process_tree(proc) -> None:
