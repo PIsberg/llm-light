@@ -1,3 +1,4 @@
+import functools
 import os
 import re
 
@@ -86,6 +87,33 @@ def _render_file_summaries(top_pairs, max_files=8, max_symbols_per_file=3):
     return "\n".join(lines)
 
 
+PREAMBLE_MAX_LINES = 25
+PREAMBLE_MAX_CHARS = 1_200   # about 300 tokens
+
+
+@functools.lru_cache(maxsize=512)
+def _compact_header(header: str, ext: str) -> str:
+    """A chunk's header as the model sees it: the path line, then the file preamble (the
+    lines before its first symbol) with comments stripped as the body's are, cut at
+    PREAMBLE_MAX_LINES lines or PREAMBLE_MAX_CHARS characters, with a line saying how much
+    was left out (#323). Uncut, tools.py sent 146 lines (~1,600 tokens) with every chunk,
+    mostly the tool schemas the API already receives, and selection charged all of it."""
+    path_line, sep, preamble = header.partition("\n")
+    if not sep:
+        return header
+    lines = [ln for ln in _strip_comments(preamble, ext).strip("\n").splitlines()]
+    kept, size = [], 0
+    for line in lines:
+        if len(kept) >= PREAMBLE_MAX_LINES or size + len(line) + 1 > PREAMBLE_MAX_CHARS:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    if len(kept) < len(lines):
+        kept.append(f"// ... {len(lines) - len(kept)} more lines before the first symbol; "
+                    "read the file for them")
+    return "\n".join([path_line] + kept)
+
+
 def _dedup_retrieved_context(top_pairs):
     _SEP = "\n    // ...\n"
     file_order  = []
@@ -105,6 +133,7 @@ def _dedup_retrieved_context(top_pairs):
             ext = Path(filepath).suffix.lower()
             if _SEP in text:
                 header, body = text.split(_SEP, 1)
+                header = _compact_header(header, ext)
             else:
                 header, body = f"// {filepath}", text
             if filepath not in file_data:
@@ -265,9 +294,14 @@ def _rendered_tokens(cid, text, files_in_context):
     """What adding this chunk adds to the rendered context: its whole text for
     a new file, only its body (and a name line) for a file already in it, since
     _dedup_retrieved_context sends each file's header and preamble once (#288)."""
-    if _chunk_id_to_file(cid) in files_in_context and _BODY_SEP in text:
-        return _estimate_tokens(text.split(_BODY_SEP, 1)[1]) + 3
-    return _estimate_tokens(text)
+    if _BODY_SEP not in text:
+        return _estimate_tokens(text)
+    header, body = text.split(_BODY_SEP, 1)
+    if _chunk_id_to_file(cid) in files_in_context:
+        return _estimate_tokens(body) + 3
+    # A new file brings its header, capped as _dedup_retrieved_context sends it (#323).
+    ext = Path(_chunk_id_to_file(cid)).suffix.lower()
+    return _estimate_tokens(_compact_header(header, ext)) + _estimate_tokens(body) + 3
 
 
 def _select_within_budget(candidates, budget, k, strong=None):
@@ -291,7 +325,7 @@ def _select_within_budget(candidates, budget, k, strong=None):
             if file_id in selected_files:
                 continue
             text = state.chunk_store[cid]["text"]
-            chunk_tokens = _estimate_tokens(text)
+            chunk_tokens = _rendered_tokens(cid, text, selected_files)
             if spent_tokens + chunk_tokens > budget and selected:
                 continue
             selected.append((cid, score))
