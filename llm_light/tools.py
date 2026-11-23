@@ -333,11 +333,19 @@ def _walk_files(root, base):
     # os.walk does not descend into symlinked directories, but it does list
     # symlinked files; one pointing outside the project (say at ~/.ssh) must
     # not be readable through grep or visible through list_files.
+    # In the project's git work tree, what .gitignore excludes is left out too (#325).
+    # Never in an --add-dir directory: it is granted for reading, and git there would
+    # read that repository's own config, which can name commands git runs.
+    from llm_light.skeleton import git_visible
+    visible = None if Path(root).resolve() in _extra_roots() else git_visible(root)
     for dirpath, dirnames, filenames in os.walk(base):
         rel_dir = Path(dirpath).relative_to(root).parts
-        dirnames[:] = sorted(d for d in dirnames if not _skipped(rel_dir + (d,)))
+        dirnames[:] = sorted(d for d in dirnames if not _skipped(rel_dir + (d,))
+                             and (visible is None or visible.has_dir("/".join(rel_dir + (d,)))))
         for fn in sorted(filenames):
             if _skipped(rel_dir + (fn,)):
+                continue
+            if visible is not None and not visible.has_file("/".join(rel_dir + (fn,))):
                 continue
             path = Path(dirpath) / fn
             try:

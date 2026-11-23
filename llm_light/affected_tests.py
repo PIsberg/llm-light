@@ -7,6 +7,7 @@ already allowed (--allow-command "python -m pytest"). If they fail, offer to
 undo the commit. With no allowlisted pytest command this does nothing.
 """
 
+import os
 import re
 from pathlib import Path
 
@@ -26,13 +27,20 @@ def is_test_file(path):
 
 
 def _all_test_files(root):
+    """Test files under `root`. Skipped and dot folders are pruned rather than walked and
+    filtered (rglob went through all of node_modules first), and in a git work tree what
+    .gitignore excludes is left out, so a test generated into a build folder never runs (#325)."""
+    from llm_light.skeleton import git_visible
+    visible = git_visible(root)
+    if visible is not None:
+        return sorted(p for p in (root / rel for rel in visible.unskipped()
+                                  if is_test_file(rel.rsplit("/", 1)[-1]))
+                      if p.is_file())
     found = []
-    for p in root.rglob("*.py"):
-        rel = p.relative_to(root)
-        if any(part in _SKIP or part.startswith(".") for part in rel.parts):
-            continue
-        if is_test_file(rel):
-            found.append(p)
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in _SKIP and not d.startswith(".")]
+        found.extend(Path(folder) / name for name in files
+                     if not name.startswith(".") and is_test_file(name))
     return sorted(found)
 
 
