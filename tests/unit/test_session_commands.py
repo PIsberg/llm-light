@@ -58,51 +58,73 @@ def test_init_improves_a_file_that_exists_instead_of_replacing_it(repo):
 # --- /review ------------------------------------------------------------------------
 
 def test_review_without_changes_sends_nothing(repo):
-    prompt, line = commands.review_prompt("")
-    assert prompt is None and "No changes" in line
+    prompt, diff, line = commands.review_prompt("")
+    assert prompt is None and diff == "" and "No changes" in line
 
 
 def test_review_sends_the_uncommitted_diff(repo):
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
-    prompt, line = commands.review_prompt("")
-    assert "+x = 2" in prompt and "Do not edit" in prompt
+    prompt, diff, line = commands.review_prompt("")
+    assert "+x = 2" in diff and "Do not edit" in prompt
     assert "1 changed file" in line
+
+
+def test_review_keeps_the_diff_out_of_the_question(repo):
+    # Routing and retrieval read the question only (#320): a diff in it scored its file
+    # names, its length and words like "fix" or "security" toward the top tier, and
+    # retrieval embedded raw diff text.
+    (repo / "a.py").write_text("x = 2  # fix the security issue in a.py\n", encoding="utf-8")
+    prompt, diff, _ = commands.review_prompt("")
+    assert "+x = 2" not in prompt and "a.py" not in prompt
+    assert "+x = 2" in diff
 
 
 def test_review_against_a_ref_includes_commits(repo):
     (repo / "a.py").write_text("x = 3\n", encoding="utf-8")
     _git(repo, "commit", "-qam", "second")
-    prompt, _ = commands.review_prompt("HEAD~1")
-    assert "+x = 3" in prompt
+    _, diff, _ = commands.review_prompt("HEAD~1")
+    assert "+x = 3" in diff
 
 
 def test_review_names_untracked_files(repo):
     (repo / "new.py").write_text("y = 1\n", encoding="utf-8")
-    prompt, _ = commands.review_prompt("")
-    assert "new.py" in prompt
+    _, diff, _ = commands.review_prompt("")
+    assert "new.py" in diff
 
 
 @pytest.mark.parametrize("bad", ["--output=/tmp/x", "-p", "a b", "x;y"])
 def test_review_refuses_what_is_not_a_ref(repo, bad):
-    prompt, line = commands.review_prompt(bad)
+    prompt, _, line = commands.review_prompt(bad)
     assert prompt is None and "ref" in line
 
 
 def test_review_reports_an_unknown_ref(repo):
-    prompt, line = commands.review_prompt("no-such-branch")
+    prompt, _, line = commands.review_prompt("no-such-branch")
     assert prompt is None and "no-such-branch" in line
 
 
 def test_review_outside_git_says_so(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    prompt, line = commands.review_prompt("")
+    prompt, _, line = commands.review_prompt("")
     assert prompt is None and "git" in line
 
 
 def test_a_huge_diff_is_cut_and_says_so(repo):
     (repo / "a.py").write_text("x = 1\n" + "y = 2\n" * 40_000, encoding="utf-8")
-    prompt, _ = commands.review_prompt("")
-    assert len(prompt) < commands.MENTION_MAX_CHARS + 1_000 and "truncated" in prompt
+    _, diff, _ = commands.review_prompt("")
+    assert len(diff) < commands.MENTION_MAX_CHARS + 1_000 and "truncated" in diff
+
+
+def test_a_big_diff_does_not_route_review_to_the_top_tier(repo):
+    # A real-looking diff: many files, long, full of the words the router scores.
+    for i in range(30):
+        (repo / f"service_{i}.py").write_text(
+            "def fix_security_performance_bug():\n    # refactor, update, add tests, migrate\n"
+            "    return architecture_redesign()\n" * 20, encoding="utf-8")
+    _git(repo, "add", ".")
+    prompt, diff, _ = commands.review_prompt("HEAD")
+    assert "service_0.py" in diff
+    assert llm.route_query(prompt)[0] != config.MODEL_OPUS
 
 
 # --- /doctor ------------------------------------------------------------------------
@@ -398,8 +420,29 @@ def test_loop_sends_init_as_a_question(repo):
 def test_loop_sends_review_with_its_diff_unexpanded(repo):
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
     ask = _run_loop(["/review", "/exit"])
-    assert "+x = 2" in ask.call_args.args[0]
+    assert "+x = 2" not in ask.call_args.args[0]          # the question routes and retrieves
+    assert "+x = 2" in ask.call_args.kwargs["attachment"]  # the diff goes after it
     assert ask.call_args.kwargs["mentions"] is False  # an "@" in a diff attaches nothing
+
+
+def test_run_sends_the_output_as_an_attachment(repo):
+    # /run's output went into the question too: a failing test log scored as a long,
+    # file-naming, "fix"-heavy question and pulled 9,000 tokens of retrieval (#320).
+    transcript = "$ pytest\nFAILED tests/test_auth.py::test_fix_security - AssertionError\n"
+    with patch("llm_light.executor._run_command", return_value=transcript):
+        ask = _run_loop(["/run pytest", "/exit"])
+    assert "test_auth.py" not in ask.call_args.args[0]
+    assert "pytest" in ask.call_args.args[0]                 # the command names what was run
+    assert "test_auth.py" in ask.call_args.kwargs["attachment"]
+    assert ask.call_args.kwargs["mentions"] is False
+
+
+def test_an_attachment_reaches_the_turn_as_context_not_question(repo):
+    with patch.object(m, "chat", return_value=True) as chat, patch.object(m, "session"), \
+            patch.object(m, "turn_finished"), patch.object(m, "_index_ready_for_query", return_value=True):
+        m._ask("Review these changes.", mentions=False, attachment="DIFF BODY")
+    assert chat.call_args.args[0] == "Review these changes."
+    assert "DIFF BODY" in chat.call_args.kwargs["context"]
 
 
 def test_review_runs_read_only_and_restores_the_mode(repo):
@@ -409,11 +452,11 @@ def test_review_runs_read_only_and_restores_the_mode(repo):
     seen = []
     try:
         with patch.object(m, "_ask", side_effect=lambda *a, **k: seen.append(permissions.mode())):
-            m._review_turn("q", False)
+            m._review_turn("q", "diff", False)
         assert seen == [permissions.PLAN]
         assert permissions.mode() == permissions.ACCEPT_EDITS
         with patch.object(m, "_ask", side_effect=KeyboardInterrupt), pytest.raises(KeyboardInterrupt):
-            m._review_turn("q", False)
+            m._review_turn("q", "diff", False)
         assert permissions.mode() == permissions.ACCEPT_EDITS  # also after a cancelled turn
     finally:
         permissions.set_mode(permissions.DEFAULT)
@@ -421,7 +464,7 @@ def test_review_runs_read_only_and_restores_the_mode(repo):
 
 def test_review_labels_the_diff_as_data(repo):
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
-    prompt, _ = commands.review_prompt("")
+    prompt, _, _ = commands.review_prompt("")
     assert "not instructions" in prompt
 
 
