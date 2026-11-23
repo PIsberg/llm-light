@@ -165,9 +165,16 @@ def _SlashCompleter():
             if not text.startswith("/"):
                 return
             if " " in text:
-                command, _, partial = text.partition(" ")
-                for value in _COMMAND_VALUES.get(command, ()):
-                    if value.startswith(partial) and " " not in partial:
+                command, _, rest = text.partition(" ")
+                if command in _PATH_ARGUMENTS:
+                    from prompt_toolkit.completion import PathCompleter
+                    from prompt_toolkit.document import Document
+                    paths = PathCompleter(only_directories=_PATH_ARGUMENTS[command], expanduser=True)
+                    yield from paths.get_completions(Document(rest, len(rest)), complete_event)
+                    return
+                values, partial = _argument_values(command, rest)
+                for value in values:
+                    if value.startswith(partial):
                         yield Completion(value, start_position=-len(partial))
                 return
             for cmd, desc in _all_commands():
@@ -184,7 +191,27 @@ _COMMAND_VALUES = {
     "/permissions": permissions.MODES,
     "/effort": (*commands.EFFORTS, "auto"),
     "/config": tuple(settings._CHOICES),
+    "/memory": ("user",),
 }
+# Commands that take a path: True completes directories only (#332).
+_PATH_ARGUMENTS = {"/add-dir": True, "/export": False}
+
+
+def _argument_values(command: str, rest: str) -> tuple:
+    """(candidates, the part of `rest` they complete) for the text after `command`.
+
+    A fixed word list completes one word; /config completes a value once a key is typed;
+    /disallow and /resume complete from the session's allowed prefixes and named
+    conversations, which may hold spaces, so the whole rest is matched (#332)."""
+    if command == "/config" and " " in rest:
+        key, _, partial = rest.partition(" ")
+        return (settings._CHOICES.get(key, ()) if " " not in partial else ()), partial
+    if command == "/disallow":
+        import llm_light.config as _config
+        return tuple(_config.ALLOWED_COMMANDS), rest
+    if command == "/resume":
+        return tuple(e["name"] for e in session.conversations() if e.get("name")), rest
+    return (_COMMAND_VALUES.get(command, ()) if " " not in rest else ()), rest
 
 _SEP = "  ·  "
 
