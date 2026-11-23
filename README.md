@@ -362,7 +362,7 @@ Each question is routed to Haiku 5.5, Sonnet 5.5 or Opus 5.5, and the session ke
 | `esc` | Cancel the running turn, as `ctrl+c` does, without the risk of quitting. Keys you type while the model answers wait in the next prompt; enter is not passed on, so nothing is sent for you. Not in `-p` runs; `LLM_LIGHT_ESC=0` turns it off |
 | `ctrl+c` | Cancel the running turn, `!` command or `/loop`; at the prompt, clear what you typed, and on an empty prompt quit |
 
-One-shot runs write only the answer to stdout, as plain text; progress and tool lines go to stderr, so `llm_light.py "question" > answer.md` holds just the answer. `-p` (`--print`) asks for one-shot mode explicitly, as in `claude -p`; `@path` mentions work there too.
+One-shot runs write only the answer to stdout, as plain text; progress and tool lines go to stderr, so `llm_light.py "question" > answer.md` holds just the answer. `-p` (`--print`) asks for one-shot mode explicitly, as in `claude -p`; `@path` mentions work there too. A flag llm-light does not know stops the run with a usage error, naming the flag you probably meant, rather than being dropped; a question that starts with `-` goes after `--` (`llm-light -- "-x: what does it do?"`).
 
 Other flags: `--model <name>` pins the model from the start (as `/model` does), `--permission-mode <mode>` starts in a permission mode, and `--version` prints the version.
 
