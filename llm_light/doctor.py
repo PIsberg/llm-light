@@ -170,6 +170,17 @@ def _agent_adds_its_own() -> bool:
     return config.AUTH_MODE == "OAUTH" and providers.active().has(AGENT)
 
 
+def _system_prompt() -> str:
+    """The prompt the next turn starts with. The subscription agent gets AGENT_SYSTEM_PROMPT
+    instead when it may run commands, as claude.ClaudeProvider._make_cli_subprocess_call
+    decides: in bypass mode, or with an allowlist outside plan mode. Keep the two in step."""
+    from llm_light import permissions
+    if _agent_adds_its_own() and (permissions.bypass()
+                                  or (config.ALLOWED_COMMANDS and not permissions.plan())):
+        return config.AGENT_SYSTEM_PROMPT
+    return config.SYSTEM_PROMPT
+
+
 def context_rows() -> list:
     """(what, estimated tokens) for what the next turn would send, before retrieval."""
     from llm_light.tools import all_tools
@@ -177,7 +188,13 @@ def context_rows() -> list:
         skeleton = state.skeleton_context or ""
         history = list(state.conversation_history)
         pending = list(state.pending_context)
-    rows = [("Skeleton", _tokens(config.SYSTEM_PROMPT + skeleton))]
+    from llm_light import instructions
+    rows = [("System prompt", _tokens(_system_prompt())), ("Skeleton", _tokens(skeleton))]
+    # Both go with every turn, after the system prompt (llm._build_system_blocks, #331).
+    if instructions.text():
+        rows.append(("Your instructions", _tokens(instructions.text())))
+    if state.extra_system:
+        rows.append(("--append-system-prompt", _tokens(state.extra_system)))
     if _sends_own_tools():
         rows.append(("Tool definitions", _tokens(json.dumps(all_tools()))))
     rows.append(("Conversation", sum(_tokens(commands._history_text(m.get("content", ""))) for m in history)))
@@ -193,6 +210,14 @@ def print_context() -> None:
     for label, tokens in rows:
         print(f"  {label:<18}{tokens:>10,}")
     print(f"  {'Total':<18}{total:>10,}  ({total / CONTEXT_WINDOW:.0%} of {CONTEXT_WINDOW:,})")
+    last = state.last_retrieval or {}
+    if last.get("retrieved_tokens"):
+        hits = len(last.get("hits") or [])
+        print(f"\n  The last question retrieved ~{last['retrieved_tokens']:,} tokens "
+              f"({hits} chunk{'' if hits == 1 else 's'}); each question retrieves its own.")
+    print("\n  The system prompt, skeleton, instructions and tool definitions go with every turn "
+          "unchanged, and are read from the cache where the provider has one; the conversation "
+          "grows by each turn, and each question brings its own retrieval.")
     notes = "Estimates at 4 characters per token, before this turn's retrieval and question."
     if _agent_adds_its_own():
         notes += " The agent adds its own prompt, tools and whatever it reads."

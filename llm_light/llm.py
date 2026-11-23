@@ -1003,7 +1003,8 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
 
     record_retrieval(query, routed_model, effort, token_budget, hits,
                      compression=compression_info, skipped_reason=skipped_reason,
-                     routing=_last_route_info.copy() if _last_route_info else None)
+                     routing=_last_route_info.copy() if _last_route_info else None,
+                     retrieved_tokens=len(retrieved_ctx) // 4)
 
     with state.lock:
         skeleton = state.skeleton_context
