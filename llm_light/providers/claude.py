@@ -952,10 +952,29 @@ def _api_tool_loop(create_kwargs):
 _PARALLEL_TOOLS = frozenset({"read_file", "grep", "list_files", "fetch_chunk"})
 
 
+def _call_key(block):
+    """A read-only call's identity: tool and input, key order ignored. None for others."""
+    if block.name not in _PARALLEL_TOOLS:
+        return None
+    return block.name, json.dumps(block.input, sort_keys=True, default=str)
+
+
+def _already_sent(tool_use_id: str) -> str:
+    return (f"Same call and input as {tool_use_id} earlier in this turn, and nothing that could "
+            "change files ran since: that result still applies, so it is not repeated here.")
+
+
 def _run_tool_rounds(kwargs, messages, usage, texts, view):
-    """Run the model and its tool calls; return the last stop_reason."""
+    """Run the model and its tool calls; return the last stop_reason.
+
+    A read-only call repeated with the same input later in the turn gets a one-line note
+    naming the earlier result instead of its output again (#326): every round resends
+    the turn's messages, so a repeated 40,000-character read was paid for twice on every
+    later round. shell and MCP tools may change files, so they reset that memory; a
+    failed call is not remembered, so its repeat runs."""
     from llm_light import tools
     stop = None
+    sent: dict = {}   # _call_key -> tool_use_id of the result that holds it
     for step in range(_API_TOOL_STEPS + 1):
         kwargs["messages"] = messages
         try:
@@ -989,11 +1008,39 @@ def _run_tool_rounds(kwargs, messages, usage, texts, view):
             # Read-only calls do not depend on one another: run them together (#196).
             # A round with shell or an MCP tool stays in order: one may depend on
             # another, and an MCP call may stop to ask the user.
+            first = {}   # key -> the block of this round that runs it
+            for b in calls:
+                if _call_key(b) not in sent:
+                    first.setdefault(_call_key(b), b)
+            to_run = list(first.values())
             from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=min(len(calls), 8)) as pool:
-                outcomes = list(pool.map(lambda b: tools.run_tool(b.name, b.input), calls))
+            with ThreadPoolExecutor(max_workers=max(1, min(len(to_run), 8))) as pool:
+                ran = dict(zip((b.id for b in to_run),
+                               pool.map(lambda b: tools.run_tool(b.name, b.input), to_run)))
+            outcomes = []
+            for b in calls:
+                k = _call_key(b)
+                if b.id in ran:
+                    outcomes.append(ran[b.id])
+                    if not ran[b.id][1]:
+                        sent[k] = b.id
+                elif k in sent:
+                    outcomes.append((_already_sent(sent[k]), False))
+                else:   # a repeat of a call in this round that failed: the same error
+                    outcomes.append(ran[first[k].id])
         else:
-            outcomes = [tools.run_tool(b.name, b.input) for b in calls]
+            outcomes = []
+            for b in calls:
+                k = _call_key(b)
+                if k is not None and k in sent:
+                    outcomes.append((_already_sent(sent[k]), False))
+                    continue
+                outcome = tools.run_tool(b.name, b.input)
+                outcomes.append(outcome)
+                if k is None:
+                    sent.clear()   # shell or an MCP tool may have changed files
+                elif not outcome[1]:
+                    sent[k] = b.id
         results = []
         for block, (output, is_error) in zip(calls, outcomes):
             result = {"type": "tool_result", "tool_use_id": block.id, "content": output}
