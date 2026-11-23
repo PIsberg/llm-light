@@ -861,6 +861,33 @@ def _question_text(query, context):
     return f"Question:\n{note}{query}" + (f"\n\n{context}" if context else "")
 
 
+_FILE_BLOCK = re.compile(r'<file path="([^"\n]*)">\n(.*?)\n</file>', re.S)
+
+
+def _context_for_history(context: str) -> str:
+    """What the history keeps of a turn's attachments (#322). They went with that turn in
+    full; every later turn resends the history, and a 50,000-character file stayed in it
+    for up to MAX_HISTORY_TURNS turns, as it was when attached even after an edit. Short
+    attachments stay; an attached file becomes a note naming it, so the model can read
+    it again; what is left keeps its start and its end, where a build prints its error."""
+    from llm_light import config as _config
+    limit = _config.HISTORY_CONTEXT_CHARS
+    if len(context) <= limit:
+        return context
+
+    def note(match):
+        lines = len(match.group(2).splitlines())
+        return (f'<file path="{match.group(1)}">[{lines:,} lines, sent with this question and left '
+                "out of the history: read the file again if it is needed]</file>")
+
+    text = _FILE_BLOCK.sub(note, context)
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    return (text[:half] + f"\n[... {len(text) - 2 * half:,} characters sent with this question and "
+            "left out of the history ...]\n" + text[-half:])
+
+
 def _images_note(images) -> str:
     """Naming attached images: for the agent, which reads them itself, and for the history,
     which keeps the path and not the bytes."""
@@ -1038,7 +1065,7 @@ def chat(query, auto_apply=False, use_index=True, context="", images=()):
                     continue
 
             state.conversation_history.append(
-                {"role": "user", "content": query + (f"\n\n{context}" if context else "")
+                {"role": "user", "content": query + (f"\n\n{_context_for_history(context)}" if context else "")
                  + (f"\n\n[{_images_note(images)}]" if images else "")})
 
             if edits:
